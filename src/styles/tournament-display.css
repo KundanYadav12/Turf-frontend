@@ -1,0 +1,369 @@
+/* ==========================================================================
+   TOURNAMENT DISPLAY PAGE — DUAL THEME DESIGN TOKENS & RESPONSIVE STYLES
+   Supports: Dark (:root / [data-theme="dark"]) and Light ([data-theme="light"])
+   ========================================================================== */
+
+/* DARK THEME TOKENS (Default / Deep Stadium LED Theme) */
+:root,
+[data-theme="dark"] {
+  --display-background: #090d16;
+  --display-surface: #101929;
+  --display-surface-elevated: #162238;
+  --display-border: rgba(255, 255, 255, 0.1);
+  --display-border-subtle: rgba(255, 255, 255, 0.06);
+  --display-text-primary: #f8fafc;
+  --display-text-secondary: #94a3b8;
+  --display-text-muted: #64748b;
+  --display-accent: #10b981;
+  --display-accent-subtle: rgba(16, 185, 129, 0.15);
+  --display-accent-glow: 0 0 25px rgba(16, 185, 129, 0.25);
+  --display-live-red: #ef4444;
+  --display-live-red-subtle: rgba(239, 68, 68, 0.18);
+  --display-success-green: #10b981;
+  --display-success-green-subtle: rgba(16, 185, 129, 0.18);
+  --display-boundary-purple: #8b5cf6;
+  --display-boundary-purple-subtle: rgba(139, 92, 246, 0.18);
+  --display-warning-amber: #f59e0b;
+  --display-warning-amber-subtle: rgba(245, 158, 11, 0.18);
+  --display-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --display-shadow-subtle: 0 4px 14px rgba(0, 0, 0, 0.3);
+  --display-glass: rgba(16, 25, 41, 0.85);
+  --display-chip-neutral: rgba(255, 255, 255, 0.08);
+  --display-chip-neutral-text: #cbd5e1;
+
+  /* Aliased Literal Tokens */
+  --background: var(--display-background);
+  --surface: var(--display-surface);
+  --surface-elevated: var(--display-surface-elevated);
+  --border: var(--display-border);
+  --text-primary: var(--display-text-primary);
+  --text-secondary: var(--display-text-secondary);
+  --accent: var(--display-accent);
+  --live-red: var(--display-live-red);
+  --success-green: var(--display-success-green);
+  --boundary-purple: var(--display-boundary-purple);
+  --warning-amber: var(--display-warning-amber);
+}
+
+/* LIGHT THEME TOKENS (Soft off-white background, crisp white cards, refined contrast) */
+[data-theme="light"] {
+  --display-background: #f8fafc;
+  --display-surface: #ffffff;
+  --display-surface-elevated: #f1f5f9;
+  --display-border: #e2e8f0;
+  --display-border-subtle: #f1f5f9;
+  --display-text-primary: #0f172a;
+  --display-text-secondary: #475569;
+  --display-text-muted: #64748b;
+  --display-accent: #059669;
+  --display-accent-subtle: rgba(5, 150, 105, 0.1);
+  --display-accent-glow: none;
+  --display-live-red: #dc2626;
+  --display-live-red-subtle: rgba(220, 38, 38, 0.1);
+  --display-success-green: #059669;
+  --display-success-green-subtle: rgba(5, 150, 105, 0.1);
+  --display-boundary-purple: #7c3aed;
+  --display-boundary-purple-subtle: rgba(124, 58, 237, 0.1);
+  --display-warning-amber: #d97706;
+  --display-warning-amber-subtle: rgba(217, 119, 6, 0.1);
+  --display-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --display-shadow-subtle: 0 2px 6px rgba(0, 0, 0, 0.05);
+  --display-glass: rgba(255, 255, 255, 0.95);
+  --display-chip-neutral: #e2e8f0;
+  --display-chip-neutral-text: #334155;
+
+  /* Aliased Literal Tokens */
+  --background: var(--display-background);
+  --surface: var(--display-surface);
+  --surface-elevated: var(--display-surface-elevated);
+  --border: var(--display-border);
+  --text-primary: var(--display-text-primary);
+  --text-secondary: var(--display-text-secondary);
+  --accent: var(--display-accent);
+  --live-red: var(--display-live-red);
+  --success-green: var(--display-success-green);
+  --boundary-purple: var(--display-boundary-purple);
+  --warning-amber: var(--display-warning-amber);
+}
+
+/* SYSTEM PREFERS LIGHT (Automatic fallback when no explicit data-theme is stored) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --display-background: #f8fafc;
+    --display-surface: #ffffff;
+    --display-surface-elevated: #f1f5f9;
+    --display-border: #e2e8f0;
+    --display-border-subtle: #f1f5f9;
+    --display-text-primary: #0f172a;
+    --display-text-secondary: #475569;
+    --display-text-muted: #64748b;
+    --display-accent: #059669;
+    --display-accent-subtle: rgba(5, 150, 105, 0.1);
+    --display-accent-glow: none;
+    --display-live-red: #dc2626;
+    --display-live-red-subtle: rgba(220, 38, 38, 0.1);
+    --display-success-green: #059669;
+    --display-success-green-subtle: rgba(5, 150, 105, 0.1);
+    --display-boundary-purple: #7c3aed;
+    --display-boundary-purple-subtle: rgba(124, 58, 237, 0.1);
+    --display-warning-amber: #d97706;
+    --display-warning-amber-subtle: rgba(217, 119, 6, 0.1);
+    --display-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    --display-shadow-subtle: 0 2px 6px rgba(0, 0, 0, 0.05);
+    --display-glass: rgba(255, 255, 255, 0.95);
+    --display-chip-neutral: #e2e8f0;
+    --display-chip-neutral-text: #334155;
+
+    --background: var(--display-background);
+    --surface: var(--display-surface);
+    --surface-elevated: var(--display-surface-elevated);
+    --border: var(--display-border);
+    --text-primary: var(--display-text-primary);
+    --text-secondary: var(--display-text-secondary);
+    --accent: var(--display-accent);
+    --live-red: var(--display-live-red);
+    --success-green: var(--display-success-green);
+    --boundary-purple: var(--display-boundary-purple);
+    --warning-amber: var(--display-warning-amber);
+  }
+}
+
+/* ==========================================================================
+   DISPLAY ROOT CONTAINER & SMOOTH THEME TRANSITION
+   ========================================================================== */
+.display-page-container {
+  background-color: var(--display-background);
+  color: var(--display-text-primary);
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  font-family: var(--font-body, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif);
+}
+
+/* Smooth transitions for surfaces and borders without layout thrashing */
+.display-page-container .display-theme-transition {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ==========================================================================
+   REDUCED MOTION SUPPORT
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .display-page-container,
+  .display-page-container * {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ==========================================================================
+   DESKTOP & TV RESPONSIVE LAYOUT CONSTRAINTS
+   ========================================================================== */
+.display-inner-wrapper {
+  width: 100%;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+@media (min-width: 1600px) {
+  .display-inner-wrapper {
+    max-width: 1440px;
+  }
+}
+
+@media (min-width: 1920px) {
+  .display-inner-wrapper {
+    max-width: 1560px;
+  }
+}
+
+/* Header Breakpoint Displays */
+.display-header-desktop {
+  display: none !important;
+}
+.display-header-mobile {
+  display: flex !important;
+}
+
+@media (min-width: 1024px) {
+  .display-header-desktop {
+    display: flex !important;
+  }
+  .display-header-mobile {
+    display: none !important;
+  }
+}
+
+/* Match Content Layout */
+.display-match-layout {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.6rem, 1.2vh, 1rem);
+  flex: 1;
+  min-height: 0;
+}
+
+@media (min-width: 1024px) {
+  .display-match-layout {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: clamp(1rem, 1.8vw, 1.6rem);
+    align-items: start;
+  }
+}
+
+/* Player Table Rows with Zebra & Fixed Stats Column */
+.player-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(6px, 0.9vh, 10px) 10px;
+  border-radius: 8px;
+  border-bottom: 1px solid var(--display-border-subtle);
+  transition: background-color 0.2s ease;
+}
+.player-row:nth-child(even) {
+  background-color: var(--display-border-subtle);
+}
+
+.stats-column {
+  min-width: 120px;
+  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Ball Chip Desktop Sizing */
+.this-over-ball-chip {
+  width: clamp(28px, 3vw, 48px);
+  height: clamp(28px, 3vw, 48px);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.72rem, 0.95vw, 1rem);
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.this-over-ball-chip.new-ball-enter {
+  animation: ballChipEnter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ==========================================================================
+   LIVE BALL ANIMATION KEYFRAMES
+   ========================================================================== */
+@keyframes signageTickerScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes signageAdFadeIn {
+  0% { opacity: 0; transform: scale(0.98); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes scoreNumberUpdate {
+  0% { transform: translateY(-4px) scale(0.97); opacity: 0.8; }
+  60% { transform: translateY(1px) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes ballChipEnter {
+  0% { transform: scale(0.3) rotate(-25deg); opacity: 0; }
+  70% { transform: scale(1.15) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes wicketScreenShake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  15% { transform: translate(-10px, 8px) rotate(-1.5deg); }
+  30% { transform: translate(12px, -8px) rotate(1.5deg); }
+  45% { transform: translate(-8px, -6px) rotate(-1deg); }
+  60% { transform: translate(8px, 6px) rotate(1deg); }
+  75% { transform: translate(-4px, 2px) rotate(-0.5deg); }
+  90% { transform: translate(2px, -2px) rotate(0.2deg); }
+}
+
+@keyframes popBadgeScale {
+  0% { transform: scale(0.4) translateY(20px); opacity: 0; }
+  60% { transform: scale(1.15) translateY(-4px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes fadeOutUpBadge {
+  0% { transform: scale(1) translateY(0); opacity: 1; }
+  100% { transform: scale(0.95) translateY(-18px); opacity: 0; }
+}
+
+@keyframes redScreenFlash {
+  0% { opacity: 0; }
+  25% { opacity: 0.35; }
+  100% { opacity: 0; }
+}
+
+@keyframes trophySurge {
+  0% { transform: scale(0.3) rotate(-15deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes raysRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes signageTickerScrollReverse {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes signageVerticalScroll {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+@keyframes signageVerticalScrollReverse {
+  0% { transform: translateY(-50%); }
+  100% { transform: translateY(0); }
+}
+
+/* Sidebars layout for Signage Arena Display */
+.signage-layout-with-sidebars {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(0.75rem, 1.5vw, 1.25rem);
+  width: 100%;
+}
+
+.signage-main-arena-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 1100px) {
+  .signage-ad-sidebar {
+    display: none !important;
+  }
+}
