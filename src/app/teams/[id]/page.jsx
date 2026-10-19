@@ -37,7 +37,7 @@ export async function generateMetadata({ params }) {
   return buildMetadata({
     title: `${team.name} | Squad Roster, Fixtures & Team Stats`,
     description: `${team.name} official sports club roster, player statistics, recent tournament results, and upcoming match fixtures for ${sportName} competitions.`,
-    pathname: `/teams/${params.id}`,
+    path: `/teams/${params.id}`,
     image: team.logoUrl,
     type: 'website',
     keywords: [

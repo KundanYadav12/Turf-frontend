@@ -21,8 +21,8 @@ export default function AccountDeletionManagementPanel() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionMsg, setActionMsg] = useState(null); // { type: 'success' | 'error', text: '' }
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('turf_token') || localStorage.getItem('token')) : null;
+  const config = (token && token !== 'null' && token !== 'undefined') ? { headers: { Authorization: `Bearer ${token}` } } : {};
 
   const fetchDeletionData = useCallback(async () => {
     try {

@@ -22,8 +22,8 @@ export default function PrivacyPolicyManagementPanel() {
   const [publishing, setPublishing] = useState(false);
   const [statusMsg, setStatusMsg] = useState(null); // { type: 'success' | 'error', text: '' }
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('turf_token') || localStorage.getItem('token')) : null;
+  const config = (token && token !== 'null' && token !== 'undefined') ? { headers: { Authorization: `Bearer ${token}` } } : {};
 
   const fetchVersions = async () => {
     try {

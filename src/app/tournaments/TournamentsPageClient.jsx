@@ -10,6 +10,17 @@ import {
 import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle } from 'lucide-react';
 import CreateTournamentModal from '../../components/tournament/CreateTournamentModal';
 
+const formatTournamentDate = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = String(d.getDate()).padStart(2, '0');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  return `${day} ${month} ${year}`;
+};
+
 export default function TournamentsPageClient({ initialTournaments = [], initialPagination = {} }) {
   const dispatch = useDispatch();
   const { tournamentsById, allTournamentIds, feedPagination, loading } = useSelector((state) => state.tournament);
@@ -226,11 +237,11 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                     <Calendar size={14} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
-                    <span>{t.startDate ? new Date(t.startDate).toLocaleDateString() : 'Upcoming'} - {t.endDate ? new Date(t.endDate).toLocaleDateString() : 'TBD'}</span>
+                    <span suppressHydrationWarning>{t.startDate ? formatTournamentDate(t.startDate) : 'Upcoming'} - {t.endDate ? formatTournamentDate(t.endDate) : 'TBD'}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                     <Users size={14} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
-                    <span>{t.teamsCount || 8} Registered Teams</span>
+                    <span>{(t.registeredTeamsCount ?? t.registeredTeams ?? t.teamsCount ?? 0)} Registered Teams</span>
                   </div>
                 </div>
 

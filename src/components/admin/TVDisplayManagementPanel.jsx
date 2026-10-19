@@ -29,14 +29,27 @@ export default function TVDisplayManagementPanel() {
   const [isCreating, setIsCreating] = useState(false);
   const [statusMsg, setStatusMsg] = useState(null);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const getAuthToken = () => {
+    if (typeof window === 'undefined') return null;
+    const t = localStorage.getItem('turf_token') || localStorage.getItem('token');
+    return (t && t !== 'null' && t !== 'undefined') ? t : null;
+  };
+
+  const getAuthConfig = () => {
+    const t = getAuthToken();
+    return t ? { headers: { Authorization: `Bearer ${t}` } } : {};
+  };
 
   const fetchData = async () => {
     try {
       setLoading(true);
+      const authToken = getAuthToken();
+      const displayPromise = authToken
+        ? axios.get('/api/tv/displays', getAuthConfig())
+        : Promise.resolve({ data: { success: true, data: [] } });
+
       const [dispRes, tournRes] = await Promise.all([
-        axios.get('/api/tv/displays', config),
+        displayPromise,
         axios.get('/api/tournaments')
       ]);
 
@@ -72,7 +85,7 @@ export default function TVDisplayManagementPanel() {
     try {
       setIsSaving(true);
       setStatusMsg(null);
-      const res = await axios.put(`/api/tv/displays/${selectedDisplay.id}`, selectedDisplay, config);
+      const res = await axios.put(`/api/tv/displays/${selectedDisplay.id}`, selectedDisplay, getAuthConfig());
       if (res.data.success) {
         setStatusMsg({ type: 'success', text: 'Smart TV settings updated and broadcast live to televisions!' });
         fetchData();
@@ -101,7 +114,7 @@ export default function TVDisplayManagementPanel() {
         adBottomEnabled: true,
         adSidebarsEnabled: true,
         theme: 'dark'
-      }, config);
+      }, getAuthConfig());
 
       if (res.data.success) {
         setStatusMsg({ type: 'success', text: 'New Smart TV display profile created!' });
@@ -119,7 +132,7 @@ export default function TVDisplayManagementPanel() {
 
     try {
       setStatusMsg(null);
-      const res = await axios.delete(`/api/tv/displays/${id}`, config);
+      const res = await axios.delete(`/api/tv/displays/${id}`, getAuthConfig());
       if (res.data.success) {
         setStatusMsg({ type: 'success', text: 'TV Display profile removed.' });
         setSelectedDisplay(null);
@@ -141,7 +154,7 @@ export default function TVDisplayManagementPanel() {
         pairingCode: pairingCodeInput.trim().toUpperCase(),
         name: pairingDisplayName || undefined,
         tournamentId: pairingTournId || undefined
-      }, config);
+      }, getAuthConfig());
 
       if (res.data.success) {
         setStatusMsg({ type: 'success', text: 'Television screen successfully paired and connected!' });

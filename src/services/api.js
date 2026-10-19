@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { isTokenExpired, logout } from '../features/auth/authSlice';
+import { store } from '../store';
 
 const getBaseURL = () => {
   if (typeof window !== 'undefined') {
@@ -18,9 +20,16 @@ API.interceptors.request.use((config) => {
 
   if (typeof window !== 'undefined') {
     try {
-      const token = localStorage.getItem('turf_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      const token = localStorage.getItem('turf_token') || localStorage.getItem('token');
+      if (token && token !== 'null' && token !== 'undefined') {
+        if (isTokenExpired(token)) {
+          localStorage.removeItem('turf_token');
+          localStorage.removeItem('turf_user');
+          localStorage.removeItem('token');
+          if (store && store.dispatch) store.dispatch(logout());
+        } else {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
       }
     } catch (e) {
       // Ignore in safe environments
@@ -30,5 +39,20 @@ API.interceptors.request.use((config) => {
 }, (error) => {
   return Promise.reject(error);
 });
+
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401 && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('turf_token');
+        localStorage.removeItem('turf_user');
+        localStorage.removeItem('token');
+        if (store && store.dispatch) store.dispatch(logout());
+      } catch (e) {}
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default API;

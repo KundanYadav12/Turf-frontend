@@ -205,18 +205,68 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     }
   };
 
+  const inputStyle = {
+    width: '100%',
+    background: 'var(--bg-input, #0f172a)',
+    border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
+    borderRadius: '8px',
+    color: 'var(--text-main, #f8fafc)',
+    padding: '0.65rem 0.85rem',
+    fontSize: '0.9rem',
+    outline: 'none',
+    boxSizing: 'border-box'
+  };
+
+  const selectStyle = {
+    ...inputStyle,
+    cursor: 'pointer',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 0.85rem center',
+    backgroundSize: '16px',
+    paddingRight: '2.5rem'
+  };
+
+  const optionStyle = {
+    background: 'var(--bg-modal, #0f172a)',
+    color: 'var(--text-main, #f8fafc)',
+    padding: '8px 12px'
+  };
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '0.82rem',
+    fontWeight: 700,
+    color: 'var(--text-secondary, #cbd5e1)',
+    marginBottom: '0.4rem'
+  };
+
+  const sectionTitleStyle = {
+    fontSize: '0.95rem',
+    fontWeight: 700,
+    margin: '0 0 0.85rem 0',
+    color: 'var(--text-heading, #ffffff)'
+  };
+
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(5, 8, 15, 0.85)',
-      backdropFilter: 'blur(8px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999,
-      padding: '1rem'
-    }}>
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'var(--bg-overlay, rgba(5, 8, 15, 0.85))',
+        backdropFilter: 'blur(8px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '1rem'
+      }}
+    >
       <div style={{
         backgroundColor: 'var(--bg-modal, #0f172a)',
         border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
@@ -226,7 +276,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
         maxHeight: '92vh',
         overflowY: 'auto',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-        color: 'var(--text-main, #fff)',
+        color: 'var(--text-main, #f8fafc)',
         padding: '1.75rem'
       }}>
         {/* Header */}
@@ -248,7 +298,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               <Trophy size={24} />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--text-heading, #fff)' }}>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--text-heading, #ffffff)' }}>
                 Create New Tournament
               </h2>
               <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted, #94a3b8)' }}>
@@ -312,13 +362,13 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
         <form onSubmit={handleSubmit}>
           {/* SECTION 1: BASIC INFORMATION */}
           <div style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.85rem 0', color: 'var(--text-heading, #fff)' }}>
+            <h3 style={sectionTitleStyle}>
               1. Basic Tournament Information
             </h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Tournament Name *
                 </label>
                 <input
@@ -328,80 +378,56 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   value={formData.name}
                   onChange={handleChange}
                   placeholder="e.g. Mumbai Super Cricket Cup 2026"
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={inputStyle}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Sport Type *
                 </label>
                 <select
                   name="sportId"
                   value={formData.sportId}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={selectStyle}
                 >
                   {sports.length > 0 ? (
                     sports.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={s.id} style={optionStyle}>
                         {s.name}
                       </option>
                     ))
                   ) : (
                     <>
-                      <option value="1">Cricket</option>
-                      <option value="2">Football</option>
-                      <option value="3">Badminton</option>
-                      <option value="4">Tennis</option>
+                      <option value="1" style={optionStyle}>Cricket</option>
+                      <option value="2" style={optionStyle}>Football</option>
+                      <option value="3" style={optionStyle}>Badminton</option>
+                      <option value="4" style={optionStyle}>Tennis</option>
                     </>
                   )}
                 </select>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Tournament Format *
                 </label>
                 <select
                   name="format"
                   value={formData.format}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={selectStyle}
                 >
-                  <option value="LEAGUE">League / Round-Robin</option>
-                  <option value="KNOCKOUT">Knockout / Single Elimination</option>
-                  <option value="LEAGUE_KNOCKOUT">Group Stage + Knockout</option>
+                  <option value="LEAGUE" style={optionStyle}>League / Round-Robin</option>
+                  <option value="KNOCKOUT" style={optionStyle}>Knockout / Single Elimination</option>
+                  <option value="LEAGUE_KNOCKOUT" style={optionStyle}>Group Stage + Knockout</option>
                 </select>
               </div>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+              <label style={labelStyle}>
                 Description (Optional)
               </label>
               <textarea
@@ -410,15 +436,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                 value={formData.description}
                 onChange={handleChange}
                 placeholder="Brief summary of the tournament, eligibility criteria, and awards..."
-                style={{
-                  width: '100%',
-                  background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                  border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  padding: '0.65rem 0.85rem',
-                  fontSize: '0.88rem'
-                }}
+                style={{ ...inputStyle, resize: 'vertical' }}
               />
             </div>
           </div>
@@ -449,31 +467,22 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', marginBottom: '0.85rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                  <label style={labelStyle}>
                     Match Format *
                   </label>
                   <select
                     name="matchFormat"
                     value={formData.matchFormat}
                     onChange={handleChange}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15,23,42,0.95)',
-                      border: '1px solid rgba(16,185,129,0.4)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      padding: '0.6rem 0.75rem',
-                      fontSize: '0.88rem',
-                      fontWeight: 700
-                    }}
+                    style={selectStyle}
                   >
-                    <option value="DOUBLES">Doubles (2 Players on Court)</option>
-                    <option value="SINGLES">Singles (1 Player on Court)</option>
+                    <option value="DOUBLES" style={optionStyle}>Doubles (2 Players on Court)</option>
+                    <option value="SINGLES" style={optionStyle}>Singles (1 Player on Court)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                  <label style={labelStyle}>
                     Target Score per Match *
                   </label>
                   <input
@@ -483,21 +492,12 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                     value={formData.targetScore}
                     onChange={handleChange}
                     placeholder="15"
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15,23,42,0.95)',
-                      border: '1px solid rgba(16,185,129,0.4)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      padding: '0.6rem 0.75rem',
-                      fontSize: '0.88rem',
-                      fontWeight: 700
-                    }}
+                    style={inputStyle}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                  <label style={labelStyle}>
                     Roster Squad Size (Registered) *
                   </label>
                   <input
@@ -507,20 +507,12 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                     value={formData.rosterSize}
                     onChange={handleChange}
                     placeholder="12"
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15,23,42,0.95)',
-                      border: '1px solid rgba(16,185,129,0.4)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      padding: '0.6rem 0.75rem',
-                      fontSize: '0.88rem'
-                    }}
+                    style={inputStyle}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                  <label style={labelStyle}>
                     Number of Groups *
                   </label>
                   <input
@@ -531,21 +523,13 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                     value={formData.groupsCount}
                     onChange={handleChange}
                     placeholder="2"
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15,23,42,0.95)',
-                      border: '1px solid rgba(16,185,129,0.4)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      padding: '0.6rem 0.75rem',
-                      fontSize: '0.88rem'
-                    }}
+                    style={inputStyle}
                   />
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: '#fff' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-main, #f8fafc)' }}>
                   <input
                     type="checkbox"
                     name="winByTwo"
@@ -557,7 +541,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                 </label>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>Max Score Cap (Optional):</span>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #cbd5e1)' }}>Max Score Cap (Optional):</span>
                   <input
                     type="number"
                     name="maxScore"
@@ -565,11 +549,8 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                     onChange={handleChange}
                     placeholder="e.g. 21"
                     style={{
+                      ...inputStyle,
                       width: '80px',
-                      background: 'rgba(15,23,42,0.95)',
-                      border: '1px solid rgba(16,185,129,0.4)',
-                      borderRadius: '6px',
-                      color: '#fff',
                       padding: '0.35rem 0.5rem',
                       fontSize: '0.82rem'
                     }}
@@ -580,33 +561,31 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
           )}
 
           {/* SECTION 2: LOCATION & SCHEDULING */}
-          <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.85rem 0', color: 'var(--text-heading, #fff)' }}>
+          <div style={{
+            marginBottom: '1.5rem',
+            background: 'var(--bg-elevated, rgba(16, 25, 41, 0.6))',
+            padding: '1rem',
+            borderRadius: '10px',
+            border: '1px solid var(--border-color, rgba(255,255,255,0.08))'
+          }}>
+            <h3 style={sectionTitleStyle}>
               2. Venue & Scheduling
             </h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Host Turf / Venue
                 </label>
                 <select
                   name="venueId"
                   value={formData.venueId}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={selectStyle}
                 >
-                  <option value="">-- None / Multi-Venue / City Wide --</option>
+                  <option value="" style={optionStyle}>-- None / Multi-Venue / City Wide --</option>
                   {venues.map((v) => (
-                    <option key={v.id} value={v.id}>
+                    <option key={v.id} value={v.id} style={optionStyle}>
                       {v.name} ({v.city})
                     </option>
                   ))}
@@ -614,7 +593,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Start Date *
                 </label>
                 <input
@@ -623,20 +602,12 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   name="startDate"
                   value={formData.startDate}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={inputStyle}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   End Date *
                 </label>
                 <input
@@ -645,20 +616,12 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   name="endDate"
                   value={formData.endDate}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={inputStyle}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Registration Deadline
                 </label>
                 <input
@@ -666,15 +629,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   name="registrationDeadline"
                   value={formData.registrationDeadline}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={inputStyle}
                 />
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-dim, #64748b)' }}>
                   Defaults to start date if blank
@@ -685,13 +640,13 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
 
           {/* SECTION 3: PARTICIPATION & SETTINGS */}
           <div style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.85rem 0', color: 'var(--text-heading, #fff)' }}>
+            <h3 style={sectionTitleStyle}>
               3. Participation & Auction Settings
             </h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Maximum Teams *
                 </label>
                 <input
@@ -702,20 +657,12 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   name="maxTeams"
                   value={formData.maxTeams}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={inputStyle}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Entry Fee (₹)
                 </label>
                 <input
@@ -725,38 +672,22 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   name="entryFee"
                   value={formData.entryFee}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={inputStyle}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.4rem' }}>
+                <label style={labelStyle}>
                   Initial Status
                 </label>
                 <select
                   name="status"
                   value={formData.status}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.9rem'
-                  }}
+                  style={selectStyle}
                 >
-                  <option value="PUBLISHED">Published (Visible in Hub)</option>
-                  <option value="DRAFT">Draft (Unlisted)</option>
+                  <option value="PUBLISHED" style={optionStyle}>Published (Visible in Hub)</option>
+                  <option value="DRAFT" style={optionStyle}>Draft (Unlisted)</option>
                 </select>
               </div>
             </div>
@@ -766,8 +697,8 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
+              background: 'var(--slot-available-bg, rgba(16, 185, 129, 0.08))',
+              border: '1px solid var(--slot-available-border, rgba(16, 185, 129, 0.25))',
               borderRadius: '10px',
               padding: '0.85rem 1.25rem',
               marginTop: '0.5rem'
@@ -775,7 +706,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Gavel size={20} color="var(--accent-primary, #10b981)" />
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#fff' }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-heading, #ffffff)' }}>
                     Enable Cricket Player Auction / Bidding
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)' }}>
@@ -795,7 +726,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
 
           {/* SECTION 4: BANNER IMAGE */}
           <div style={{ marginBottom: '1.75rem' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.85rem 0', color: 'var(--text-heading, #fff)' }}>
+            <h3 style={sectionTitleStyle}>
               4. Banner Image (Optional)
             </h3>
 
@@ -825,15 +756,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   placeholder="https://images.unsplash.com/..."
                   value={formData.bannerUrl}
                   onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.55rem 0.75rem',
-                    fontSize: '0.85rem'
-                  }}
+                  style={inputStyle}
                 />
               </div>
             </div>
@@ -852,7 +775,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               onClick={onClose}
               disabled={submitting}
               style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: 'var(--bg-secondary, rgba(255,255,255,0.05))',
                 border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                 color: 'var(--text-muted, #94a3b8)',
                 padding: '0.65rem 1.25rem',

@@ -11,7 +11,7 @@ import {
 
 async function getTournamentData(id) {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/tournaments/${id}`, { next: { revalidate: 30 } });
+    const res = await fetch(`${BACKEND_URL}/api/tournaments/${id}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.success && data.data) return data.data;

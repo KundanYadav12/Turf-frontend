@@ -78,6 +78,10 @@ const nextConfig = {
         source: '/uploads/:path*',
         destination: `${BACKEND_URL}/uploads/:path*`,
       },
+      {
+        source: '/socket.io/:path*',
+        destination: `${BACKEND_URL}/socket.io/:path*`,
+      },
     ];
   },
 };

@@ -23,7 +23,7 @@ export const metadata = buildMetadata({
 
 async function getInitialTournaments() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/tournaments?limit=12`, { next: { revalidate: 30 } });
+    const res = await fetch(`${BACKEND_URL}/api/tournaments?limit=12`, { cache: 'no-store' });
     const data = await res.json();
     if (data.success && Array.isArray(data.data)) {
       return {

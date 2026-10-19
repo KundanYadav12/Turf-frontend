@@ -7,13 +7,27 @@ import {
   setTournamentLiveMatches,
   updateLiveMatchSummary
 } from '../../../features/tournament/tournamentSlice';
+import { logout, isTokenExpired } from '../../../features/auth/authSlice';
 import { useTournamentLive } from '../../../hooks/useTournamentLive';
 import LiveMatchCard from '../../../components/live/LiveMatchCard';
 import TournamentAuctionTab from '../../../components/auction/TournamentAuctionTab';
 import {
   Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft,
-  Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv
+  Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv,
+  ChevronRight
 } from 'lucide-react';
+import TeamRosterDrawer from '../../../components/tournament/TeamRosterDrawer';
+
+const formatTournamentDate = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = String(d.getDate()).padStart(2, '0');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  return `${day} ${month} ${year}`;
+};
 
 export default function TournamentDetailClient({ tournament: initialTournament, tournamentId }) {
   const dispatch = useDispatch();
@@ -30,11 +44,26 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   const [notification, setNotification] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Team Squad Roster drawer state
+  const [selectedRosterTeam, setSelectedRosterTeam] = useState(null);
+  const [showRosterDrawer, setShowRosterDrawer] = useState(false);
+
+  const handleOpenTeamRoster = (tm) => {
+    setSelectedRosterTeam(tm);
+    setShowRosterDrawer(true);
+  };
+
   // Add Team Modal state
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamGroup, setNewTeamGroup] = useState('Group 1');
   const [newTeamRosterText, setNewTeamRosterText] = useState('');
+  const [availableTeams, setAvailableTeams] = useState([]);
+  const [selectedExistingTeamId, setSelectedExistingTeamId] = useState('');
+  const [registrationMode, setRegistrationMode] = useState('existing'); // 'existing' | 'new'
+
+  // Auth state from Redux
+  const { user, isAuthenticated } = useSelector((state) => state.auth || {});
 
   // Redux live matches
   const liveMatchIds = useSelector((state) => state.tournament.liveMatchesByTournament[tournamentId] || []);
@@ -64,7 +93,14 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
       } else if (activeTab === 'teams') {
         const res = await axios.get(`/api/tournaments/${tournamentId}/teams`);
         if (res.data.success) {
-          setTeams(res.data.data.items || []);
+          const teamItems = res.data.data.items || [];
+          setTeams(teamItems);
+          setTournament(prev => ({
+            ...prev,
+            registeredTeamsCount: teamItems.length,
+            registeredTeams: teamItems.length,
+            teamsCount: teamItems.length
+          }));
         }
       } else if (activeTab === 'standings') {
         const res = await axios.get(`/api/tournaments/${tournamentId}/standings`);
@@ -109,8 +145,34 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
   useTournamentLive(activeTab === 'live' ? tournamentId : null, handleLiveMatchUpdate);
 
+  // Helper to obtain fresh valid authorization token, purging if expired
+  const getAuthToken = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    const token = localStorage.getItem('turf_token') || localStorage.getItem('token');
+    if (!token || token === 'null' || token === 'undefined') return null;
+    if (isTokenExpired(token)) {
+      localStorage.removeItem('turf_token');
+      localStorage.removeItem('turf_user');
+      localStorage.removeItem('token');
+      dispatch(logout());
+      return null;
+    }
+    return token;
+  }, [dispatch]);
+
+  // Helper to obtain fresh authorization header
+  const getAuthHeaders = useCallback(() => {
+    const token = getAuthToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, [getAuthToken]);
+
   // Generate Round-Robin Fixtures handler
   const handleGenerateFixtures = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setErrorMsg('Authentication required. Please sign in to generate fixtures.');
+      return;
+    }
     if (!confirm('Generate a round-robin schedule for all groups? Existing unplayed scheduled matches will be refreshed.')) return;
     setActionLoading(true);
     setErrorMsg('');
@@ -118,13 +180,21 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
     try {
       const res = await axios.post(`/api/tournaments/${tournamentId}/generate-fixtures`, {
         mode: 'ROUND_ROBIN'
+      }, {
+        headers: getAuthHeaders()
       });
       if (res.data.success) {
         setNotification(res.data.message || 'Round-robin fixtures generated successfully!');
         loadTabData();
       }
     } catch (err) {
-      setErrorMsg(err?.response?.data?.message || 'Failed to generate fixtures.');
+      if (err?.response?.status === 401) {
+        setErrorMsg('Authentication session expired. Please sign in again.');
+      } else if (err?.response?.status === 403) {
+        setErrorMsg('Unauthorized. Only administrators, venue owners, or tournament organizers can generate fixtures.');
+      } else {
+        setErrorMsg(err?.response?.data?.message || 'Failed to generate fixtures.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -132,6 +202,11 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
   // Auto-Distribute Teams handler
   const handleAutoDistribute = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setErrorMsg('Authentication required. Please sign in to distribute teams.');
+      return;
+    }
     setActionLoading(true);
     setErrorMsg('');
     setNotification('');
@@ -139,13 +214,21 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
       const res = await axios.put(`/api/tournaments/${tournamentId}/groups`, {
         autoDistribute: true,
         groupsCount: tournament.groupsCount || 2
+      }, {
+        headers: getAuthHeaders()
       });
       if (res.data.success) {
         setNotification('Teams automatically distributed across groups!');
         loadTabData();
       }
     } catch (err) {
-      setErrorMsg(err?.response?.data?.message || 'Failed to auto-distribute teams.');
+      if (err?.response?.status === 401) {
+        setErrorMsg('Authentication session expired. Please sign in again.');
+      } else if (err?.response?.status === 403) {
+        setErrorMsg('Unauthorized. Only administrators, venue owners, or tournament organizers can auto-distribute teams.');
+      } else {
+        setErrorMsg(err?.response?.data?.message || 'Failed to auto-distribute teams.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -153,25 +236,64 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
   // Compute Tournament Awards handler
   const handleCalculateAwards = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setErrorMsg('Authentication required. Please sign in to calculate tournament awards.');
+      return;
+    }
     setActionLoading(true);
     setErrorMsg('');
+    setNotification('');
     try {
-      const res = await axios.post(`/api/tournaments/${tournamentId}/awards/calculate`);
+      const res = await axios.post(`/api/tournaments/${tournamentId}/awards/calculate`, {}, {
+        headers: getAuthHeaders()
+      });
       if (res.data.success) {
         setNotification('Tournament awards & leaderboards calculated successfully!');
         setAwardsData(res.data.data || []);
       }
     } catch (err) {
-      setErrorMsg(err?.response?.data?.message || 'Failed to compute awards.');
+      if (err?.response?.status === 401) {
+        setErrorMsg('Authentication session expired. Please sign in again.');
+      } else if (err?.response?.status === 403) {
+        setErrorMsg('Unauthorized. You do not have permission to compute awards.');
+      } else {
+        setErrorMsg(err?.response?.data?.message || 'Failed to compute awards.');
+      }
     } finally {
       setActionLoading(false);
     }
   };
 
+  // Load available teams for modal
+  useEffect(() => {
+    if (showAddTeamModal) {
+      axios.get('/api/teams?limit=50', { headers: getAuthHeaders() }).then((res) => {
+        if (res.data.success && Array.isArray(res.data.data)) {
+          setAvailableTeams(res.data.data);
+          if (res.data.data.length > 0 && !selectedExistingTeamId) {
+            setSelectedExistingTeamId(res.data.data[0].id);
+          }
+        }
+      }).catch((err) => {
+        console.error('Failed to load available teams:', err);
+      });
+    }
+  }, [showAddTeamModal, selectedExistingTeamId, getAuthHeaders]);
+
   // Add Team to Tournament handler
   const handleAddTeam = async (e) => {
     e.preventDefault();
-    if (!newTeamName.trim()) return;
+    const token = getAuthToken();
+    if (!token) {
+      setErrorMsg('Authentication required. Please sign in to register teams.');
+      return;
+    }
+    const isNew = registrationMode === 'new';
+    const chosenExisting = availableTeams.find(t => t.id === selectedExistingTeamId);
+    const teamNameToRegister = isNew ? newTeamName.trim() : (chosenExisting?.name || newTeamName.trim());
+
+    if (!teamNameToRegister && !selectedExistingTeamId) return;
     setActionLoading(true);
     setErrorMsg('');
     try {
@@ -181,20 +303,30 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         .filter(Boolean);
 
       const res = await axios.post(`/api/tournaments/${tournamentId}/teams`, {
-        name: newTeamName.trim(),
+        teamId: isNew ? undefined : selectedExistingTeamId,
+        name: teamNameToRegister,
         groupName: newTeamGroup,
         playerNames: playerNames.length > 0 ? playerNames : undefined
+      }, {
+        headers: getAuthHeaders()
       });
 
       if (res.data.success) {
-        setNotification(`Team "${newTeamName}" registered successfully!`);
+        setNotification(`Team "${teamNameToRegister}" registered successfully!`);
         setNewTeamName('');
+        setSelectedExistingTeamId('');
         setNewTeamRosterText('');
         setShowAddTeamModal(false);
         loadTabData();
       }
     } catch (err) {
-      setErrorMsg(err?.response?.data?.message || 'Failed to add team.');
+      if (err?.response?.status === 401) {
+        setErrorMsg('Authentication session expired. Please sign in again.');
+      } else if (err?.response?.status === 403) {
+        setErrorMsg('Unauthorized. Only administrators, venue owners, or tournament organizers can add teams to tournaments.');
+      } else {
+        setErrorMsg(err?.response?.data?.message || 'Failed to add team.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -217,9 +349,20 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         </div>
       )}
       {errorMsg && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1.25rem', fontSize: '0.88rem', fontWeight: 600 }}>
-          <AlertCircle size={18} />
-          <span>{errorMsg}</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1.25rem', fontSize: '0.88rem', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={18} />
+            <span>{errorMsg}</span>
+          </div>
+          {(errorMsg.toLowerCase().includes('sign in') || errorMsg.toLowerCase().includes('log in') || errorMsg.toLowerCase().includes('auth')) && (
+            <Link
+              href={`/login?redirect=/tournaments/${tournamentId}`}
+              className="btn btn-sm btn-outline"
+              style={{ borderColor: 'rgba(239,68,68,0.4)', color: '#fff', fontSize: '0.8rem', padding: '0.3rem 0.75rem', textDecoration: 'none' }}
+            >
+              Sign In Now &rarr;
+            </Link>
+          )}
         </div>
       )}
 
@@ -260,11 +403,11 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Calendar size={15} color="var(--accent-primary)" />
-                <span>{tournament.startDate ? new Date(tournament.startDate).toLocaleDateString() : 'Active'}</span>
+                <span suppressHydrationWarning>{tournament.startDate ? formatTournamentDate(tournament.startDate) : 'Active'}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Users size={15} color="var(--accent-primary)" />
-                <span>{tournament.registeredTeamsCount || tournament.teamsCount || 10} Registered Teams</span>
+                <span>{(teams && teams.length > 0 ? teams.length : (tournament?.registeredTeamsCount ?? tournament?.registeredTeams ?? tournament?.teamsCount ?? 0))} Registered Teams</span>
               </div>
             </div>
           </div>
@@ -656,19 +799,54 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                           {gTeams.map((t, idx) => (
-                            <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div
+                              key={t.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleOpenTeamRoster(t)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleOpenTeamRoster(t);
+                                }
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '0.75rem 1rem',
+                                background: 'rgba(255,255,255,0.03)',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.05)',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
+                              }}
+                            >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                 <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.9rem' }}>
                                   {idx + 1}
                                 </div>
                                 <div>
                                   <div style={{ fontWeight: 800, color: '#fff' }}>{t.name}</div>
-                                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t.playerCount || 12} Squad Members</div>
+                                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t.playerCount || t.members?.length || 12} Squad Members</div>
                                 </div>
                               </div>
-                              <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>
-                                {t.status || 'APPROVED'}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>
+                                  {t.status || 'APPROVED'}
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary, #10b981)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', fontWeight: 700 }}>
+                                  View Squad <ChevronRight size={13} />
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -684,24 +862,170 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         {/* ── Classic Teams Tab (Cricket/Other) ── */}
         {activeTab === 'teams' && (
           <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem 0', color: 'var(--text-heading)' }}>
+                  Registered Teams ({teams.length})
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Participating squads and rosters registered in {tournament?.name || 'this tournament'}.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={() => setShowAddTeamModal(true)}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <UserPlus size={14} /> Add Team to Tournament
+                </button>
+                <button
+                  onClick={loadTabData}
+                  disabled={loadingTab}
+                  className="btn btn-outline btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <RefreshCw size={14} /> Refresh
+                </button>
+              </div>
+            </div>
+
             {loadingTab ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading participating teams…</div>
             ) : teams.length === 0 ? (
               <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
                 <Shield size={40} color="var(--text-muted)" style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
-                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>No Registered Teams</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Teams will appear here once registered.</p>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: 'var(--text-heading)' }}>No Registered Teams</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Teams will appear here once registered.</p>
+                <button
+                  onClick={() => setShowAddTeamModal(true)}
+                  className="btn btn-primary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <UserPlus size={16} /> Register First Team
+                </button>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
                 {teams.map((tm) => (
-                  <div key={tm.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-primary-glow)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.1rem' }}>
-                      {tm.name ? tm.name.charAt(0).toUpperCase() : 'T'}
+                  <div
+                    key={tm.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleOpenTeamRoster(tm)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleOpenTeamRoster(tm);
+                      }
+                    }}
+                    className="glass-panel"
+                    style={{
+                      padding: '1.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                      position: 'relative',
+                      outline: 'none'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-3px)';
+                      e.currentTarget.style.borderColor = 'var(--accent-primary, #10b981)';
+                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(16, 185, 129, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.1))';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--accent-primary, #10b981)';
+                      e.currentTarget.style.boxShadow = '0 0 0 2px var(--accent-primary-glow, rgba(16, 185, 129, 0.3))';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.1))';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    {/* Team logo or initial */}
+                    {tm.logo ? (
+                      <img
+                        src={tm.logo}
+                        alt={tm.name}
+                        style={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: 12,
+                          objectFit: 'cover',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          flexShrink: 0
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: 12,
+                          background: 'var(--accent-primary-glow, rgba(16, 185, 129, 0.2))',
+                          color: 'var(--accent-primary, #10b981)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 800,
+                          fontSize: '1.15rem',
+                          flexShrink: 0,
+                          border: '1px solid rgba(16, 185, 129, 0.3)'
+                        }}
+                      >
+                        {tm.name ? tm.name.charAt(0).toUpperCase() : 'T'}
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4
+                        style={{
+                          fontSize: '1rem',
+                          fontWeight: 700,
+                          margin: '0 0 0.25rem 0',
+                          color: 'var(--text-heading, #ffffff)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {tm.name}
+                      </h4>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', color: 'var(--text-muted, #94a3b8)', flexWrap: 'wrap' }}>
+                        <span>{tm.members?.length || tm.playersCount || 0} Registered Players</span>
+                        {tm.groupName && (
+                          <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                            {tm.groupName}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.2rem 0', color: 'var(--text-heading)' }}>{tm.name}</h4>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{tm.members?.length || tm.playersCount || 0} Registered Players</span>
+
+                    {/* View Squad chevron */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        color: 'var(--accent-primary, #10b981)',
+                        padding: '0.35rem 0.65rem',
+                        borderRadius: '8px',
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                        flexShrink: 0
+                      }}
+                    >
+                      <span>View Squad</span>
+                      <ChevronRight size={14} />
                     </div>
                   </div>
                 ))}
@@ -832,60 +1156,168 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
       {/* Add Team Modal */}
       {showAddTeamModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}>
-          <div style={{ backgroundColor: 'var(--bg-modal, #0f172a)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '480px' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: '#fff' }}>
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddTeamModal(false); }}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}
+        >
+          <div style={{ backgroundColor: 'var(--bg-modal, #0f172a)', border: '1px solid var(--border-color, rgba(255,255,255,0.15))', borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '480px', color: 'var(--text-main)' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: 'var(--text-heading)' }}>
               Register Team to Tournament
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-              Enter team details, assign to a group, and configure squad players.
+              Select an existing club or create a new team, assign to a group, and configure squad players.
             </p>
 
+            {/* Mode Selector */}
+            <div style={{ display: 'flex', background: 'var(--bg-card, rgba(255,255,255,0.05))', borderRadius: '8px', padding: '0.25rem', marginBottom: '1.25rem', border: '1px solid var(--border-color)' }}>
+              <button
+                type="button"
+                onClick={() => setRegistrationMode('existing')}
+                style={{
+                  flex: 1,
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: registrationMode === 'existing' ? 'var(--accent-primary, #10b981)' : 'transparent',
+                  color: registrationMode === 'existing' ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Choose Existing Team
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegistrationMode('new')}
+                style={{
+                  flex: 1,
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: registrationMode === 'new' ? 'var(--accent-primary, #10b981)' : 'transparent',
+                  color: registrationMode === 'new' ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Create New Team
+              </button>
+            </div>
+
             <form onSubmit={handleAddTeam}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: '#fff' }}>
-                  Team Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newTeamName}
-                  onChange={(e) => setNewTeamName(e.target.value)}
-                  placeholder="e.g. Smashers A1"
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.9rem' }}
-                />
-              </div>
+              {registrationMode === 'existing' ? (
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading)' }}>
+                    Select Team *
+                  </label>
+                  {availableTeams.length === 0 ? (
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>
+                      No existing teams found. Switch to &quot;Create New Team&quot;.
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedExistingTeamId}
+                      onChange={(e) => setSelectedExistingTeamId(e.target.value)}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '0.65rem',
+                        borderRadius: '8px',
+                        background: 'var(--bg-modal, #0f172a)',
+                        border: '1px solid var(--input-border, rgba(255,255,255,0.15))',
+                        color: 'var(--text-main, #ffffff)',
+                        fontSize: '0.9rem',
+                        colorScheme: 'light dark'
+                      }}
+                    >
+                      <option value="" disabled style={{ background: 'var(--bg-modal, #0f172a)', color: 'var(--text-main, #ffffff)' }}>-- Select a team --</option>
+                      {availableTeams
+                        .filter(at => !teams.some(t => t.id === at.id || t.name === at.name))
+                        .map(at => (
+                          <option key={at.id} value={at.id} style={{ background: 'var(--bg-modal, #0f172a)', color: 'var(--text-main, #ffffff)' }}>
+                            {at.name} {at.division ? `(${at.division})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </div>
+              ) : (
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading)' }}>
+                    Team Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    placeholder="e.g. Kandivali Super Strikers"
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem',
+                      borderRadius: '8px',
+                      background: 'var(--input-bg, rgba(255,255,255,0.06))',
+                      border: '1px solid var(--input-border, rgba(255,255,255,0.15))',
+                      color: 'var(--text-main, #ffffff)',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                </div>
+              )}
 
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: '#fff' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading)' }}>
                   Assign to Group *
                 </label>
                 <select
                   value={newTeamGroup}
                   onChange={(e) => setNewTeamGroup(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.9rem' }}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem',
+                    borderRadius: '8px',
+                    background: 'var(--bg-modal, #0f172a)',
+                    border: '1px solid var(--input-border, rgba(255,255,255,0.15))',
+                    color: 'var(--text-main, #ffffff)',
+                    fontSize: '0.9rem',
+                    colorScheme: 'light dark'
+                  }}
                 >
-                  <option value="Group 1">Group 1</option>
-                  <option value="Group 2">Group 2</option>
-                  <option value="Group 3">Group 3</option>
-                  <option value="Group 4">Group 4</option>
+                  <option value="Group 1" style={{ background: 'var(--bg-modal, #0f172a)', color: 'var(--text-main, #ffffff)' }}>Group 1</option>
+                  <option value="Group 2" style={{ background: 'var(--bg-modal, #0f172a)', color: 'var(--text-main, #ffffff)' }}>Group 2</option>
+                  <option value="Group 3" style={{ background: 'var(--bg-modal, #0f172a)', color: 'var(--text-main, #ffffff)' }}>Group 3</option>
+                  <option value="Group 4" style={{ background: 'var(--bg-modal, #0f172a)', color: 'var(--text-main, #ffffff)' }}>Group 4</option>
                 </select>
               </div>
 
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-muted)' }}>
-                  Squad Players (One name per line, optional)
-                </label>
-                <textarea
-                  rows="4"
-                  value={newTeamRosterText}
-                  onChange={(e) => setNewTeamRosterText(e.target.value)}
-                  placeholder="Player 1&#10;Player 2&#10;Player 3..."
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.85rem' }}
-                />
-              </div>
+              {registrationMode === 'new' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-muted)' }}>
+                    Squad Players (One name per line, optional)
+                  </label>
+                  <textarea
+                    rows="3"
+                    value={newTeamRosterText}
+                    onChange={(e) => setNewTeamRosterText(e.target.value)}
+                    placeholder="Player 1&#10;Player 2&#10;Player 3..."
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem',
+                      borderRadius: '8px',
+                      background: 'var(--input-bg, rgba(255,255,255,0.06))',
+                      border: '1px solid var(--input-border, rgba(255,255,255,0.15))',
+                      color: 'var(--text-main, #ffffff)',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                </div>
+              )}
 
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
                 <button
                   type="button"
                   onClick={() => setShowAddTeamModal(false)}
@@ -896,17 +1328,29 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
+                  disabled={actionLoading || (registrationMode === 'existing' && !selectedExistingTeamId)}
                   className="btn btn-primary"
                   style={{ flex: 1 }}
                 >
-                  Register Team
+                  {actionLoading ? 'Registering…' : 'Register Team'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Team Squad Roster Drawer */}
+      <TeamRosterDrawer
+        isOpen={showRosterDrawer}
+        onClose={() => {
+          setShowRosterDrawer(false);
+          setSelectedRosterTeam(null);
+        }}
+        team={selectedRosterTeam}
+        tournament={tournament}
+        onRosterUpdated={loadTabData}
+      />
     </div>
   );
 }

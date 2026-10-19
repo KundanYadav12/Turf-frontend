@@ -9,7 +9,9 @@
 /* ===========================
    DARK MODE (default / :root)
    =========================== */
-:root {
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
   --bg-dark:          #090d16;
   --bg-page:          #090d16;
   --bg-card:          rgba(18, 25, 38, 0.75);
@@ -90,6 +92,7 @@
    [data-theme="light"]
    ============================ */
 [data-theme="light"] {
+  color-scheme: light;
   --bg-dark:          #f0f4f8;
   --bg-page:          #f0f4f8;
   --bg-card:          rgba(255, 255, 255, 0.85);
@@ -454,6 +457,21 @@ input, select, textarea {
 [data-theme="light"] .form-input:focus {
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px var(--accent-primary-glow);
+}
+
+select, input, textarea {
+  color-scheme: inherit;
+}
+
+select option {
+  background-color: var(--bg-card-solid, #101929);
+  color: var(--text-main, #f8fafc);
+  padding: 8px 12px;
+}
+
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: #0f172a;
 }
 
 /* ============================

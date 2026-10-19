@@ -101,9 +101,10 @@ export function buildCanonicalUrl(path = '') {
  * Generate Next.js 14 App Router Metadata object with robust fallbacks.
  */
 export function buildMetadata({
-  title,
-  description,
+  title = SITE_NAME,
+  description = DEFAULT_DESCRIPTION,
   path = '',
+  pathname = '',
   canonical,
   image = DEFAULT_OG_IMAGE,
   imageAlt,
@@ -113,9 +114,16 @@ export function buildMetadata({
   publishedTime,
   modifiedTime
 }) {
-  const canonicalUrl = canonical || buildCanonicalUrl(path);
-  const fullTitle = title.includes(SITE_NAME) ? title : `${title} | ${SITE_NAME}`;
-  const effectiveKeywords = Array.from(new Set([...keywords, ...SEO_KEYWORDS.general]));
+  const targetPath = path || pathname || '';
+  const canonicalUrl = canonical || buildCanonicalUrl(targetPath);
+  const fullTitle = title ? (title.includes(SITE_NAME) ? title : `${title} | ${SITE_NAME}`) : SITE_NAME;
+  const effectiveKeywords = Array.from(new Set([...(keywords || []), ...SEO_KEYWORDS.general]));
+
+  // Safely resolve image: handles null, undefined, empty string, relative or absolute URLs
+  const rawImage = (typeof image === 'string' && image.trim()) ? image.trim() : DEFAULT_OG_IMAGE;
+  const imageUrl = (rawImage.startsWith('http://') || rawImage.startsWith('https://'))
+    ? rawImage
+    : `${SITE_URL}${rawImage.startsWith('/') ? rawImage : `/${rawImage}`}`;
 
   const robots = noIndex
     ? {
@@ -143,7 +151,7 @@ export function buildMetadata({
     title: {
       absolute: fullTitle
     },
-    description,
+    description: description || DEFAULT_DESCRIPTION,
     keywords: effectiveKeywords,
     alternates: {
       canonical: canonicalUrl,
@@ -151,7 +159,7 @@ export function buildMetadata({
     robots,
     openGraph: {
       title: fullTitle,
-      description,
+      description: description || DEFAULT_DESCRIPTION,
       url: canonicalUrl,
       siteName: SITE_NAME,
       locale: 'en_IN',
@@ -160,18 +168,18 @@ export function buildMetadata({
       ...(modifiedTime ? { modifiedTime } : {}),
       images: [
         {
-          url: image.startsWith('http') ? image : `${SITE_URL}${image}`,
+          url: imageUrl,
           width: 1200,
           height: 630,
-          alt: imageAlt || title
+          alt: imageAlt || title || SITE_NAME
         }
       ]
     },
     twitter: {
       card: 'summary_large_image',
       title: fullTitle,
-      description,
-      images: [image.startsWith('http') ? image : `${SITE_URL}${image}`],
+      description: description || DEFAULT_DESCRIPTION,
+      images: [imageUrl],
     }
   };
 }
