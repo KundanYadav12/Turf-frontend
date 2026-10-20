@@ -40,7 +40,7 @@ const CricketScorerPage = () => {
   const [scorerState, setScorerState] = useState(null);
   const [celebration, setCelebration] = useState(null); // { type: 'FOUR' | 'SIX', id: number }
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isConnected, setIsConnected] = useState(socket.connected);
+  const [isConnected, setIsConnected] = useState(false);
 
   // Tabs for bottom panel: 'keypad' | 'commentary' | 'scorecard' | 'fow'
   const [activeTab, setActiveTab] = useState('keypad');

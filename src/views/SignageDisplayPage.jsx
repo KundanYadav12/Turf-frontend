@@ -58,8 +58,8 @@ const SignageDisplayPage = () => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState('');
-  const [isConnected, setIsConnected] = useState(socket.connected);
-  const [hasConnectedOnce, setHasConnectedOnce] = useState(socket.connected);
+  const [isConnected, setIsConnected] = useState(false);
+  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Advertisements State
@@ -439,6 +439,7 @@ const SignageDisplayPage = () => {
 
             {/* LIVE Pill */}
             <div
+              suppressHydrationWarning
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -456,6 +457,7 @@ const SignageDisplayPage = () => {
               }}
             >
               <span
+                suppressHydrationWarning
                 style={{
                   width: 7,
                   height: 7,
@@ -470,6 +472,7 @@ const SignageDisplayPage = () => {
 
             {/* Stadium Digital Clock */}
             <div
+              suppressHydrationWarning
               style={{
                 fontSize: '0.88rem',
                 fontWeight: 800,
@@ -725,6 +728,7 @@ const SignageDisplayPage = () => {
               }}
             >
               <div
+                suppressHydrationWarning
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -742,6 +746,7 @@ const SignageDisplayPage = () => {
                 }}
               >
                 <span
+                  suppressHydrationWarning
                   style={{
                     width: 6,
                     height: 6,
@@ -755,6 +760,7 @@ const SignageDisplayPage = () => {
               </div>
 
               <div
+                suppressHydrationWarning
                 style={{
                   fontSize: 'clamp(0.75rem, 0.95vw, 0.88rem)',
                   fontWeight: 800,
