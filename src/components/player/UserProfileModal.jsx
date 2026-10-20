@@ -240,31 +240,31 @@ export default function UserProfileModal({ isOpen, onClose }) {
       padding: '1rem'
     }}>
       <div style={{
-        backgroundColor: '#0f172a',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
+        backgroundColor: 'var(--bg-modal, var(--bg-card))',
+        border: '1px solid var(--border-color)',
         borderRadius: '20px',
         padding: '2rem',
         width: '100%',
         maxWidth: '520px',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
         position: 'relative',
         maxHeight: '90vh',
         overflowY: 'auto'
       }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
               <User size={20} />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#fff' }}>User Profile &amp; Photo</h2>
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Manage identity, unique username and WebP profile photo</p>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-heading)' }}>User Profile &amp; Photo</h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Manage identity, unique username and WebP profile photo</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}
           >
             <X size={20} />
           </button>
@@ -325,7 +325,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
                 height: 34,
                 borderRadius: '50%',
                 background: '#10b981',
-                border: '2px solid #0f172a',
+                border: '2px solid var(--bg-modal, var(--bg-card))',
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',
@@ -382,7 +382,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
               </button>
             )}
           </div>
-          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             Auto-compressed to WebP (512x512 avatar + 128x128 thumbnail, EXIF stripped)
           </span>
         </div>
@@ -391,7 +391,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
         <form onSubmit={handleSaveProfile}>
           {/* Full Name */}
           <div style={{ marginBottom: '1.25rem' }}>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.4rem' }}>
+            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-heading)', marginBottom: '0.4rem' }}>
               Full Display Name *
             </label>
             <input
@@ -404,9 +404,9 @@ export default function UserProfileModal({ isOpen, onClose }) {
                 width: '100%',
                 padding: '0.65rem 0.85rem',
                 borderRadius: '8px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                color: '#fff',
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-main)',
                 fontSize: '0.9rem'
               }}
             />
@@ -415,7 +415,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
           {/* Unique Username */}
           <div style={{ marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-heading)' }}>
                 Unique Handle (@username) *
               </label>
               {isCheckingUsername && (
@@ -426,7 +426,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
             </div>
 
             <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>
+              <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
                 <AtSign size={16} />
               </div>
               <input
@@ -439,13 +439,13 @@ export default function UserProfileModal({ isOpen, onClose }) {
                   width: '100%',
                   padding: '0.65rem 0.85rem 0.65rem 2.2rem',
                   borderRadius: '8px',
-                  background: 'rgba(255, 255, 255, 0.05)',
+                  background: 'var(--bg-input)',
                   border: usernameStatus?.available
                     ? '1px solid #10b981'
                     : usernameStatus?.available === false
                     ? '1px solid #ef4444'
-                    : '1px solid rgba(255, 255, 255, 0.15)',
-                  color: '#fff',
+                    : '1px solid var(--border-color)',
+                  color: 'var(--text-main)',
                   fontSize: '0.9rem',
                   fontFamily: 'monospace'
                 }}
@@ -473,8 +473,8 @@ export default function UserProfileModal({ isOpen, onClose }) {
 
                     {/* Suggestions */}
                     {usernameStatus.suggestions && usernameStatus.suggestions.length > 0 && (
-                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.6rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '0.35rem' }}>
+                      <div style={{ background: 'var(--bg-elevated)', padding: '0.6rem', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
                           Available alternatives:
                         </span>
                         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -507,8 +507,8 @@ export default function UserProfileModal({ isOpen, onClose }) {
           </div>
 
           {/* Role badge */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 0.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', marginBottom: '1.5rem' }}>
-            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Account Type</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 0.85rem', background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Account Type</span>
             <span className="badge badge-info" style={{ textTransform: 'capitalize' }}>
               {user?.role?.replace('_', ' ') || 'Player'}
             </span>
@@ -614,7 +614,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
               )}
 
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-heading)', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                   Password (to verify your identity):
                 </label>
                 <input
@@ -623,12 +623,12 @@ export default function UserProfileModal({ isOpen, onClose }) {
                   onChange={(e) => setDeletePassword(e.target.value)}
                   placeholder="Enter your password"
                   className="input"
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', background: 'var(--bg-input)', color: 'var(--text-main)', borderColor: 'var(--border-color)' }}
                 />
               </div>
 
               <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-heading)', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                   Optional Reason:
                 </label>
                 <input
@@ -637,7 +637,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
                   onChange={(e) => setDeleteReason(e.target.value)}
                   placeholder="Why are you deleting your account?"
                   className="input"
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', background: 'var(--bg-input)', color: 'var(--text-main)', borderColor: 'var(--border-color)' }}
                 />
               </div>
 

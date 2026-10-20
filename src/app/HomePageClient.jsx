@@ -18,7 +18,7 @@ export default function HomePageClient({ initialVenues = [], initialSports = [] 
     router.push(`/search?city=${selectedCity || 'Mumbai'}&sport=${selectedSport || ''}&q=${encodeURIComponent(searchQuery)}`);
   };
 
-  const optStyle = { background: 'var(--bg-modal)' };
+  const optStyle = { background: 'var(--bg-modal)', color: 'var(--text-main)' };
 
   const sportsList = [
     { id: 1, name: 'Cricket', icon: '🏏', slug: 'cricket', active: true, count: '12+ Turfs' },

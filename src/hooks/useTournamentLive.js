@@ -29,11 +29,13 @@ export const useTournamentLive = (tournamentId, onMatchUpdated) => {
     };
 
     socket.on('tournament:matchUpdated', handleUpdate);
+    socket.on('tournament:matchDisplayUpdated', handleUpdate);
 
     // 3. MANDATORY CLEANUP: Leave room on unmount or tournament change
     return () => {
       socket.emit('leave:tournament', { tournamentId });
       socket.off('tournament:matchUpdated', handleUpdate);
+      socket.off('tournament:matchDisplayUpdated', handleUpdate);
     };
   }, [tournamentId]);
 };

@@ -83,7 +83,7 @@ export default async function MatchDetailRoute({ params }) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
       />
       <Suspense fallback={<div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading live scorecard…</div>}>
-        <MatchDetailPageClient />
+        <MatchDetailPageClient matchId={params?.id} initialMatch={match} />
       </Suspense>
     </>
   );

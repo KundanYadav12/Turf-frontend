@@ -27,8 +27,10 @@ import {
   LogIn
 } from 'lucide-react';
 
-const CricketScorerPage = () => {
-  const { id } = useParams();
+const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
+  const routeParams = useParams();
+  const matchIdFromUrl = typeof window !== 'undefined' ? window.location.pathname.match(/\/matches\/([^/]+)/)?.[1] : null;
+  const id = propsMatchId || routeParams?.id || matchIdFromUrl;
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
@@ -106,10 +108,10 @@ const CricketScorerPage = () => {
       }
     } catch (err) {
       console.error('Failed to load scorer state:', err);
-      if (err.response?.status === 401) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
         setIsUnauthorized(true);
       }
-      setError(err.response?.data?.message || 'Authentication required to operate scorer.');
+      setError(err.response?.data?.message || 'Authentication or scorer authorization required to operate scorer.');
     } finally {
       setLoading(false);
     }
@@ -121,6 +123,11 @@ const CricketScorerPage = () => {
     try {
       const res = await axios.post('/api/auth/login', { email, password });
       if (res.data?.success) {
+        const token = res.data.data?.token;
+        if (token) {
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        }
         dispatch(setCredentials(res.data.data));
         setError(null);
         setIsUnauthorized(false);

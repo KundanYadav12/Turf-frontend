@@ -207,10 +207,10 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
 
   const inputStyle = {
     width: '100%',
-    background: 'var(--bg-input, #0f172a)',
-    border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
+    background: 'var(--bg-input)',
+    border: '1px solid var(--border-color)',
     borderRadius: '8px',
-    color: 'var(--text-main, #f8fafc)',
+    color: 'var(--text-main)',
     padding: '0.65rem 0.85rem',
     fontSize: '0.9rem',
     outline: 'none',
@@ -230,8 +230,8 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
   };
 
   const optionStyle = {
-    background: 'var(--bg-modal, #0f172a)',
-    color: 'var(--text-main, #f8fafc)',
+    background: 'var(--bg-modal, var(--bg-card))',
+    color: 'var(--text-main)',
     padding: '8px 12px'
   };
 
@@ -239,7 +239,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     display: 'block',
     fontSize: '0.82rem',
     fontWeight: 700,
-    color: 'var(--text-secondary, #cbd5e1)',
+    color: 'var(--text-secondary)',
     marginBottom: '0.4rem'
   };
 
@@ -247,7 +247,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     fontSize: '0.95rem',
     fontWeight: 700,
     margin: '0 0 0.85rem 0',
-    color: 'var(--text-heading, #ffffff)'
+    color: 'var(--text-heading)'
   };
 
   return (
@@ -268,15 +268,15 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
       }}
     >
       <div style={{
-        backgroundColor: 'var(--bg-modal, #0f172a)',
-        border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
+        backgroundColor: 'var(--bg-modal, var(--bg-card))',
+        border: '1px solid var(--border-color)',
         borderRadius: '16px',
         width: '100%',
         maxWidth: '780px',
         maxHeight: '92vh',
         overflowY: 'auto',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-        color: 'var(--text-main, #f8fafc)',
+        boxShadow: 'var(--shadow-elevated)',
+        color: 'var(--text-main)',
         padding: '1.75rem'
       }}>
         {/* Header */}

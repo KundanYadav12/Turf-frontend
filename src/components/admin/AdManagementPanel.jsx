@@ -34,7 +34,9 @@ import {
   Move,
   Monitor,
   Smartphone,
-  Tablet
+  Tablet,
+  Trophy,
+  Search
 } from 'lucide-react';
 
 const selectStyle = {
@@ -83,7 +85,10 @@ const PRESET_SIZES = [
 const AdManagementPanel = () => {
   const [ads, setAds] = useState([]);
   const [venues, setVenues] = useState([]);
+  const [tournaments, setTournaments] = useState([]);
   const [venueFilter, setVenueFilter] = useState('ALL');
+  const [tournamentFilter, setTournamentFilter] = useState('ALL');
+  const [tournamentSearchQuery, setTournamentSearchQuery] = useState('');
   const [playbackState, setPlaybackState] = useState({
     adsEnabled: true,
     topAdMode: 'STATIC',
@@ -122,6 +127,7 @@ const AdManagementPanel = () => {
     slideInterval: 6,
     pauseOnHover: true,
     venueIds: [],
+    tournamentIds: [],
     sortOrder: 0,
     startDate: '',
     endDate: '',
@@ -131,6 +137,7 @@ const AdManagementPanel = () => {
     imageFile: null
   });
   const [formImagePreview, setFormImagePreview] = useState('');
+  const [zoneOrientationTab, setZoneOrientationTab] = useState('LANDSCAPE'); // 'LANDSCAPE' | 'PORTRAIT'
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -142,6 +149,7 @@ const AdManagementPanel = () => {
   useEffect(() => {
     fetchAdsAndState();
     fetchVenuesList();
+    fetchTournamentsList();
 
     const handleAdEvent = (data) => {
       if (data?.playbackState) {
@@ -182,6 +190,17 @@ const AdManagementPanel = () => {
     }
   };
 
+  const fetchTournamentsList = async () => {
+    try {
+      const res = await API.get('/tournaments');
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setTournaments(res.data.data);
+      }
+    } catch (err) {
+      console.warn('Could not load tournaments list:', err.message);
+    }
+  };
+
   const fetchAdsAndState = async () => {
     try {
       setLoading(true);
@@ -206,6 +225,14 @@ const AdManagementPanel = () => {
     return map;
   }, [venues]);
 
+  const tournamentMap = useMemo(() => {
+    const map = {};
+    tournaments.forEach(t => {
+      map[t.id] = t.name;
+    });
+    return map;
+  }, [tournaments]);
+
   // Active Zone Sizes (resolved per venue with global fallback)
   const currentZoneSizes = useMemo(() => {
     const defaults = { topHeight: 120, leftWidth: 220, rightWidth: 220, bottomHeight: 70 };
@@ -216,6 +243,95 @@ const AdManagementPanel = () => {
     }
     return globalZones;
   }, [playbackState, venueFilter]);
+
+  // Active Portrait Zone Sizes (resolved per venue with global fallback)
+  const currentPortraitZoneSizes = useMemo(() => {
+    const defaults = { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' };
+    const globalZones = { ...defaults, ...(playbackState?.portraitZoneSettings || {}) };
+    if (venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL') {
+      const vSettings = playbackState?.venuePortraitZoneSettings?.[String(venueFilter)];
+      return { ...globalZones, ...(vSettings || {}) };
+    }
+    return globalZones;
+  }, [playbackState, venueFilter]);
+
+  const handlePortraitZoneSizeChange = async (zoneKey, value) => {
+    const numVal = zoneKey === 'sidebarsMode' ? value : parseInt(value, 10);
+    if (zoneKey !== 'sidebarsMode' && isNaN(numVal)) return;
+
+    setPlaybackState(prev => {
+      const isVenueSpecific = venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL';
+      if (isVenueSpecific) {
+        const vKey = String(venueFilter);
+        return {
+          ...prev,
+          venuePortraitZoneSettings: {
+            ...prev.venuePortraitZoneSettings,
+            [vKey]: {
+              ...(prev.venuePortraitZoneSettings?.[vKey] || prev.portraitZoneSettings || { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' }),
+              [zoneKey]: numVal
+            }
+          }
+        };
+      }
+      return {
+        ...prev,
+        portraitZoneSettings: {
+          ...(prev.portraitZoneSettings || { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' }),
+          [zoneKey]: numVal
+        }
+      };
+    });
+
+    try {
+      await controlAdsAdminApi('UPDATE_ZONE_SIZES', {
+        venueId: venueFilter,
+        isPortrait: true,
+        sizes: { [zoneKey]: numVal }
+      });
+    } catch (err) {
+      console.warn('Portrait zone size update error:', err);
+    }
+  };
+
+  const handleResetPortraitZone = async (zoneKey) => {
+    const defaults = { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' };
+    const defaultVal = defaults[zoneKey] || 160;
+
+    setPlaybackState(prev => {
+      const isVenueSpecific = venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL';
+      if (isVenueSpecific) {
+        const vKey = String(venueFilter);
+        const copy = { ...(prev.venuePortraitZoneSettings?.[vKey] || {}) };
+        delete copy[zoneKey];
+        return {
+          ...prev,
+          venuePortraitZoneSettings: {
+            ...prev.venuePortraitZoneSettings,
+            [vKey]: copy
+          }
+        };
+      }
+      return {
+        ...prev,
+        portraitZoneSettings: {
+          ...(prev.portraitZoneSettings || {}),
+          [zoneKey]: defaultVal
+        }
+      };
+    });
+
+    try {
+      await controlAdsAdminApi('RESET_ZONE_SIZE', {
+        venueId: venueFilter,
+        zone: zoneKey,
+        isPortrait: true
+      });
+      showToast(`Reset portrait ${zoneKey} to default`);
+    } catch (err) {
+      console.warn('Portrait zone reset error:', err);
+    }
+  };
 
   const handleZoneSizeChange = async (zoneKey, value) => {
     const numVal = parseInt(value, 10);
@@ -343,6 +459,7 @@ const AdManagementPanel = () => {
   const openCreateModal = () => {
     setEditingAd(null);
     setModalError('');
+    setTournamentSearchQuery('');
     setFormData({
       title: '',
       position: 'TOP',
@@ -360,6 +477,7 @@ const AdManagementPanel = () => {
       slideInterval: 6,
       pauseOnHover: true,
       venueIds: [],
+      tournamentIds: [],
       sortOrder: 0,
       startDate: '',
       endDate: '',
@@ -375,6 +493,7 @@ const AdManagementPanel = () => {
   const openEditModal = (ad) => {
     setEditingAd(ad);
     setModalError('');
+    setTournamentSearchQuery('');
     const parsedWidth = parseDimension(ad.width, 100, '%');
     const parsedHeight = parseDimension(ad.height, 76, 'px');
 
@@ -395,6 +514,7 @@ const AdManagementPanel = () => {
       slideInterval: ad.slideInterval || 6,
       pauseOnHover: ad.pauseOnHover !== false,
       venueIds: Array.isArray(ad.venueIds) ? ad.venueIds : [],
+      tournamentIds: Array.isArray(ad.tournamentIds) ? ad.tournamentIds : (ad.tournamentId ? [ad.tournamentId] : []),
       sortOrder: ad.sortOrder ?? 0,
       startDate: ad.startDate ? String(ad.startDate).split('T')[0] : '',
       endDate: ad.endDate ? String(ad.endDate).split('T')[0] : '',
@@ -472,6 +592,17 @@ const AdManagementPanel = () => {
     });
   };
 
+  const handleTournamentToggle = (tournId) => {
+    setFormData(prev => {
+      const exists = prev.tournamentIds?.includes(tournId);
+      if (exists) {
+        return { ...prev, tournamentIds: prev.tournamentIds.filter(id => id !== tournId) };
+      } else {
+        return { ...prev, tournamentIds: [...(prev.tournamentIds || []), tournId] };
+      }
+    });
+  };
+
   const handleSubmitModal = async (e) => {
     e.preventDefault();
     setModalError('');
@@ -510,6 +641,7 @@ const AdManagementPanel = () => {
       payload.append('targetPage', formData.targetPage);
       payload.append('deviceTarget', formData.deviceTarget);
       payload.append('venueIds', JSON.stringify(formData.venueIds || []));
+      payload.append('tournamentIds', JSON.stringify(formData.tournamentIds || []));
       if (formData.startDate) payload.append('startDate', formData.startDate);
       if (formData.endDate) payload.append('endDate', formData.endDate);
 
@@ -544,19 +676,29 @@ const AdManagementPanel = () => {
     }
   };
 
-  // Filter ads by selected venue
+  // Filter ads by selected venue and tournament
   const filterAds = (list) => {
-    if (venueFilter === 'ALL') return list;
+    let res = list;
     if (venueFilter === 'GLOBAL') {
-      return list.filter(a => !a.venueIds || a.venueIds.length === 0);
+      res = res.filter(a => !a.venueIds || a.venueIds.length === 0);
+    } else if (venueFilter !== 'ALL') {
+      const targetId = Number(venueFilter);
+      res = res.filter(a => !a.venueIds || a.venueIds.length === 0 || a.venueIds.includes(targetId));
     }
-    const targetId = Number(venueFilter);
-    return list.filter(a => !a.venueIds || a.venueIds.length === 0 || a.venueIds.includes(targetId));
+
+    if (tournamentFilter === 'GLOBAL') {
+      res = res.filter(a => !a.tournamentIds || a.tournamentIds.length === 0);
+    } else if (tournamentFilter !== 'ALL') {
+      const targetTournId = Number(tournamentFilter);
+      res = res.filter(a => !a.tournamentIds || a.tournamentIds.length === 0 || a.tournamentIds.includes(targetTournId));
+    }
+    return res;
   };
 
   const topAds = filterAds(ads.filter(a => a.position === 'TOP'));
   const sidebarAds = filterAds(ads.filter(a => a.position === 'LEFT' || a.position === 'RIGHT' || a.position === 'BOTH_SIDEBARS'));
   const bottomAds = filterAds(ads.filter(a => a.position === 'BOTTOM'));
+  const courtAds = filterAds(ads.filter(a => a.position === 'COURT'));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -623,6 +765,26 @@ const AdManagementPanel = () => {
                 {venues.map(v => (
                   <option key={v.id} value={v.id} style={optionStyle}>
                     {v.name} ({v.city})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tournament Filter Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Trophy size={16} color="#60a5fa" />
+              <select
+                id="tournament-filter-select"
+                value={tournamentFilter}
+                onChange={(e) => setTournamentFilter(e.target.value)}
+                style={selectStyle}
+                title="Filter ads by tournament"
+              >
+                <option value="ALL" style={optionStyle}>All Tournaments &amp; Global</option>
+                <option value="GLOBAL" style={optionStyle}>Global Ads Only</option>
+                {tournaments.map(t => (
+                  <option key={t.id} value={t.id} style={optionStyle}>
+                    {t.name}
                   </option>
                 ))}
               </select>
@@ -801,15 +963,65 @@ const AdManagementPanel = () => {
               </span>
               <button
                 type="button"
-                onClick={() => handleResetZone('ALL')}
+                onClick={() => {
+                  if (zoneOrientationTab === 'PORTRAIT') {
+                    handleResetPortraitZone('ALL');
+                  } else {
+                    handleResetZone('ALL');
+                  }
+                }}
                 className="btn btn-sm btn-secondary"
                 style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                 title="Reset all zones to default sizes"
               >
-                Reset All Zones
+                Reset All Zones ({zoneOrientationTab === 'PORTRAIT' ? 'Portrait' : 'Landscape'})
               </button>
             </div>
           </div>
+
+          {/* Orientation Mode Switcher: Landscape (16:9) vs Portrait (9:16) */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={() => setZoneOrientationTab('LANDSCAPE')}
+              style={{
+                background: zoneOrientationTab === 'LANDSCAPE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: zoneOrientationTab === 'LANDSCAPE' ? '#10b981' : '#94a3b8',
+                border: `1px solid ${zoneOrientationTab === 'LANDSCAPE' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              🖥️ Landscape (16:9 TV &amp; Signage)
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoneOrientationTab('PORTRAIT')}
+              style={{
+                background: zoneOrientationTab === 'PORTRAIT' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: zoneOrientationTab === 'PORTRAIT' ? '#10b981' : '#94a3b8',
+                border: `1px solid ${zoneOrientationTab === 'PORTRAIT' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              📱 Portrait (9:16 Vertical Displays)
+            </button>
+          </div>
+
+          {zoneOrientationTab === 'LANDSCAPE' ? (
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', alignItems: 'center' }}>
             {/* Left Column: Sliders & Numeric Inputs */}
@@ -1113,6 +1325,252 @@ const AdManagementPanel = () => {
               </div>
             </div>
           </div>
+          ) : (
+          /* ── PORTRAIT (9:16) AD ZONES & LIVE MINI-PREVIEW ── */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', alignItems: 'center' }}>
+            {/* Left Column: Portrait Sliders */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Portrait Top Banner Height */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Layers size={14} color="#ef4444" /> Portrait Top Banner Height
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min={60}
+                      max={400}
+                      value={currentPortraitZoneSizes.topHeight}
+                      onChange={(e) => handlePortraitZoneSizeChange('topHeight', e.target.value)}
+                      style={{ ...inputStyle, width: '70px', padding: '4px 8px', fontSize: '0.82rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>px</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetPortraitZone('topHeight')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (160)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={60}
+                  max={400}
+                  step={4}
+                  value={currentPortraitZoneSizes.topHeight}
+                  onChange={(e) => handlePortraitZoneSizeChange('topHeight', e.target.value)}
+                  style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-primary, #10b981)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                  <span>60px (Slim)</span>
+                  <span>160px (Default)</span>
+                  <span>400px (Prominent)</span>
+                </div>
+              </div>
+
+              {/* Portrait Bottom Ticker Height */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Move size={14} color="#f59e0b" /> Portrait Bottom Ticker Height
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min={40}
+                      max={200}
+                      value={currentPortraitZoneSizes.bottomHeight}
+                      onChange={(e) => handlePortraitZoneSizeChange('bottomHeight', e.target.value)}
+                      style={{ ...inputStyle, width: '70px', padding: '4px 8px', fontSize: '0.82rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>px</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetPortraitZone('bottomHeight')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (80)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={40}
+                  max={200}
+                  step={2}
+                  value={currentPortraitZoneSizes.bottomHeight}
+                  onChange={(e) => handlePortraitZoneSizeChange('bottomHeight', e.target.value)}
+                  style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-primary, #10b981)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                  <span>40px</span>
+                  <span>80px (Default)</span>
+                  <span>200px</span>
+                </div>
+              </div>
+
+              {/* Sidebar Ads Behavior in Portrait */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>
+                    Sidebars Placement in Portrait
+                  </label>
+                  <select
+                    value={currentPortraitZoneSizes.sidebarsMode || 'STRIP'}
+                    onChange={(e) => handlePortraitZoneSizeChange('sidebarsMode', e.target.value)}
+                    style={{ ...selectStyle, padding: '4px 10px', fontSize: '0.82rem' }}
+                  >
+                    <option value="STRIP" style={optionStyle}>Horizontal Sponsor Strips</option>
+                    <option value="HIDDEN" style={optionStyle}>Hide Sidebars in Portrait</option>
+                  </select>
+                </div>
+                {currentPortraitZoneSizes.sidebarsMode === 'STRIP' && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: '#cbd5e1' }}>Sponsor Strip Height</span>
+                      <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700 }}>{currentPortraitZoneSizes.sidebarStripHeight}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={200}
+                      step={2}
+                      value={currentPortraitZoneSizes.sidebarStripHeight}
+                      onChange={(e) => handlePortraitZoneSizeChange('sidebarStripHeight', e.target.value)}
+                      style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-primary, #10b981)' }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Live Mini-Preview of 9:16 Portrait Display */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', alignSelf: 'flex-start' }}>
+                Live Mini-Preview (9:16 Portrait Screen)
+              </div>
+              <div style={{
+                width: '180px',
+                height: '320px',
+                background: '#070a12',
+                borderRadius: 12,
+                border: '2px solid rgba(255,255,255,0.15)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                position: 'relative'
+              }}>
+                {/* Top Banner Zone */}
+                {playbackState.adsEnabled && (
+                  <div style={{
+                    height: `${Math.max(12, Math.min(25, (currentPortraitZoneSizes.topHeight / 400) * 25))}%`,
+                    background: 'rgba(239, 68, 68, 0.25)',
+                    borderBottom: '1px solid rgba(239, 68, 68, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ef4444',
+                    fontSize: '0.62rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.5px',
+                    transition: 'height 0.2s ease',
+                    flexShrink: 0
+                  }}>
+                    TOP ({currentPortraitZoneSizes.topHeight}px)
+                  </div>
+                )}
+
+                {/* Optional Horizontal Sponsor Strip (Above content) */}
+                {playbackState.adsEnabled && playbackState.sidebarAdsEnabled !== false && currentPortraitZoneSizes.sidebarsMode === 'STRIP' && (
+                  <div style={{
+                    height: '24px',
+                    background: 'rgba(59, 130, 246, 0.25)',
+                    borderBottom: '1px solid rgba(59, 130, 246, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#60a5fa',
+                    fontSize: '0.58rem',
+                    fontWeight: 800,
+                    flexShrink: 0
+                  }}>
+                    SIDEBAR ADS STRIP
+                  </div>
+                )}
+
+                {/* Stacked Matches Arena Preview */}
+                <div style={{
+                  flex: 1,
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: '6px',
+                  gap: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    flex: 1,
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.58rem',
+                    color: '#10b981',
+                    fontWeight: 800
+                  }}>
+                    MATCH #1 (LIVE)
+                  </div>
+                  <div style={{
+                    flex: 1,
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.58rem',
+                    color: '#10b981',
+                    fontWeight: 800
+                  }}>
+                    MATCH #2 (LIVE)
+                  </div>
+                </div>
+
+                {/* Bottom Ticker Zone */}
+                {playbackState.adsEnabled && (
+                  <div style={{
+                    height: `${Math.max(8, Math.min(18, (currentPortraitZoneSizes.bottomHeight / 200) * 18))}%`,
+                    background: 'rgba(245, 158, 11, 0.22)',
+                    borderTop: '1px solid rgba(245, 158, 11, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fbbf24',
+                    fontSize: '0.58rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.5px',
+                    transition: 'height 0.2s ease',
+                    flexShrink: 0
+                  }}>
+                    BOTTOM TICKER ({currentPortraitZoneSizes.bottomHeight}px)
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                Portrait WebSocket sync active
+              </div>
+            </div>
+          </div>
+          )}
         </div>
       </div>
 
@@ -1146,6 +1604,7 @@ const AdManagementPanel = () => {
                   <th>Dimensions / Preset</th>
                   <th>Fit</th>
                   <th>Motion</th>
+                  <th>Tournament</th>
                   <th>Venue</th>
                   <th>Schedule</th>
                   <th>Status</th>
@@ -1179,6 +1638,17 @@ const AdManagementPanel = () => {
                       <span style={{ fontSize: '0.78rem', fontWeight: 700, color: ad.motionType === 'STATIC' ? 'var(--text-muted)' : 'var(--accent-primary)' }}>
                         {ad.motionType || 'STATIC'}
                       </span>
+                    </td>
+                    <td>
+                      {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                          All Tournaments
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                        </span>
+                      )}
                     </td>
                     <td>
                       {!ad.venueIds || ad.venueIds.length === 0 ? (
@@ -1262,6 +1732,7 @@ const AdManagementPanel = () => {
                   <th>Dimensions / Preset</th>
                   <th>Fit</th>
                   <th>Motion &amp; Direction</th>
+                  <th>Tournament</th>
                   <th>Venue</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -1304,6 +1775,17 @@ const AdManagementPanel = () => {
                       <div style={{ fontSize: '0.82rem', fontWeight: 700 }}>{ad.motionType || 'STATIC'}</div>
                       {ad.motionType !== 'STATIC' && (
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.movementDirection} ({ad.speed}s)</div>
+                      )}
+                    </td>
+                    <td>
+                      {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                          All Tournaments
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                        </span>
                       )}
                     </td>
                     <td>
@@ -1383,6 +1865,7 @@ const AdManagementPanel = () => {
                   <th>Title</th>
                   <th>Motion Mode</th>
                   <th>Speed</th>
+                  <th>Tournament</th>
                   <th>Venue</th>
                   <th>Order</th>
                   <th>Schedule</th>
@@ -1411,6 +1894,17 @@ const AdManagementPanel = () => {
                       <span style={{ fontWeight: 700 }}>{ad.speed || 25}s</span>
                     </td>
                     <td>
+                      {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                          All Tournaments
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                        </span>
+                      )}
+                    </td>
+                    <td>
                       {!ad.venueIds || ad.venueIds.length === 0 ? (
                         <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
                           All Venues
@@ -1422,6 +1916,126 @@ const AdManagementPanel = () => {
                       )}
                     </td>
                     <td>{ad.sortOrder}</td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
+                    </td>
+                    <td>
+                      <span
+                        onClick={() => handleToggleStatus(ad)}
+                        style={{
+                          cursor: 'pointer',
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                          color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
+                        }}
+                      >
+                        {ad.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
+                          <Eye size={14} />
+                        </button>
+                        <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. COURT ADVERTISEMENTS TABLE ── */}
+      <div className="glass-panel" style={{ padding: '1.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Sparkles size={18} color="var(--accent-primary)" /> Court Surface Advertisements (Pickleball &amp; Badminton Service Boxes)
+            </h3>
+            <p style={{ margin: '0.25rem 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Embedded within playing court boxes on scorer, match view, Signage TV &amp; Smart TV broadcasts.
+            </p>
+          </div>
+          <span style={{ fontSize: '0.82rem', background: 'rgba(255,255,255,0.06)', padding: '4px 10px', borderRadius: 8, color: 'var(--text-muted)' }}>
+            {courtAds.length} configured
+          </span>
+        </div>
+
+        {courtAds.length === 0 ? (
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 12 }}>
+            No court advertisements match the current filter. Click &quot;Configure &amp; Upload Ad&quot; to assign sponsor logos directly inside court boxes.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Preview</th>
+                  <th>Title</th>
+                  <th>Position</th>
+                  <th>Fit</th>
+                  <th>Tournament</th>
+                  <th>Venue</th>
+                  <th>Schedule</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {courtAds.map(ad => (
+                  <tr key={ad.id}>
+                    <td>
+                      <img
+                        src={ad.imageUrl}
+                        alt={ad.title}
+                        onClick={() => setPreviewModal(ad)}
+                        style={{ width: 60, height: 40, objectFit: ad.imageFit || 'contain', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--border-color)' }}
+                      />
+                    </td>
+                    <td style={{ fontWeight: 700 }}>{ad.title}</td>
+                    <td>
+                      <span style={{ fontSize: '0.78rem', padding: '3px 8px', borderRadius: 6, fontWeight: 800, background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
+                        COURT BOX
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '0.78rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.08)' }}>
+                        {ad.imageFit || 'contain'}
+                      </span>
+                    </td>
+                    <td>
+                      {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                          All Tournaments
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {!ad.venueIds || ad.venueIds.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
+                          All Venues
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
                     </td>
@@ -1567,6 +2181,7 @@ const AdManagementPanel = () => {
                     <option value="RIGHT" style={optionStyle}>Right Sidebar (Tall Vertical Dock)</option>
                     <option value="BOTH_SIDEBARS" style={optionStyle}>Both Left &amp; Right Sidebars</option>
                     <option value="BOTTOM" style={optionStyle}>Bottom Banner / Marquee Ticker</option>
+                    <option value="COURT" style={optionStyle}>Court Box Overlay (Pickleball &amp; Badminton)</option>
                   </select>
                 </div>
 
@@ -1937,59 +2552,138 @@ const AdManagementPanel = () => {
                 </div>
               </div>
 
-              {/* Assigned Venues */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <MapPin size={16} color="var(--accent-primary, #10b981)" />
-                    Assigned Venues
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, venueIds: [] }))}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: formData.venueIds.length === 0 ? 'var(--accent-primary, #10b981)' : 'var(--text-muted)',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Reset to All Venues (Global Network)
-                  </button>
-                </div>
-
-                <div style={{
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 8,
-                  padding: '8px 12px',
-                  maxHeight: 110,
-                  overflowY: 'auto',
-                  background: 'rgba(0,0,0,0.2)'
-                }}>
-                  <div style={{ marginBottom: 6 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', cursor: 'pointer', fontWeight: 700 }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.venueIds.length === 0}
-                        onChange={() => setFormData(prev => ({ ...prev, venueIds: [] }))}
-                      />
-                      <span>All Venues (Broadcast across entire network)</span>
+              {/* Assigned Venues and Target Tournaments (Side-by-side Grid) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                {/* Assigned Venues */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <MapPin size={16} color="var(--accent-primary, #10b981)" />
+                      Target Venues
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, venueIds: [] }))}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: formData.venueIds.length === 0 ? 'var(--accent-primary, #10b981)' : 'var(--text-muted)',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      All Venues (Global)
+                    </button>
                   </div>
-                  {venues.map(v => (
-                    <div key={v.id} style={{ marginLeft: 16, marginBottom: 4 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', cursor: 'pointer' }}>
+
+                  <div style={{
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    maxHeight: 140,
+                    overflowY: 'auto',
+                    background: 'rgba(0,0,0,0.2)'
+                  }}>
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', cursor: 'pointer', fontWeight: 700 }}>
                         <input
                           type="checkbox"
-                          checked={formData.venueIds.includes(v.id)}
-                          onChange={() => handleVenueToggle(v.id)}
+                          checked={formData.venueIds.length === 0}
+                          onChange={() => setFormData(prev => ({ ...prev, venueIds: [] }))}
                         />
-                        <span>{v.name} ({v.city})</span>
+                        <span>All Venues (Global Network)</span>
                       </label>
                     </div>
-                  ))}
+                    {venues.map(v => (
+                      <div key={v.id} style={{ marginLeft: 16, marginBottom: 4 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={formData.venueIds.includes(v.id)}
+                            onChange={() => handleVenueToggle(v.id)}
+                          />
+                          <span>{v.name} ({v.city})</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Target Tournaments */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Trophy size={16} color="#60a5fa" />
+                      Target Tournaments
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, tournamentIds: [] }))}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: (!formData.tournamentIds || formData.tournamentIds.length === 0) ? '#60a5fa' : 'var(--text-muted)',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      All Tournaments (Global)
+                    </button>
+                  </div>
+
+                  {/* Search box for tournaments */}
+                  <div style={{ marginBottom: 6, position: 'relative' }}>
+                    <input
+                      type="text"
+                      placeholder="Search tournament by name..."
+                      value={tournamentSearchQuery}
+                      onChange={(e) => setTournamentSearchQuery(e.target.value)}
+                      style={{
+                        ...inputStyle,
+                        width: '100%',
+                        padding: '4px 8px 4px 26px',
+                        fontSize: '0.8rem',
+                        height: 28
+                      }}
+                    />
+                    <Search size={13} style={{ position: 'absolute', left: 8, top: 7, color: '#94a3b8' }} />
+                  </div>
+
+                  <div style={{
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    maxHeight: 104,
+                    overflowY: 'auto',
+                    background: 'rgba(0,0,0,0.2)'
+                  }}>
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', cursor: 'pointer', fontWeight: 700 }}>
+                        <input
+                          type="checkbox"
+                          checked={!formData.tournamentIds || formData.tournamentIds.length === 0}
+                          onChange={() => setFormData(prev => ({ ...prev, tournamentIds: [] }))}
+                        />
+                        <span>All Tournaments (Global)</span>
+                      </label>
+                    </div>
+                    {tournaments
+                      .filter(t => !tournamentSearchQuery || t.name.toLowerCase().includes(tournamentSearchQuery.toLowerCase()))
+                      .map(t => (
+                        <div key={t.id} style={{ marginLeft: 16, marginBottom: 4 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={formData.tournamentIds?.includes(t.id)}
+                              onChange={() => handleTournamentToggle(t.id)}
+                            />
+                            <span>{t.name} {t.city ? `(${t.city})` : ''}</span>
+                          </label>
+                        </div>
+                      ))}
+                  </div>
                 </div>
               </div>
 

@@ -4,6 +4,8 @@ import axios from 'axios';
 import { socket } from '../services/socket';
 import LiveBallCelebrationOverlay from '../components/signage/LiveBallCelebrationOverlay';
 import SignageAdSlot from '../components/signage/SignageAdSlot';
+import CourtView, { getServeState, getCourtState, parseRacquetScoreDetails } from '../components/court/CourtView';
+import BadmintonCourt from '../components/court/BadmintonCourt';
 import {
   Radio, Maximize2, Minimize2, Trophy, Clock,
   Calendar, Table, Award, Play, Pause, RefreshCw,
@@ -188,7 +190,13 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
             socket.emit('join:tournament', { tournamentId: d.tournament.uuid || d.tournament.id });
           }
         }
-        if (d.matches) setMatches(d.matches);
+        if (d.matches) {
+          setMatches(d.matches);
+          d.matches.forEach(m => {
+            const mid = m.uuid || m.id || m.matchId;
+            if (mid) socket.emit('join:match', { matchId: mid });
+          });
+        }
         if (d.fixtures) setFixtures(d.fixtures);
         if (d.standings) setStandings(d.standings);
         if (d.results) setResults(d.results);
@@ -231,17 +239,24 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     };
     const onDisconnect = () => setIsConnected(false);
 
-    // Live score match updates (supports cricket, football, pickleball, etc.)
+    // Live score match updates (supports cricket, football, pickleball, badminton, etc.)
     const onMatchUpdate = (payload) => {
       if (!payload) return;
       const targetId = payload.matchId || payload.id;
       const targetNum = payload.matchNumber;
 
       setMatches(prev => prev.map(m => {
-        if ((targetId && (m.id === targetId || m.matchId === targetId)) || (targetNum && m.matchNumber === targetNum)) {
+        if ((targetId && (m.id === targetId || m.matchId === targetId || m.uuid === targetId)) || (targetNum && m.matchNumber === targetNum)) {
+          // Monotonic sequence check: ignore stale or out-of-order events
+          if (payload.eventSeq && m._eventSeq && payload.eventSeq < m._eventSeq) {
+            return m;
+          }
           return {
             ...m,
+            _eventSeq: payload.eventSeq || Date.now(),
+            _lastEventType: payload.type || null,
             status: payload.status || m.status,
+            courtColor: payload.courtColor || m.courtColor,
             score: {
               ...m.score,
               summary: payload.scoreSummary || payload.liveScoreSummary || payload.summary || m.score?.summary,
@@ -254,16 +269,21 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       }));
 
       // Trigger Celebration Animation if 4, 6, WICKET, GOAL, or MATCH_POINT
-      const rawEvent = payload.celebration || payload.event || payload.type;
-      if (rawEvent) {
-        const ev = String(rawEvent).toUpperCase();
-        if (['4', 'FOUR', '6', 'SIX', 'WICKET', 'W', 'GOAL', 'MATCH_POINT'].includes(ev)) {
-          setCelebration({
-            type: ev.includes('4') ? 'FOUR' : ev.includes('6') ? 'SIX' : ev.includes('W') ? 'WICKET' : ev.includes('GOAL') ? 'GOAL' : 'FOUR',
-            matchNumber: payload.matchNumber || targetNum || 1,
-            timestamp: Date.now()
-          });
-          setTimeout(() => setCelebration(null), 3500);
+      // IMPORTANT: Clear celebration immediately on UNDO; do not celebrate undos
+      if (payload.type === 'UNDO') {
+        setCelebration(null);
+      } else {
+        const rawEvent = payload.celebration || payload.event || payload.type;
+        if (rawEvent) {
+          const ev = String(rawEvent).toUpperCase();
+          if (['4', 'FOUR', '6', 'SIX', 'WICKET', 'W', 'GOAL', 'MATCH_POINT'].includes(ev)) {
+            setCelebration({
+              type: ev.includes('4') ? 'FOUR' : ev.includes('6') ? 'SIX' : ev.includes('W') ? 'WICKET' : ev.includes('GOAL') ? 'GOAL' : 'FOUR',
+              matchNumber: payload.matchNumber || targetNum || 1,
+              timestamp: Date.now()
+            });
+            setTimeout(() => setCelebration(null), 3500);
+          }
         }
       }
     };
@@ -295,6 +315,8 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     socket.on('signage:emitMatchUpdate', onMatchUpdate);
     socket.on('tournament:matchUpdated', onMatchUpdate);
     socket.on('match:pickleballScore', onMatchUpdate);
+    socket.on('match:badmintonEvent', onMatchUpdate);
+    socket.on('match:ballEvent', onMatchUpdate);
     socket.on('signage:tvConfigUpdated', onConfigUpdate);
     socket.on('signage:playbackUpdated', onPlaybackUpdate);
     socket.on('signage:adUpdated', onPlaybackUpdate);
@@ -304,6 +326,8 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     socket.on('signage:adResumed', (d) => setPlaybackState(prev => ({ ...prev, bottomAdPaused: false, ...(d?.playbackState || {}) })));
     socket.on('signage:adsDisabled', (d) => setPlaybackState(prev => ({ ...prev, adsEnabled: false, ...(d?.playbackState || {}) })));
     socket.on('signage:adsEnabled', (d) => setPlaybackState(prev => ({ ...prev, adsEnabled: true, ...(d?.playbackState || {}) })));
+    socket.on('tournament:matchDisplayUpdated', fetchDisplaySnapshot);
+    socket.on('display:matchesUpdated', fetchDisplaySnapshot);
 
     return () => {
       socket.off('connect', onConnect);
@@ -312,6 +336,8 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       socket.off('signage:emitMatchUpdate', onMatchUpdate);
       socket.off('tournament:matchUpdated', onMatchUpdate);
       socket.off('match:pickleballScore', onMatchUpdate);
+      socket.off('match:badmintonEvent', onMatchUpdate);
+      socket.off('match:ballEvent', onMatchUpdate);
       socket.off('signage:tvConfigUpdated', onConfigUpdate);
       socket.off('signage:playbackUpdated', onPlaybackUpdate);
       socket.off('signage:adUpdated', onPlaybackUpdate);
@@ -321,6 +347,8 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       socket.off('signage:adResumed');
       socket.off('signage:adsDisabled');
       socket.off('signage:adsEnabled');
+      socket.off('tournament:matchDisplayUpdated', fetchDisplaySnapshot);
+      socket.off('display:matchesUpdated', fetchDisplaySnapshot);
     };
   }, [fetchDisplaySnapshot]);
 
@@ -529,7 +557,15 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         }}
       >
         {/* Left: Tournament Branding */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', minWidth: 0 }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          minWidth: 0,
+          flexShrink: 0,
+          maxWidth: '32%',
+          overflow: 'hidden'
+        }}>
           <div
             style={{
               width: 'clamp(32px, 3.2vw, 42px)',
@@ -547,7 +583,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
             <Trophy size={20} />
           </div>
 
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, overflow: 'hidden' }}>
             <h1
               style={{
                 fontSize: 'clamp(0.95rem, 1.5vw, 1.4rem)',
@@ -562,7 +598,13 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
             >
               {tournament?.name || 'Live Sports Arena TV'}
             </h1>
-            <div style={{ fontSize: 'clamp(0.68rem, 0.82vw, 0.8rem)', color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
+            <div style={{
+              fontSize: 'clamp(0.68rem, 0.82vw, 0.8rem)',
+              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
               {tournament?.city || 'Sports Arena'} • Smart TV Broadcast Display
             </div>
           </div>
@@ -570,7 +612,17 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
 
         {/* Center: Active Scene Indicator Pills */}
         {activeScenes.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: controlsVisible ? 1 : 0.6, transition: 'opacity 0.3s' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            opacity: controlsVisible ? 1 : 0.6,
+            transition: 'opacity 0.3s',
+            flexShrink: 1,
+            minWidth: 0,
+            overflowX: 'auto',
+            scrollbarWidth: 'none'
+          }}>
             {activeScenes.map((scene, idx) => (
               <button
                 key={scene}
@@ -878,10 +930,10 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
       >
         <Radio size={48} color="#94a3b8" style={{ marginBottom: '1rem' }} />
         <h2 style={{ fontSize: 'clamp(1.4rem, 2.5vw, 2rem)', fontWeight: 900, margin: 0 }}>
-          Waiting for Live Action
+          No matches selected for display
         </h2>
         <p style={{ color: '#94a3b8', fontSize: '1rem', marginTop: '0.5rem', maxWidth: 500 }}>
-          No live match action currently underway. Display will automatically update when scorers record events.
+          No matches are currently selected for Smart TV display. Organizers can select matches in the Live Matches tab.
         </p>
       </div>
     );
@@ -1243,82 +1295,358 @@ function TVMatchCardHeroFootball({ match, theme }) {
 
 /* ── Racquet Sports Hero Layout (Badminton, Pickleball, Tennis) ── */
 function TVMatchCardHeroRacquet({ match, theme }) {
-  const sportSlug = match.sportSlug || 'pickleball';
+  const courtState = getCourtState(match);
+  const serveState = courtState.serveState || getServeState(match);
+  const {
+    sport: sportSlug,
+    mainScoreText,
+    gamesWonText,
+    servingTeam,
+    isTeamAServing,
+    serverBox: serverCourt,
+    serverNumber,
+    servingTeamName,
+    servingStatusText,
+    isGamePoint,
+    isMatchPoint
+  } = courtState;
+
   const sportLabel = sportSlug === 'badminton' ? '🏸 BADMINTON' : '🎾 PICKLEBALL';
 
   return (
     <div
       style={{
         flex: 1,
+        height: '100%',
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
         background: theme === 'dark' ? 'rgba(30, 41, 59, 0.55)' : '#ffffff',
         borderRadius: 20,
         border: theme === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
-        padding: 'clamp(1.5rem, 3vw, 2.5rem)',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.25)'
+        padding: 'clamp(1rem, 1.8vw, 1.8rem)',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+        overflow: 'hidden'
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '4px 14px', borderRadius: 20, fontSize: '0.9rem', fontWeight: 800 }}>
+      {/* Top Banner Tag */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, marginBottom: '0.4rem' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '4px 14px', borderRadius: 20, fontSize: '0.88rem', fontWeight: 800 }}>
           <span>{sportLabel}</span> • <span>{match.courtName || 'Court 1'}</span> • <span>Match #{match.matchNumber}</span>
         </div>
-        <div style={{ background: '#10b981', color: '#fff', padding: '4px 12px', borderRadius: 20, fontSize: '0.85rem', fontWeight: 900 }}>
-          {match.status === 'LIVE' ? '🔴 IN PLAY' : match.status}
+        <div style={{ background: match.status === 'LIVE' ? '#10b981' : '#64748b', color: '#fff', padding: '4px 14px', borderRadius: 20, fontSize: '0.85rem', fontWeight: 900, boxShadow: match.status === 'LIVE' ? '0 0 14px rgba(16, 185, 129, 0.45)' : 'none' }}>
+          {match.status === 'LIVE' ? '🔴 LIVE ON DISPLAY' : match.status}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2rem', margin: '2rem 0' }}>
-        {/* Player / Team A */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <TeamLogoAvatar logoUrl={match.teamA?.logo} teamName={match.teamA?.name} size={90} theme={theme} />
-          <h2 style={{ fontSize: 'clamp(1.8rem, 3.2vw, 2.8rem)', fontWeight: 950, margin: '1rem 0 0.25rem', color: theme === 'dark' ? '#fff' : '#0f172a' }}>
+      {/* Symmetrical 3-Column Header Strip with Non-Wrapping Live Score */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr',
+        alignItems: 'center',
+        gap: 'clamp(0.5rem, 2vw, 2rem)',
+        flexShrink: 0,
+        padding: '0.2rem 0',
+        marginBottom: '0.4rem'
+      }}>
+        {/* Team A */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minWidth: 0 }}>
+          <TeamLogoAvatar logoUrl={match.teamA?.logo} teamName={match.teamA?.name} size={64} theme={theme} />
+          <h2 style={{
+            fontSize: 'clamp(1.15rem, 2vw, 1.85rem)',
+            fontWeight: 950,
+            margin: '0.35rem 0 0.15rem',
+            color: theme === 'dark' ? '#fff' : '#0f172a',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '100%'
+          }}>
             {match.teamA?.name}
           </h2>
-          <span style={{ fontSize: '0.9rem', color: '#10b981', fontWeight: 800 }}>Serving Team</span>
+          {isTeamAServing ? (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 10px',
+              borderRadius: 20,
+              background: '#10b981',
+              color: '#ffffff',
+              fontSize: '0.74rem',
+              fontWeight: 900,
+              letterSpacing: '0.05em',
+              boxShadow: '0 0 12px rgba(16, 185, 129, 0.5)',
+              marginTop: '0.15rem'
+            }}>
+              🏸 SERVE
+            </span>
+          ) : (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 10px',
+              borderRadius: 20,
+              background: theme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              marginTop: '0.15rem'
+            }}>
+              RECEIVING
+            </span>
+          )}
         </div>
 
-        {/* Center Point Score */}
+        {/* Center Live Game Score & Sets Won Pill */}
         <div
           style={{
             background: theme === 'dark' ? 'rgba(15, 23, 42, 0.85)' : '#f1f5f9',
-            padding: '1.5rem 3rem',
-            borderRadius: 20,
+            padding: 'clamp(0.5rem, 1vw, 0.9rem) clamp(1rem, 2vw, 2.2rem)',
+            borderRadius: 18,
             border: theme === 'dark' ? '2px solid rgba(255,255,255,0.08)' : '2px solid rgba(0,0,0,0.08)',
-            textAlign: 'center'
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            minWidth: 'clamp(140px, 18vw, 220px)'
           }}
         >
+          {/* Main Game Score (Stays strictly on one line, never wraps) */}
           <div
             style={{
-              fontSize: 'clamp(4rem, 8vw, 7.5rem)',
+              fontSize: 'clamp(2.4rem, 4.8vw, 4.2rem)',
               fontWeight: 950,
               color: '#10b981',
               lineHeight: 1,
-              letterSpacing: '-2px',
-              fontVariantNumeric: 'tabular-nums'
+              letterSpacing: '-1px',
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap'
             }}
           >
-            {match.score?.summary || '0 - 0'}
+            {mainScoreText}
           </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.75rem' }}>
-            {match.score?.subtext || 'Game 2 • Standard Play'}
-          </div>
+
+          {/* Sets / Games Won Pill (Clean separate row) */}
+          {gamesWonText && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: 'clamp(0.7rem, 0.95vw, 0.85rem)',
+                fontWeight: 800,
+                color: '#f59e0b',
+                background: 'rgba(245, 158, 11, 0.14)',
+                border: '1px solid rgba(245, 158, 11, 0.28)',
+                padding: '2px 10px',
+                borderRadius: 20,
+                marginTop: '0.35rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {gamesWonText}
+            </div>
+          )}
         </div>
 
-        {/* Player / Team B */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <TeamLogoAvatar logoUrl={match.teamB?.logo} teamName={match.teamB?.name} size={90} theme={theme} />
-          <h2 style={{ fontSize: 'clamp(1.8rem, 3.2vw, 2.8rem)', fontWeight: 950, margin: '1rem 0 0.25rem', color: theme === 'dark' ? '#fff' : '#0f172a' }}>
+        {/* Team B */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minWidth: 0 }}>
+          <TeamLogoAvatar logoUrl={match.teamB?.logo} teamName={match.teamB?.name} size={64} theme={theme} />
+          <h2 style={{
+            fontSize: 'clamp(1.15rem, 2vw, 1.85rem)',
+            fontWeight: 950,
+            margin: '0.35rem 0 0.15rem',
+            color: theme === 'dark' ? '#fff' : '#0f172a',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '100%'
+          }}>
             {match.teamB?.name}
           </h2>
-          <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 800 }}>Receiving</span>
+          {!isTeamAServing ? (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 10px',
+              borderRadius: 20,
+              background: '#10b981',
+              color: '#ffffff',
+              fontSize: '0.74rem',
+              fontWeight: 900,
+              letterSpacing: '0.05em',
+              boxShadow: '0 0 12px rgba(16, 185, 129, 0.5)',
+              marginTop: '0.15rem'
+            }}>
+              🏸 SERVE
+            </span>
+          ) : (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 10px',
+              borderRadius: 20,
+              background: theme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              marginTop: '0.15rem'
+            }}>
+              RECEIVING
+            </span>
+          )}
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1rem', color: '#94a3b8', fontSize: '0.9rem' }}>
-        <span>Court: {match.courtName || 'Court'}</span>
-        <span>Format: Best of 3 Games</span>
+      {/* Main Animated Court Visual Filling Center Area */}
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '0.2rem 0',
+        width: '100%'
+      }}>
+        <CourtView
+          match={match}
+          serveState={serveState}
+          courtColor={match.courtColor || '#0d5c3a'}
+          courtAds={match.courtAds || []}
+          theme={theme}
+          ambientRally={true}
+        />
+      </div>
+
+      {/* Serving Status & Venue Details Strip Under Court */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderTop: theme === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+        paddingTop: '0.6rem',
+        color: theme === 'dark' ? '#94a3b8' : '#475569',
+        fontSize: 'clamp(0.75rem, 0.95vw, 0.9rem)',
+        flexShrink: 0,
+        flexWrap: 'wrap',
+        gap: '0.5rem'
+      }}>
+        <span style={{ color: '#10b981', fontWeight: 800 }}>
+          {serveState?.label || servingStatusText}
+        </span>
+        <span>Court: {match.courtName || 'Court 1'} • Format: Best of 3 Games</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Racquet Sports Grid Card Layout ── */
+function TVMatchCardGridRacquet({ match, theme, size = 'medium', isFeatured = false }) {
+  const courtState = getCourtState(match);
+  const serveState = courtState?.serveState || getServeState(match);
+  const parsed = parseRacquetScoreDetails(match);
+  const {
+    sportSlug,
+    mainScoreText,
+    gamesWonText,
+    serverCourt,
+    serverNumber,
+    servingTeamName,
+    isGamePoint,
+    isMatchPoint
+  } = parsed;
+
+  const showCourt = size !== 'mini' && size !== 'compact';
+
+  return (
+    <div
+      style={{
+        height: '100%',
+        minHeight: 0,
+        background: isFeatured
+          ? (theme === 'dark' ? 'linear-gradient(165deg, rgba(16, 185, 129, 0.22) 0%, rgba(15, 23, 42, 0.98) 100%)' : '#ffffff')
+          : (theme === 'dark' ? 'linear-gradient(165deg, rgba(26, 36, 56, 0.94) 0%, rgba(12, 17, 28, 0.98) 100%)' : '#ffffff'),
+        borderRadius: 14,
+        border: isFeatured ? '2px solid #10b981' : (theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0,0,0,0.1)'),
+        padding: size === 'mini' ? 'clamp(0.45rem, 0.8vw, 0.65rem)' : '0.75rem',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        boxShadow: isFeatured ? '0 12px 32px rgba(16, 185, 129, 0.25)' : '0 8px 24px rgba(0,0,0,0.35)',
+        overflow: 'hidden',
+        position: 'relative'
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.35rem', borderBottom: theme === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '2px 8px', borderRadius: 4 }}>
+            {sportSlug === 'badminton' ? '🏸 BADMINTON' : '🎾 PICKLEBALL'} • {match.courtName || 'Court'}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>M#{match.matchNumber}</span>
+        </div>
+        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: match.status === 'LIVE' ? '#10b981' : (theme === 'dark' ? '#94a3b8' : '#64748b') }}>
+          {match.status === 'LIVE' ? '🔴 LIVE' : match.status}
+        </div>
+      </div>
+
+      {/* Teams Lineup & Score */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '0.5rem', margin: '0.4rem 0' }}>
+        <div style={{ textAlign: 'left', minWidth: 0 }}>
+          <div style={{ fontWeight: 900, fontSize: size === 'mini' ? '0.88rem' : '1.05rem', color: theme === 'dark' ? '#fff' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {match.teamA?.name}
+          </div>
+          {serveState.isTeamAServing && (
+            <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 800, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 5px', borderRadius: 4 }}>
+              SERVE
+            </span>
+          )}
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: size === 'mini' ? '1.4rem' : '1.8rem', fontWeight: 950, color: '#10b981', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+            {mainScoreText}
+          </div>
+          {gamesWonText && (
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#f59e0b', marginTop: 2, whiteSpace: 'nowrap' }}>
+              {gamesWonText}
+            </div>
+          )}
+        </div>
+
+        <div style={{ textAlign: 'right', minWidth: 0 }}>
+          <div style={{ fontWeight: 900, fontSize: size === 'mini' ? '0.88rem' : '1.05rem', color: theme === 'dark' ? '#fff' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {match.teamB?.name}
+          </div>
+          {!serveState.isTeamAServing && (
+            <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 800, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 5px', borderRadius: 4 }}>
+              SERVE
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Compact Animated Court if medium/large */}
+      {showCourt && (
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '0.2rem 0', maxHeight: '160px', overflow: 'hidden' }}>
+          <CourtView
+            match={match}
+            serveState={serveState}
+            courtColor={match.courtColor || '#0d5c3a'}
+            compact={true}
+            theme={theme}
+            ambientRally={true}
+          />
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: theme === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', paddingTop: '0.3rem', fontSize: '0.72rem', color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
+        <span>Serving: <strong style={{ color: '#10b981' }}>{serveState.serverTeamName || servingTeamName}</strong></span>
+        <span>{match.venueName || 'Turf Arena'}</span>
       </div>
     </div>
   );
@@ -1331,6 +1659,11 @@ function TVMatchCardHeroRacquet({ match, theme }) {
    ══════════════════════════════════════════════════════════════════════ */
 function TVMatchCardGrid({ match, theme, size = 'medium', isFeatured = false }) {
   const sportSlug = match.sportSlug || 'cricket';
+
+  // Court-based sports dispatch to racquet layout
+  if (['badminton', 'pickleball', 'tennis', 'table-tennis'].includes(sportSlug.toLowerCase())) {
+    return <TVMatchCardGridRacquet match={match} theme={theme} size={size} isFeatured={isFeatured} />;
+  }
   const isLive = match.status === 'LIVE';
   const isCompleted = match.status === 'COMPLETED';
   const isScheduled = !isLive && !isCompleted;
@@ -1442,23 +1775,53 @@ function TVMatchCardGrid({ match, theme, size = 'medium', isFeatured = false }) 
         flexShrink: 0,
         gap: '0.5rem'
       }}>
-        <span
-          title={match.courtName || 'Court'}
-          style={{
-            fontSize: size === 'mini' ? 'clamp(0.72rem, 0.85vw, 0.82rem)' : '0.82rem',
-            fontWeight: 800,
-            background: 'rgba(16, 185, 129, 0.15)',
-            color: '#10b981',
-            padding: '2px 8px',
-            borderRadius: 6,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '75%'
-          }}
-        >
-          🏏 {match.courtName || 'Court'} • M#{match.matchNumber}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexWrap: 'wrap' }}>
+          <span
+            title={match.courtName || 'Court'}
+            style={{
+              fontSize: size === 'mini' ? 'clamp(0.72rem, 0.85vw, 0.82rem)' : '0.82rem',
+              fontWeight: 800,
+              background: 'rgba(16, 185, 129, 0.15)',
+              color: '#10b981',
+              padding: '2px 8px',
+              borderRadius: 6,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
+            🏏 {match.courtName || 'Court'} • M#{match.matchNumber}
+          </span>
+          <span
+            style={{
+              fontSize: size === 'mini' ? '0.66rem' : '0.72rem',
+              fontWeight: 800,
+              padding: '2px 7px',
+              borderRadius: 6,
+              background: match.category === 'Final'
+                ? 'linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(16, 185, 129, 0.25))'
+                : match.category === 'Semi-Final'
+                ? 'rgba(244, 63, 94, 0.2)'
+                : match.category === 'Quarter-Final'
+                ? 'rgba(245, 158, 11, 0.2)'
+                : match.category === 'Knockout'
+                ? 'rgba(168, 85, 247, 0.2)'
+                : 'rgba(56, 189, 248, 0.18)',
+              color: match.category === 'Final'
+                ? '#eab308'
+                : match.category === 'Semi-Final'
+                ? '#fb7185'
+                : match.category === 'Quarter-Final'
+                ? '#fbbf24'
+                : match.category === 'Knockout'
+                ? '#c084fc'
+                : '#38bdf8',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}
+          >
+            {match.category || 'League'}
+          </span>
+        </div>
 
         {isLive ? (
           <span style={{
@@ -2011,8 +2374,31 @@ function StandingsScene({ standings, theme }) {
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#10b981', fontWeight: 700 }}>{row.won}</td>
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#ef4444' }}>{row.lost}</td>
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>{row.drawn || row.tied || 0}</td>
-                  <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 600 }}>
-                    {row.netRunRate ? (row.netRunRate > 0 ? `+${row.netRunRate}` : row.netRunRate) : (row.goalDifference || '0.00')}
+                  <td style={{
+                    padding: '0.75rem 1rem',
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    color: (() => {
+                      const val = row.netRunRate != null && row.netRunRate !== ''
+                        ? Number(row.netRunRate)
+                        : Number(row.goalDifference ?? row.pointDifference ?? 0);
+                      if (val > 0) return '#10b981';
+                      if (val < 0) return '#ef4444';
+                      return 'inherit';
+                    })()
+                  }}>
+                    {(() => {
+                      if (row.netRunRate != null && row.netRunRate !== '') {
+                        const n = Number(row.netRunRate);
+                        if (n > 0) return `+${n.toFixed(2)}`;
+                        if (n < 0) return n.toFixed(2);
+                        return '0.00';
+                      }
+                      const diff = Number(row.goalDifference ?? row.pointDifference ?? 0);
+                      if (diff > 0) return `+${diff}`;
+                      if (diff < 0) return `${diff}`;
+                      return '0.00';
+                    })()}
                   </td>
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 900, color: '#10b981', fontSize: '1.1rem' }}>
                     {row.points}

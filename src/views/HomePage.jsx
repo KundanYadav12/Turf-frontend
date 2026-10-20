@@ -37,7 +37,7 @@ const HomePage = () => {
     navigate(`/search?city=${selectedCity || 'Mumbai'}&sport=${selectedSport || ''}&q=${searchQuery}`);
   };
 
-  const optStyle = { background: 'var(--bg-modal)' };
+  const optStyle = { background: 'var(--bg-modal)', color: 'var(--text-main)' };
 
   return (
     <div>

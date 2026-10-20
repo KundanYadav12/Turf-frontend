@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   X, Search, Users, Shield, Crown, Star, UserPlus,
   RefreshCw, AlertCircle, CheckCircle, ChevronDown, ChevronUp,
-  Sparkles, Award, Zap
+  Sparkles, Award, Zap, Pencil, Trash2
 } from 'lucide-react';
 import {
   getSportRoles,
@@ -37,6 +37,9 @@ export default function TeamRosterDrawer({
   const [newPlayerLeadership, setNewPlayerLeadership] = useState('PLAYER'); // 'PLAYER' | 'CAPTAIN' | 'VICE_CAPTAIN'
   const [newPlayerBattingStyle, setNewPlayerBattingStyle] = useState('');
   const [newPlayerBowlingStyle, setNewPlayerBowlingStyle] = useState('');
+  const [editingPlayerId, setEditingPlayerId] = useState(null);
+  const [deleteConfirmPlayer, setDeleteConfirmPlayer] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const sportSlug = tournament?.sport?.slug || tournament?.sportSlug || (tournament?.sport?.name ? tournament.sport.name.toLowerCase() : '') || 'cricket';
   const isCricket = sportSlug.includes('cricket');
@@ -136,7 +139,33 @@ export default function TeamRosterDrawer({
     };
   }, [isOpen, onClose]);
 
-  // Handle Add Player submission
+  // Start Editing Player
+  const handleStartEdit = (player) => {
+    setEditingPlayerId(player.id);
+    setNewPlayerName(player.name || '');
+    setNewPlayerJersey(player.jerseyNumber != null ? String(player.jerseyNumber) : '');
+    setNewPlayerRole(player.role || (sportRoles[0]?.label || 'Player'));
+    setNewPlayerLeadership(player.isCaptain ? 'CAPTAIN' : player.isViceCaptain ? 'VICE_CAPTAIN' : 'PLAYER');
+    setNewPlayerBattingStyle(player.battingStyle || '');
+    setNewPlayerBowlingStyle(player.bowlingStyle || '');
+    setAddError('');
+    setAddSuccess('');
+    setShowAddPlayer(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPlayerId(null);
+    setNewPlayerName('');
+    setNewPlayerJersey('');
+    setNewPlayerLeadership('PLAYER');
+    setNewPlayerBattingStyle('');
+    setNewPlayerBowlingStyle('');
+    setAddError('');
+    setAddSuccess('');
+    setShowAddPlayer(false);
+  };
+
+  // Handle Add / Edit Player submission
   const handleAddPlayerSubmit = async (e) => {
     e.preventDefault();
     if (!newPlayerName.trim()) {
@@ -154,7 +183,7 @@ export default function TeamRosterDrawer({
         : null;
 
       if (!token) {
-        setAddError('Authentication required. Please sign in as an admin or organizer to add players.');
+        setAddError('Authentication required. Please sign in as an admin or organizer to save player details.');
         setAddLoading(false);
         return;
       }
@@ -169,19 +198,22 @@ export default function TeamRosterDrawer({
         bowlingStyle: isCricket ? newPlayerBowlingStyle || null : null
       };
 
-      const res = await axios.post(
-        `/api/tournaments/${tournament.id}/teams/${team.id}/players`,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const isEdit = Boolean(editingPlayerId);
+      const url = isEdit
+        ? `/api/tournaments/${tournament.id}/teams/${team.id}/players/${editingPlayerId}`
+        : `/api/tournaments/${tournament.id}/teams/${team.id}/players`;
+
+      const res = await (isEdit ? axios.put(url, payload, { headers: { Authorization: `Bearer ${token}` } })
+                               : axios.post(url, payload, { headers: { Authorization: `Bearer ${token}` } }));
 
       if (res.data?.success) {
-        setAddSuccess(`Added "${newPlayerName.trim()}" to squad successfully!`);
+        setAddSuccess(isEdit ? `Updated "${newPlayerName.trim()}" successfully!` : `Added "${newPlayerName.trim()}" to squad successfully!`);
         setNewPlayerName('');
         setNewPlayerJersey('');
         setNewPlayerLeadership('PLAYER');
         setNewPlayerBattingStyle('');
         setNewPlayerBowlingStyle('');
+        setEditingPlayerId(null);
 
         // Refresh roster
         await fetchRoster();
@@ -192,13 +224,39 @@ export default function TeamRosterDrawer({
         setTimeout(() => {
           setShowAddPlayer(false);
           setAddSuccess('');
-        }, 1500);
+        }, 1200);
       }
     } catch (err) {
-      console.error('Failed to add player to squad:', err);
-      setAddError(err.response?.data?.message || 'Failed to add player. Please try again.');
+      console.error('Failed to save squad player:', err);
+      setAddError(err.response?.data?.message || 'Failed to save player. Please try again.');
     } finally {
       setAddLoading(false);
+    }
+  };
+
+  // Handle Delete Player Submission
+  const handleDeletePlayerSubmit = async () => {
+    if (!deleteConfirmPlayer) return;
+    setDeleteLoading(true);
+    try {
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('turf_token') || localStorage.getItem('token'))
+        : null;
+      const res = await axios.delete(
+        `/api/tournaments/${tournament.id}/teams/${team.id}/players/${deleteConfirmPlayer.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data?.success) {
+        setDeleteConfirmPlayer(null);
+        await fetchRoster();
+        if (onRosterUpdated) {
+          onRosterUpdated();
+        }
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to remove player from squad.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -495,7 +553,14 @@ export default function TeamRosterDrawer({
             </div>
 
             <button
-              onClick={() => setShowAddPlayer(!showAddPlayer)}
+              onClick={() => {
+                if (showAddPlayer) {
+                  handleCancelEdit();
+                } else {
+                  setEditingPlayerId(null);
+                  setShowAddPlayer(true);
+                }
+              }}
               className="btn btn-primary btn-sm"
               style={{
                 display: 'inline-flex',
@@ -582,7 +647,7 @@ export default function TeamRosterDrawer({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-heading, #ffffff)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Sparkles size={15} color="var(--accent-primary, #10b981)" /> Add Player to {teamName}
+                <Sparkles size={15} color="var(--accent-primary, #10b981)" /> {editingPlayerId ? `Edit Squad Player: ${newPlayerName || ''}` : `Add Player to ${teamName}`}
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 {tournament?.sport?.name || 'Tournament'} Squad
@@ -687,20 +752,19 @@ export default function TeamRosterDrawer({
                       width: '100%',
                       padding: '0.5rem 0.65rem',
                       borderRadius: '6px',
-                      background: 'var(--bg-modal, #0f172a)',
-                      border: '1px solid var(--input-border, rgba(255, 255, 255, 0.15))',
-                      color: 'var(--text-main, #ffffff)',
-                      fontSize: '0.85rem',
-                      colorScheme: 'light dark'
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.85rem'
                     }}
                   >
                     {sportRoles.map((r) => (
-                      <option key={r.id} value={r.label} style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>
+                      <option key={r.id} value={r.label} style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>
                         {r.icon ? `${r.icon} ` : ''}{r.label}
                       </option>
                     ))}
                     {!sportRoles.some(r => r.label === 'Player') && (
-                      <option value="Player" style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>
+                      <option value="Player" style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>
                         Player (Generic)
                       </option>
                     )}
@@ -709,7 +773,7 @@ export default function TeamRosterDrawer({
 
                 {/* Leadership Selector: Ensures only one captain and one vice-captain */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted, #94a3b8)', marginBottom: '0.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                     Squad Role
                   </label>
                   <select
@@ -719,16 +783,15 @@ export default function TeamRosterDrawer({
                       width: '100%',
                       padding: '0.5rem 0.65rem',
                       borderRadius: '6px',
-                      background: 'var(--bg-modal, #0f172a)',
-                      border: '1px solid var(--input-border, rgba(255, 255, 255, 0.15))',
-                      color: 'var(--text-main, #ffffff)',
-                      fontSize: '0.85rem',
-                      colorScheme: 'light dark'
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.85rem'
                     }}
                   >
-                    <option value="PLAYER" style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>Regular Squad Member</option>
-                    <option value="CAPTAIN" style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>👑 Team Captain (C)</option>
-                    <option value="VICE_CAPTAIN" style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>⭐ Vice-Captain (VC)</option>
+                    <option value="PLAYER" style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>Regular Squad Member</option>
+                    <option value="CAPTAIN" style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>👑 Team Captain (C)</option>
+                    <option value="VICE_CAPTAIN" style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>⭐ Vice-Captain (VC)</option>
                   </select>
                 </div>
               </div>
@@ -737,7 +800,7 @@ export default function TeamRosterDrawer({
               {isCricket && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)', marginBottom: '0.25rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                       Batting Style (Optional)
                     </label>
                     <select
@@ -747,21 +810,20 @@ export default function TeamRosterDrawer({
                         width: '100%',
                         padding: '0.45rem 0.6rem',
                         borderRadius: '6px',
-                        background: 'var(--bg-modal, #0f172a)',
-                        border: '1px solid var(--input-border, rgba(255, 255, 255, 0.15))',
-                        color: 'var(--text-main, #ffffff)',
-                        fontSize: '0.8rem',
-                        colorScheme: 'light dark'
+                        background: 'var(--bg-input)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.8rem'
                       }}
                     >
-                      <option value="" style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>-- Not specified --</option>
+                      <option value="" style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>-- Not specified --</option>
                       {CRICKET_EXTRAS.battingHands.map((bh) => (
-                        <option key={bh} value={bh} style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>{bh}</option>
+                        <option key={bh} value={bh} style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>{bh}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)', marginBottom: '0.25rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                       Bowling Style (Optional)
                     </label>
                     <select
@@ -771,16 +833,15 @@ export default function TeamRosterDrawer({
                         width: '100%',
                         padding: '0.45rem 0.6rem',
                         borderRadius: '6px',
-                        background: 'var(--bg-modal, #0f172a)',
-                        border: '1px solid var(--input-border, rgba(255, 255, 255, 0.15))',
-                        color: 'var(--text-main, #ffffff)',
-                        fontSize: '0.8rem',
-                        colorScheme: 'light dark'
+                        background: 'var(--bg-input)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.8rem'
                       }}
                     >
-                      <option value="" style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>-- Not specified --</option>
+                      <option value="" style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>-- Not specified --</option>
                       {CRICKET_EXTRAS.bowlingStyles.map((bs) => (
-                        <option key={bs} value={bs} style={{ background: 'var(--bg-modal, #0f172a)', color: '#fff' }}>{bs}</option>
+                        <option key={bs} value={bs} style={{ background: 'var(--bg-modal)', color: 'var(--text-main)' }}>{bs}</option>
                       ))}
                     </select>
                   </div>
@@ -790,7 +851,7 @@ export default function TeamRosterDrawer({
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                 <button
                   type="button"
-                  onClick={() => setShowAddPlayer(false)}
+                  onClick={handleCancelEdit}
                   className="btn btn-outline btn-sm"
                   style={{ fontSize: '0.8rem' }}
                 >
@@ -805,6 +866,10 @@ export default function TeamRosterDrawer({
                   {addLoading ? (
                     <>
                       <RefreshCw size={13} className="animate-spin" /> Saving...
+                    </>
+                  ) : editingPlayerId ? (
+                    <>
+                      <CheckCircle size={13} /> Save Player Changes
                     </>
                   ) : (
                     <>
@@ -1155,8 +1220,8 @@ export default function TeamRosterDrawer({
                       </div>
                     </div>
 
-                    {/* Right: Colored Sport Role Caption Badge */}
-                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                    {/* Right: Colored Sport Role Caption Badge + Actions */}
+                    <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span
                         style={{
                           display: 'inline-flex',
@@ -1176,6 +1241,60 @@ export default function TeamRosterDrawer({
                         {roleConfig.icon && <span style={{ fontSize: '0.85rem' }}>{roleConfig.icon}</span>}
                         <span>{roleConfig.label || player.role || 'Player'}</span>
                       </span>
+
+                      {rosterData?.canManage && (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEdit(player);
+                            }}
+                            title="Edit player details"
+                            style={{
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              color: '#60a5fa',
+                              borderRadius: '6px',
+                              padding: '0.3rem 0.45rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(59, 130, 246, 0.12)')}
+                          >
+                            <Pencil size={13} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirmPlayer({ id: player.id, name: player.name });
+                            }}
+                            title="Remove player from squad"
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#f87171',
+                              borderRadius: '6px',
+                              padding: '0.3rem 0.45rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)')}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1212,6 +1331,61 @@ export default function TeamRosterDrawer({
           </button>
         </div>
       </div>
+
+      {/* Delete Player Confirmation Modal */}
+      {deleteConfirmPlayer && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{
+            maxWidth: '420px',
+            width: '100%',
+            padding: '1.5rem',
+            borderRadius: '14px',
+            background: 'var(--bg-modal, #0f172a)',
+            border: '1px solid var(--border-color)'
+          }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: '#f87171' }}>
+              Remove Player from Squad?
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)', marginBottom: '1.25rem', lineHeight: '1.4' }}>
+              Are you sure you want to remove <strong>{deleteConfirmPlayer.name}</strong> from {teamName}?
+              <br /><br />
+              <span style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                Note: The player will be removed from this team's squad roster. Historical match scorecards and achievements will remain intact.
+              </span>
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmPlayer(null)}
+                disabled={deleteLoading}
+                className="btn btn-outline btn-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeletePlayerSubmit}
+                disabled={deleteLoading}
+                className="btn btn-sm"
+                style={{ background: '#ef4444', color: '#ffffff' }}
+              >
+                {deleteLoading ? 'Removing...' : 'Remove Player'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

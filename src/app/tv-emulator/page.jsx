@@ -1,6 +1,8 @@
 'use client';
+
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { RotateCw } from 'lucide-react';
 
 export default function TVEmulatorPage() {
   const [platform, setPlatform] = useState('android');
@@ -12,6 +14,10 @@ export default function TVEmulatorPage() {
 
   const getDimensions = () => {
     switch (resolution) {
+      case 'portrait-1080p':
+        return { w: 1080, h: 1920, aspect: '9/16' };
+      case 'portrait-4k':
+        return { w: 2160, h: 3840, aspect: '9/16' };
       case '720p':
         return { w: 1280, h: 720, aspect: '16/9' };
       case '4k':
@@ -21,6 +27,27 @@ export default function TVEmulatorPage() {
       case '1080p':
       default:
         return { w: 1920, h: 1080, aspect: '16/9' };
+    }
+  };
+
+  const isPortraitResolution = resolution === 'portrait-1080p' || resolution === 'portrait-4k';
+
+  const handleToggleOrientation = () => {
+    if (resolution === '1080p') {
+      setResolution('portrait-1080p');
+      setTelemetry('ORIENTATION ROTATED: Portrait 1080×1920 (9:16)');
+    } else if (resolution === '4k') {
+      setResolution('portrait-4k');
+      setTelemetry('ORIENTATION ROTATED: Portrait 4K 2160×3840 (9:16)');
+    } else if (resolution === 'portrait-1080p') {
+      setResolution('1080p');
+      setTelemetry('ORIENTATION ROTATED: Landscape 1920×1080 (16:9)');
+    } else if (resolution === 'portrait-4k') {
+      setResolution('4k');
+      setTelemetry('ORIENTATION ROTATED: Landscape 4K 3840×2160 (16:9)');
+    } else {
+      setResolution('portrait-1080p');
+      setTelemetry('ORIENTATION ROTATED: Portrait 1080×1920 (9:16)');
     }
   };
 
@@ -157,11 +184,39 @@ export default function TVEmulatorPage() {
                 cursor: 'pointer'
               }}
             >
-              <option value="1080p" style={{ background: '#1e293b', color: '#ffffff' }}>1080p Full HD (1920×1080)</option>
-              <option value="720p" style={{ background: '#1e293b', color: '#ffffff' }}>720p HD Ready (1280×720)</option>
-              <option value="4k" style={{ background: '#1e293b', color: '#ffffff' }}>4K Ultra HD (3840×2160)</option>
-              <option value="ultrawide" style={{ background: '#1e293b', color: '#ffffff' }}>21:9 Ultrawide (2560×1080)</option>
+              <optgroup label="Horizontal (Landscape 16:9)">
+                <option value="1080p" style={{ background: '#1e293b', color: '#ffffff' }}>1080p Full HD (1920×1080)</option>
+                <option value="720p" style={{ background: '#1e293b', color: '#ffffff' }}>720p HD Ready (1280×720)</option>
+                <option value="4k" style={{ background: '#1e293b', color: '#ffffff' }}>4K Ultra HD (3840×2160)</option>
+                <option value="ultrawide" style={{ background: '#1e293b', color: '#ffffff' }}>21:9 Ultrawide (2560×1080)</option>
+              </optgroup>
+              <optgroup label="Vertical (Portrait 9:16)">
+                <option value="portrait-1080p" style={{ background: '#1e293b', color: '#ffffff' }}>📱 1080×1920 (Portrait 9:16)</option>
+                <option value="portrait-4k" style={{ background: '#1e293b', color: '#ffffff' }}>📱 2160×3840 (Portrait 4K 9:16)</option>
+              </optgroup>
             </select>
+            {/* Quick Rotate Button */}
+            <button
+              type="button"
+              onClick={handleToggleOrientation}
+              title="Rotate Screen (Landscape / Portrait)"
+              style={{
+                background: isPortraitResolution ? '#10b981' : '#334155',
+                color: isPortraitResolution ? '#000000' : '#ffffff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+            >
+              <RotateCw size={13} />
+              {isPortraitResolution ? 'Portrait (9:16)' : 'Landscape (16:9)'}
+            </button>
           </div>
 
           {/* Source Selector */}
@@ -185,10 +240,16 @@ export default function TVEmulatorPage() {
                 minWidth: '245px'
               }}
             >
-              <option value="/tv/tv_arena_main_01" style={{ background: '#1e293b', color: '#ffffff' }}>Main Arena TV (/tv/tv_arena_main_01)</option>
-              <option value="/tv/tv_court_01" style={{ background: '#1e293b', color: '#ffffff' }}>Court 1 TV (/tv/tv_court_01)</option>
-              <option value="/tv/tv_court_02" style={{ background: '#1e293b', color: '#ffffff' }}>Court 2 TV (/tv/tv_court_02)</option>
-              <option value="/tv" style={{ background: '#1e293b', color: '#ffffff' }}>Smart TV Pairing Hub (/tv)</option>
+              <optgroup label="Smart TV Broadcast Mode">
+                <option value="/tv/tv_arena_main_01" style={{ background: '#1e293b', color: '#ffffff' }}>Main Arena TV (/tv/tv_arena_main_01)</option>
+                <option value="/tv/tv_court_01" style={{ background: '#1e293b', color: '#ffffff' }}>Court 1 TV (/tv/tv_court_01)</option>
+                <option value="/tv/tv_court_02" style={{ background: '#1e293b', color: '#ffffff' }}>Court 2 TV (/tv/tv_court_02)</option>
+                <option value="/tv" style={{ background: '#1e293b', color: '#ffffff' }}>Smart TV Pairing Hub (/tv)</option>
+              </optgroup>
+              <optgroup label="Signage TV Displays">
+                <option value="/tournaments/68c4849c-9560-4533-aac3-d8051e4086fb/signage" style={{ background: '#1e293b', color: '#ffffff' }}>Pickleball Signage TV Display</option>
+                <option value="/tournaments/8f4c7a92-31d6-4e8b-a9c2-72f91d45ab10/signage" style={{ background: '#1e293b', color: '#ffffff' }}>Cricket Signage TV Display</option>
+              </optgroup>
             </select>
           </div>
 

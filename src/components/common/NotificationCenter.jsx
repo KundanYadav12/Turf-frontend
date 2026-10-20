@@ -163,15 +163,15 @@ export default function NotificationCenter() {
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div style={{
+        <div className="dropdown-panel" style={{
           position: 'absolute',
           top: 'calc(100% + 10px)',
           right: 0,
           width: 'min(90vw, 360px)',
-          backgroundColor: '#0f172a',
-          border: '1px solid rgba(255, 255, 255, 0.15)',
+          backgroundColor: 'var(--bg-card-solid)',
+          border: '1px solid var(--border-color)',
           borderRadius: '16px',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+          boxShadow: 'var(--shadow-elevated)',
           zIndex: 9999,
           overflow: 'hidden',
           display: 'flex',
@@ -180,14 +180,14 @@ export default function NotificationCenter() {
           {/* Header */}
           <div style={{
             padding: '0.85rem 1rem',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            borderBottom: '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'rgba(255, 255, 255, 0.02)'
+            background: 'var(--bg-secondary)'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#fff' }}>Notifications</span>
+              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text-heading)' }}>Notifications</span>
               {unreadCount > 0 && (
                 <span className="badge badge-info" style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem' }}>
                   {unreadCount} unread
@@ -201,7 +201,7 @@ export default function NotificationCenter() {
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: '#38bdf8',
+                  color: 'var(--accent-primary)',
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -218,10 +218,10 @@ export default function NotificationCenter() {
           {/* List */}
           <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
             {notifications.length === 0 ? (
-              <div style={{ padding: '2.5rem 1rem', textAlign: 'center', color: '#94a3b8' }}>
+              <div style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <Bell size={28} style={{ opacity: 0.3, margin: '0 auto 0.5rem auto' }} />
                 <div style={{ fontSize: '0.85rem' }}>No notifications yet</div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>When someone mentions you, it will appear here</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>When someone mentions you, it will appear here</div>
               </div>
             ) : (
               notifications.map((notif) => {
@@ -234,16 +234,16 @@ export default function NotificationCenter() {
                     onClick={() => handleNotificationClick(notif)}
                     style={{
                       padding: '0.85rem 1rem',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-                      background: notif.isRead ? 'transparent' : 'rgba(56, 189, 248, 0.06)',
+                      borderBottom: '1px solid var(--border-color)',
+                      background: notif.isRead ? 'transparent' : 'var(--bg-tag)',
                       display: 'flex',
                       gap: '0.75rem',
                       alignItems: 'flex-start',
                       cursor: 'pointer',
                       transition: 'background 0.15s ease'
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = notif.isRead ? 'transparent' : 'rgba(56, 189, 248, 0.06)')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = notif.isRead ? 'transparent' : 'var(--bg-tag)')}
                   >
                     {/* Avatar */}
                     <div style={{
@@ -266,13 +266,13 @@ export default function NotificationCenter() {
 
                     {/* Content */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '0.82rem', fontWeight: notif.isRead ? 500 : 700, color: '#f8fafc', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: notif.isRead ? 500 : 700, color: 'var(--text-heading)', lineHeight: 1.4 }}>
                         {notif.title}
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {notif.message}
                       </div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Clock size={11} />
                         {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(notif.createdAt).toLocaleDateString()}
                       </div>
@@ -280,7 +280,7 @@ export default function NotificationCenter() {
 
                     {/* Unread dot */}
                     {!notif.isRead && (
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38bdf8', marginTop: 6, flexShrink: 0 }} />
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', marginTop: 6, flexShrink: 0 }} />
                     )}
                   </div>
                 );

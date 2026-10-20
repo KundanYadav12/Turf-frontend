@@ -1,20 +1,27 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams } from '../lib/routerCompat';
 import axios from 'axios';
 import CricketScorerPageClient from './CricketScorerPage';
 import FootballScorerPage from './FootballScorerPage';
 import BadmintonScorerPage from './BadmintonScorerPage';
 import PickleballScorerPage from './PickleballScorerPage';
 
-export default function UniversalScorerPage() {
-  const { id } = useParams();
+export default function UniversalScorerPage({ matchId: propsMatchId } = {}) {
+  const routeParams = useParams();
+  const matchIdFromUrl = typeof window !== 'undefined' ? window.location.pathname.match(/\/matches\/([^/]+)/)?.[1] : null;
+  const id = propsMatchId || routeParams?.id || matchIdFromUrl;
+
   const [sportSlug, setSportSlug] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     const fetchMatch = async () => {
       try {
         const res = await axios.get(`/api/matches/${id}`);
@@ -51,21 +58,21 @@ export default function UniversalScorerPage() {
   }
 
   if (sportSlug === 'football') {
-    return <FootballScorerPage />;
+    return <FootballScorerPage matchId={id} />;
   }
 
   if (sportSlug === 'badminton') {
-    return <BadmintonScorerPage />;
+    return <BadmintonScorerPage matchId={id} />;
   }
 
   if (sportSlug === 'pickleball') {
-    return <PickleballScorerPage />;
+    return <PickleballScorerPage matchId={id} />;
   }
 
   // Default to Cricket (or points-based scorer if racket)
   if (['tennis', 'table-tennis', 'volleyball'].includes(sportSlug)) {
-    return <BadmintonScorerPage />;
+    return <BadmintonScorerPage matchId={id} />;
   }
 
-  return <CricketScorerPageClient />;
+  return <CricketScorerPageClient matchId={id} />;
 }

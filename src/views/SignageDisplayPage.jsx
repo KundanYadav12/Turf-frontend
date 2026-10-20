@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import axios from 'axios';
@@ -9,6 +9,7 @@ import { getActiveSignageAdsApi } from '../services/advertisementService';
 import { toggleTheme } from '../features/theme/themeSlice';
 import LiveBallCelebrationOverlay from '../components/signage/LiveBallCelebrationOverlay';
 import SignageAdSlot from '../components/signage/SignageAdSlot';
+import CourtView, { getCourtState, parseRacquetScoreDetails } from '../components/court/CourtView';
 import { useBallEvents } from '../hooks/useBallEvents';
 import {
   Radio,
@@ -20,7 +21,8 @@ import {
   Sun,
   Moon,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  RotateCw
 } from 'lucide-react';
 
 /**
@@ -28,30 +30,37 @@ import {
  * Responsive: Phone (360-430px), Tablet (768-1023px), Desktop (1024px+), TV (1600px+)
  * Dual Theme (Dark & Light) via pure CSS tokens with live ball-event animations.
  */
-const SignageDisplayPage = () => {
-  const { id } = useParams();
+const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
+  let routeParams = {};
+  try {
+    routeParams = useParams() || {};
+  } catch (e) {
+    routeParams = {};
+  }
+  const idFromUrl = typeof window !== 'undefined' ? (window.location.pathname.match(/\/display\/tournament\/([^/]+)/)?.[1] || window.location.pathname.match(/\/tournaments\/([^/]+)/)?.[1]) : null;
+  const id = propsTournamentId || routeParams?.id || idFromUrl;
   const dispatch = useDispatch();
   const reduxTheme = useSelector((state) => state.theme?.mode) || 'dark';
 
-  // Synchronized theme state with DOM data-theme attribute
-  const [currentTheme, setCurrentTheme] = useState(() => {
-    if (typeof document !== 'undefined') {
-      return document.documentElement.getAttribute('data-theme') || reduxTheme || 'dark';
-    }
-    return reduxTheme || 'dark';
-  });
+  // Synchronized theme state with DOM data-theme attribute (hydration-safe)
+  const [mounted, setMounted] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState('dark');
 
   useEffect(() => {
+    setMounted(true);
+    const active = document.documentElement.getAttribute('data-theme') || reduxTheme || 'dark';
+    setCurrentTheme(active);
+
     const observer = new MutationObserver(() => {
-      const active = document.documentElement.getAttribute('data-theme') || 'dark';
-      setCurrentTheme(active);
+      const activeTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      setCurrentTheme(activeTheme);
     });
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme']
     });
     return () => observer.disconnect();
-  }, []);
+  }, [reduxTheme]);
 
   // Core Tournament & Match State
   const [tournament, setTournament] = useState(null);
@@ -62,12 +71,36 @@ const SignageDisplayPage = () => {
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Orientation State: AUTO (detect from aspect ratio), LANDSCAPE (16:9), PORTRAIT (9:16)
+  const [displayOrientation, setDisplayOrientation] = useState('AUTO');
+  const [windowAspect, setWindowAspect] = useState(16 / 9);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowAspect(window.innerWidth / (window.innerHeight || 1));
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isPortrait = displayOrientation === 'PORTRAIT'
+    ? true
+    : displayOrientation === 'LANDSCAPE'
+    ? false
+    : windowAspect < 1; // Auto: height > width
+
   // Advertisements State
   const [adsData, setAdsData] = useState({
     topAds: [],
     bottomAds: [],
     leftAds: [],
     rightAds: [],
+    courtAds: [],
+    zoneSettings: { topHeight: 120, leftWidth: 220, rightWidth: 220, bottomHeight: 70 },
+    venueZoneSettings: {},
+    portraitZoneSettings: { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' },
+    venuePortraitZoneSettings: {},
     state: {
       adsEnabled: true,
       topAdMode: 'STATIC',
@@ -210,6 +243,21 @@ const SignageDisplayPage = () => {
       }));
     };
 
+    const handlePlaybackUpdate = (data) => {
+      if (data?.playbackState) {
+        setAdsData(prev => ({
+          ...prev,
+          state: { ...prev.state, ...data.playbackState },
+          zoneSettings: data.playbackState.zoneSettings || prev.zoneSettings,
+          venueZoneSettings: data.playbackState.venueZoneSettings || prev.venueZoneSettings,
+          portraitZoneSettings: data.playbackState.portraitZoneSettings || prev.portraitZoneSettings,
+          venuePortraitZoneSettings: data.playbackState.venuePortraitZoneSettings || prev.venuePortraitZoneSettings
+        }));
+      }
+      fetchAdvertisements();
+    };
+
+    socket.on('signage:playbackUpdated', handlePlaybackUpdate);
     socket.on('signage:adUpdated', handleAdUpdate);
     socket.on('signage:adAdded', handleAdUpdate);
     socket.on('signage:adRemoved', handleAdUpdate);
@@ -217,8 +265,14 @@ const SignageDisplayPage = () => {
     socket.on('signage:adResumed', handleAdResumed);
     socket.on('signage:adsDisabled', handleAdsDisabled);
     socket.on('signage:adsEnabled', handleAdsEnabled);
+    socket.on('tournament:matchDisplayUpdated', fetchLiveMatches);
+    socket.on('display:matchesUpdated', fetchLiveMatches);
+    socket.on('match:badmintonEvent', (data) => handleLiveMatchUpdate(data));
+    socket.on('match:ballEvent', (data) => handleLiveMatchUpdate(data));
+    socket.on('match:pickleballScore', (data) => handleLiveMatchUpdate(data));
 
     return () => {
+      socket.off('signage:playbackUpdated', handlePlaybackUpdate);
       socket.off('signage:adUpdated', handleAdUpdate);
       socket.off('signage:adAdded', handleAdUpdate);
       socket.off('signage:adRemoved', handleAdUpdate);
@@ -226,8 +280,13 @@ const SignageDisplayPage = () => {
       socket.off('signage:adResumed', handleAdResumed);
       socket.off('signage:adsDisabled', handleAdsDisabled);
       socket.off('signage:adsEnabled', handleAdsEnabled);
+      socket.off('tournament:matchDisplayUpdated', fetchLiveMatches);
+      socket.off('display:matchesUpdated', fetchLiveMatches);
+      socket.off('match:badmintonEvent');
+      socket.off('match:ballEvent');
+      socket.off('match:pickleballScore');
     };
-  }, []);
+  }, [id]);
 
   // Top Ad Rotation (Crossfade every 10 seconds if multiple active top ads)
   useEffect(() => {
@@ -238,21 +297,29 @@ const SignageDisplayPage = () => {
     return () => clearInterval(interval);
   }, [adsData.topAds]);
 
-  // Handle incoming live score update from Socket.IO room tournament:{id}
+  // Handle incoming live score update from Socket.IO room tournament:{id} and match:{id}
   const handleLiveMatchUpdate = useCallback((data) => {
-    if (!data?.matchId) return;
+    if (!data) return;
+    const targetId = data.matchId || data.id;
+    if (!targetId) return;
 
     setMatches((prev) =>
       prev.map((m) => {
-        if (m.id === data.matchId) {
+        if (m.id === targetId || m.uuid === targetId) {
+          if (data.eventSeq && m._eventSeq && data.eventSeq < m._eventSeq) {
+            return m; // Ignore stale or out-of-order event
+          }
           return {
             ...m,
+            _eventSeq: data.eventSeq || Date.now(),
+            _lastEventType: data.type || null,
             status: data.status || m.status,
+            courtColor: data.courtColor || m.courtColor,
             score: {
               ...m.score,
-              summary: data.liveScoreSummary || m.score?.summary,
-              subtext: data.liveSubtext || m.score?.subtext,
-              details: data.state || m.score?.details
+              summary: data.scoreSummary || data.liveScoreSummary || m.score?.summary,
+              subtext: data.liveSubtext || data.subtext || m.score?.subtext,
+              details: data.state || data.details || m.score?.details
             }
           };
         }
@@ -263,8 +330,10 @@ const SignageDisplayPage = () => {
 
   useTournamentLive(id, handleLiveMatchUpdate);
 
+  const displayMatches = matches.filter((m) => m.showOnDisplay !== false);
+
   // ── LIVE BALL-EVENT HOOK (STABLE MONOTONIC PIPELINE) ──
-  const { activeEvent, dismissEvent } = useBallEvents(matches[0]);
+  const { activeEvent, dismissEvent } = useBallEvents(displayMatches[0]);
 
   // Advertisement Visibility Checks
   const isAdsGlobalEnabled = adsData.state?.adsEnabled !== false;
@@ -285,7 +354,67 @@ const SignageDisplayPage = () => {
 
   const activeTopAd = adsData.topAds?.[currentTopAdIndex] || adsData.topAds?.[0];
   const bottomTickerSpeed = adsData.bottomAds?.find((a) => a.speed)?.speed || adsData.bottomAds?.[0]?.speed || 25;
-  const matchCount = matches.length;
+  const matchCount = displayMatches.length;
+
+  // Unified Dynamic Ad Zone Settings Resolution
+  const venueId = tournament?.venue_id || tournament?.venueId || null;
+  const activeZoneSettings = useMemo(() => {
+    if (isPortrait) {
+      const defaults = { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' };
+      const globalZones = { ...defaults, ...(adsData?.portraitZoneSettings || {}) };
+      if (venueId && adsData?.venuePortraitZoneSettings?.[String(venueId)]) {
+        return { ...globalZones, ...adsData.venuePortraitZoneSettings[String(venueId)] };
+      }
+      return globalZones;
+    } else {
+      const defaults = { topHeight: 120, leftWidth: 220, rightWidth: 220, bottomHeight: 70 };
+      const globalZones = { ...defaults, ...(adsData?.zoneSettings || {}) };
+      if (venueId && adsData?.venueZoneSettings?.[String(venueId)]) {
+        return { ...globalZones, ...adsData.venueZoneSettings[String(venueId)] };
+      }
+      return globalZones;
+    }
+  }, [adsData, venueId, isPortrait]);
+
+  const resolveZoneDimension = (zoneVal, defaultVal, adVal) => {
+    if (zoneVal && Number(zoneVal) !== defaultVal) {
+      return typeof zoneVal === 'number' ? `${zoneVal}px` : zoneVal;
+    }
+    if (adVal && adVal !== 'auto' && adVal !== '100%') {
+      if (typeof adVal === 'number' || String(adVal).match(/^\d+$/)) {
+        return `${adVal}px`;
+      }
+      return String(adVal);
+    }
+    const finalVal = zoneVal || defaultVal;
+    return typeof finalVal === 'number' ? `${finalVal}px` : finalVal;
+  };
+
+  const resolvedTopHeight = showTopAd
+    ? resolveZoneDimension(activeZoneSettings?.topHeight, isPortrait ? 160 : 120, activeTopAd?.height)
+    : '0px';
+
+  const isSidebarEnabled = Boolean(
+    isAdsGlobalEnabled &&
+    adsData.state?.sidebarAdsEnabled !== false
+  );
+  const isLeftAdActive = isSidebarEnabled && adsData.leftAds && adsData.leftAds.length > 0;
+  const isRightAdActive = isSidebarEnabled && adsData.rightAds && adsData.rightAds.length > 0;
+
+  const resolvedLeftWidth = isLeftAdActive
+    ? resolveZoneDimension(activeZoneSettings?.leftWidth, 220, adsData.leftAds?.[0]?.width)
+    : '0px';
+
+  const resolvedRightWidth = isRightAdActive
+    ? resolveZoneDimension(activeZoneSettings?.rightWidth, 220, adsData.rightAds?.[0]?.width)
+    : '0px';
+
+  const resolvedBottomHeight = showBottomAd
+    ? resolveZoneDimension(activeZoneSettings?.bottomHeight, isPortrait ? 80 : 70, adsData.bottomAds?.[0]?.height)
+    : '0px';
+
+  const resolvedStripHeight = resolveZoneDimension(activeZoneSettings?.sidebarStripHeight, 90);
+  const sidebarsMode = activeZoneSettings?.sidebarsMode || 'STRIP';
 
   return (
     <div className="display-page-container display-theme-transition">
@@ -320,30 +449,73 @@ const SignageDisplayPage = () => {
         </div>
       )}
 
-      {/* ── MAIN CENTERED CONTAINER (MAX-WIDTH 1280px / FLUID PADDING) ── */}
-      <div className="display-inner-wrapper">
-        {/* ── TOP AD BANNER WITH CONFIGURABLE SIZING, FIT, MOTION & PRESET ── */}
+      {/* ── MAIN CENTERED CONTAINER (FLUID IN PORTRAIT / MAX-WIDTH IN LANDSCAPE) ── */}
+      <div
+        className="display-inner-wrapper"
+        style={{
+          maxWidth: isPortrait ? '100%' : undefined,
+          width: '100%',
+          flex: 1
+        }}
+      >
+        {/* ── TOP AD BANNER WITH REAL-TIME CONFIGURABLE HEIGHT ── */}
         {showTopAd && (
-          <SignageAdSlot
-            placement="TOP"
-            ads={adsData.topAds}
-            isPaused={!isAdsGlobalEnabled}
-          />
+          <div
+            style={{
+              height: resolvedTopHeight,
+              width: '100%',
+              overflow: 'hidden',
+              flexShrink: 0,
+              marginBottom: 'clamp(0.6rem, 1.2vh, 1rem)',
+              borderRadius: 12,
+              transition: 'height 0.25s ease'
+            }}
+          >
+            <SignageAdSlot
+              placement="TOP"
+              ads={adsData.topAds}
+              isPaused={!isAdsGlobalEnabled}
+              style={{ height: '100%', width: '100%', marginBottom: 0 }}
+            />
+          </div>
         )}
 
-        {/* ── SIDEBARS + ARENA SCOREBOARD CONTAINER ── */}
-        <div className="signage-layout-with-sidebars">
-          {/* Left Sidebar Ad Slot */}
-          {isAdsGlobalEnabled && adsData.state?.sidebarAdsEnabled !== false && adsData.leftAds && adsData.leftAds.length > 0 && (
-            <SignageAdSlot
-              placement="LEFT"
-              ads={adsData.leftAds}
-              isPaused={adsData.state?.leftSidebarPaused}
-            />
-          )}
+        {/* ── SIDEBARS + ARENA SCOREBOARD CONTAINER (LANDSCAPE VS PORTRAIT) ── */}
+        {!isPortrait ? (
+          /* LANDSCAPE: Left Sidebar + Central Content + Right Sidebar */
+          <div
+            className="signage-layout-with-sidebars"
+            style={{
+              display: 'flex',
+              alignItems: 'stretch',
+              gap: 'clamp(0.75rem, 1.5vw, 1.25rem)',
+              width: '100%',
+              flex: 1
+            }}
+          >
+            {/* Left Sidebar Ad Slot */}
+            {isLeftAdActive && (
+              <div
+                style={{
+                  width: resolvedLeftWidth,
+                  minWidth: resolvedLeftWidth,
+                  maxWidth: resolvedLeftWidth,
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  transition: 'width 0.25s ease'
+                }}
+              >
+                <SignageAdSlot
+                  placement="LEFT"
+                  ads={adsData.leftAds}
+                  isPaused={adsData.state?.leftSidebarPaused}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </div>
+            )}
 
-          {/* Main Central Arena Content */}
-          <div className="signage-main-arena-content">
+            {/* Main Central Arena Content */}
+            <div className="signage-main-arena-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
 
         {/* ── HEADER: ONE TIDY ROW ON DESKTOP, TWO-ROW ON MOBILE (<1024px) ── */}
         {/* 1. Desktop Header (>=1024px: One Tidy Row with No Wrapping) */}
@@ -488,11 +660,42 @@ const SignageDisplayPage = () => {
               {currentTime}
             </div>
 
+            {/* Orientation Toggle Button */}
+            <button
+              onClick={() => {
+                setDisplayOrientation(prev => {
+                  if (prev === 'AUTO') return 'LANDSCAPE';
+                  if (prev === 'LANDSCAPE') return 'PORTRAIT';
+                  return 'AUTO';
+                });
+              }}
+              aria-label={`Orientation: ${displayOrientation}`}
+              title={`Orientation Mode: ${displayOrientation} (${isPortrait ? 'Portrait 9:16' : 'Landscape 16:9'}) - Click to toggle`}
+              style={{
+                height: 44,
+                padding: '0 12px',
+                borderRadius: 12,
+                background: 'var(--display-surface-elevated)',
+                border: isPortrait ? '1px solid var(--display-accent)' : '1px solid var(--display-border)',
+                color: isPortrait ? 'var(--display-accent)' : 'var(--display-text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              <RotateCw size={16} />
+              <span>{displayOrientation === 'AUTO' ? (isPortrait ? 'Auto (Portrait)' : 'Auto (Landscape)') : displayOrientation}</span>
+            </button>
+
             {/* Theme Toggle Button (44px) */}
             <button
               onClick={() => dispatch(toggleTheme())}
-              aria-label={`Switch to ${currentTheme === 'dark' ? 'light' : 'dark'} mode`}
-              title={`Switch to ${currentTheme === 'dark' ? 'light' : 'dark'} mode`}
+              aria-label={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
+              title={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
+              suppressHydrationWarning
               style={{
                 width: 44,
                 height: 44,
@@ -508,10 +711,10 @@ const SignageDisplayPage = () => {
                 cursor: 'pointer'
               }}
             >
-              {currentTheme === 'dark' ? (
-                <Sun size={18} color="var(--display-warning-amber)" />
-              ) : (
+              {mounted && currentTheme === 'light' ? (
                 <Moon size={18} color="var(--display-boundary-purple)" />
+              ) : (
+                <Sun size={18} color="var(--display-warning-amber)" />
               )}
             </button>
 
@@ -643,10 +846,40 @@ const SignageDisplayPage = () => {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+              {/* Mobile Orientation Toggle Button */}
+              <button
+                onClick={() => {
+                  setDisplayOrientation(prev => {
+                    if (prev === 'AUTO') return 'LANDSCAPE';
+                    if (prev === 'LANDSCAPE') return 'PORTRAIT';
+                    return 'AUTO';
+                  });
+                }}
+                aria-label={`Orientation: ${displayOrientation}`}
+                title={`Orientation: ${displayOrientation}`}
+                style={{
+                  width: 44,
+                  height: 44,
+                  minWidth: 44,
+                  minHeight: 44,
+                  borderRadius: 12,
+                  background: 'var(--display-surface-elevated)',
+                  border: isPortrait ? '1px solid var(--display-accent)' : '1px solid var(--display-border)',
+                  color: isPortrait ? 'var(--display-accent)' : 'var(--display-text-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <RotateCw size={18} />
+              </button>
+
               <button
                 onClick={() => dispatch(toggleTheme())}
-                aria-label={`Switch to ${currentTheme === 'dark' ? 'light' : 'dark'} mode`}
-                title={`Switch to ${currentTheme === 'dark' ? 'light' : 'dark'} mode`}
+                aria-label={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
+                title={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
+                suppressHydrationWarning
                 style={{
                   width: 44,
                   height: 44,
@@ -662,10 +895,10 @@ const SignageDisplayPage = () => {
                   cursor: 'pointer'
                 }}
               >
-                {currentTheme === 'dark' ? (
-                  <Sun size={18} color="var(--display-warning-amber)" />
-                ) : (
+                {mounted && currentTheme === 'light' ? (
                   <Moon size={18} color="var(--display-boundary-purple)" />
+                ) : (
+                  <Sun size={18} color="var(--display-warning-amber)" />
                 )}
               </button>
 
@@ -825,7 +1058,7 @@ const SignageDisplayPage = () => {
                   color: 'var(--display-text-primary)'
                 }}
               >
-                Waiting for Live Match
+                No matches selected for display
               </h2>
               <p
                 style={{
@@ -835,13 +1068,12 @@ const SignageDisplayPage = () => {
                   maxWidth: 480
                 }}
               >
-                No matches are currently active on court resources. The display will automatically
-                update when play commences.
+                No matches are currently selected for Signage TV display. Organizers can select matches in the Live Matches tab.
               </p>
             </div>
           ) : matchCount === 1 ? (
             /* ── 1 MATCH: STADIUM HERO PRESENTATION ── */
-            <MatchCardHero match={matches[0]} />
+            <MatchCardHero match={displayMatches[0]} />
           ) : (
             /* ── 2, 3, or 4+ MATCHES: MULTI-MATCH GRID ── */
             <div
@@ -856,31 +1088,247 @@ const SignageDisplayPage = () => {
                 minHeight: 0
               }}
             >
-              {matches.map((m) => (
+              {displayMatches.map((m) => (
                 <MatchCardGrid key={m.id} match={m} matchCount={matchCount} />
               ))}
             </div>
           )}
         </main>
+            </div>
+
+            {/* Right Sidebar Ad Slot */}
+            {isRightAdActive && (
+              <div
+                style={{
+                  width: resolvedRightWidth,
+                  minWidth: resolvedRightWidth,
+                  maxWidth: resolvedRightWidth,
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  transition: 'width 0.25s ease'
+                }}
+              >
+                <SignageAdSlot
+                  placement="RIGHT"
+                  ads={adsData.rightAds}
+                  isPaused={adsData.state?.rightSidebarPaused}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </div>
+            )}
           </div>
+        ) : (
+          /* PORTRAIT: Vertically Stacked Content with Optional Slim Horizontal Sponsor Strips */
+          <div
+            className="signage-layout-portrait"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              width: '100%',
+              flex: 1,
+              gap: 'clamp(0.6rem, 1.2vh, 1rem)'
+            }}
+          >
+            {/* Slim Horizontal Sponsor Strip Above Content */}
+            {isSidebarEnabled && sidebarsMode === 'STRIP' && (adsData.leftAds?.length > 0 || adsData.rightAds?.length > 0) && (
+              <div
+                style={{
+                  height: resolvedStripHeight,
+                  width: '100%',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  borderRadius: 12
+                }}
+              >
+                <SignageAdSlot
+                  placement={adsData.leftAds?.length > 0 ? 'LEFT' : 'RIGHT'}
+                  ads={adsData.leftAds?.length > 0 ? adsData.leftAds : adsData.rightAds}
+                  isPaused={false}
+                  style={{ height: '100%', width: '100%' }}
+                />
+              </div>
+            )}
 
-          {/* Right Sidebar Ad Slot */}
-          {isAdsGlobalEnabled && adsData.state?.sidebarAdsEnabled !== false && adsData.rightAds && adsData.rightAds.length > 0 && (
-            <SignageAdSlot
-              placement="RIGHT"
-              ads={adsData.rightAds}
-              isPaused={adsData.state?.rightSidebarPaused}
-            />
-          )}
-        </div>
+            {/* Main Arena Content in Portrait */}
+            <div className="signage-main-arena-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              {/* Header inside portrait */}
+              <header
+                className="display-header-desktop display-theme-transition"
+                style={{
+                  background: 'var(--display-surface)',
+                  border: '1px solid var(--display-border)',
+                  borderRadius: 16,
+                  padding: '8px 16px',
+                  marginBottom: 'clamp(0.6rem, 1.2vh, 1rem)',
+                  boxShadow: 'var(--display-shadow-subtle)',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '1rem',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                  <Link
+                    to={`/tournaments/${id}`}
+                    title="Back to Tournament"
+                    aria-label="Back to Tournament"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      minWidth: 44,
+                      minHeight: 44,
+                      borderRadius: 12,
+                      background: 'var(--display-surface-elevated)',
+                      border: '1px solid var(--display-border)',
+                      color: 'var(--display-text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textDecoration: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <ArrowLeft size={18} />
+                  </Link>
+                  <div style={{ minWidth: 0 }}>
+                    <h1 style={{ fontSize: 'clamp(1rem, 1.4vw, 1.35rem)', fontWeight: 900, color: 'var(--display-text-primary)', margin: 0 }}>
+                      {tournament?.name || 'Tournament Arena Live Display'}
+                    </h1>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--display-text-secondary)' }}>
+                      {tournament?.city || 'Sports Arena'} • Official Live Match Broadcast
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+                  <button
+                    onClick={() => setDisplayOrientation(prev => prev === 'LANDSCAPE' ? 'PORTRAIT' : prev === 'PORTRAIT' ? 'AUTO' : 'LANDSCAPE')}
+                    aria-label="Toggle Orientation"
+                    style={{
+                      height: 44,
+                      padding: '0 12px',
+                      borderRadius: 12,
+                      background: 'var(--display-surface-elevated)',
+                      border: '1px solid var(--display-accent)',
+                      color: 'var(--display-accent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <RotateCw size={16} />
+                    <span>Portrait (9:16)</span>
+                  </button>
+                  <button
+                    onClick={() => dispatch(toggleTheme())}
+                    suppressHydrationWarning
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      background: 'var(--display-surface-elevated)',
+                      border: '1px solid var(--display-border)',
+                      color: 'var(--display-text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {mounted && currentTheme === 'light' ? (
+                      <Moon size={18} color="var(--display-boundary-purple)" />
+                    ) : (
+                      <Sun size={18} color="var(--display-warning-amber)" />
+                    )}
+                  </button>
+                  <button
+                    onClick={toggleFullscreen}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      background: 'var(--display-surface-elevated)',
+                      border: '1px solid var(--display-border)',
+                      color: 'var(--display-text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                  </button>
+                </div>
+              </header>
 
-        {/* ── BOTTOM AD TICKER / SPONSOR STRIP (WITH ADJUSTABLE SIZING & MOTION) ── */}
+              <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                {loading ? (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--display-text-secondary)', gap: 12, background: 'var(--display-surface)', borderRadius: 18, border: '1px solid var(--display-border)' }}>
+                    <Radio size={36} className="animate-pulse" color="var(--display-accent)" />
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>Connecting to Stadium Live Feed...</div>
+                  </div>
+                ) : matchCount === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--display-surface)', borderRadius: 18, border: '1px dashed var(--display-border)', padding: '2rem', textAlign: 'center' }}>
+                    <Radio size={44} color="var(--display-text-muted)" style={{ marginBottom: '1rem' }} />
+                    <h2 style={{ fontSize: '1.4rem', margin: 0, fontWeight: 900, color: 'var(--display-text-primary)' }}>No matches selected for display</h2>
+                    <p style={{ color: 'var(--display-text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem', maxWidth: 480 }}>No matches are currently selected for Signage TV display. Organizers can select matches in the Live Matches tab.</p>
+                  </div>
+                ) : matchCount === 1 ? (
+                  <MatchCardHero match={displayMatches[0]} />
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', flex: 1, minHeight: 0 }}>
+                    {displayMatches.map((m) => (
+                      <MatchCardGrid key={m.id} match={m} matchCount={matchCount} />
+                    ))}
+                  </div>
+                )}
+              </main>
+            </div>
+
+            {/* Optional Horizontal Sponsor Strip Below Content */}
+            {isSidebarEnabled && sidebarsMode === 'STRIP' && adsData.leftAds?.length > 0 && adsData.rightAds?.length > 0 && (
+              <div
+                style={{
+                  height: resolvedStripHeight,
+                  width: '100%',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  borderRadius: 12
+                }}
+              >
+                <SignageAdSlot
+                  placement="RIGHT"
+                  ads={adsData.rightAds}
+                  isPaused={false}
+                  style={{ height: '100%', width: '100%' }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── BOTTOM AD TICKER / SPONSOR STRIP WITH REAL-TIME CONFIGURABLE HEIGHT ── */}
         {showBottomAd && (
-          <SignageAdSlot
-            placement="BOTTOM"
-            ads={adsData.bottomAds}
-            isPaused={isBottomAdPaused}
-          />
+          <div
+            style={{
+              height: resolvedBottomHeight,
+              width: '100%',
+              overflow: 'hidden',
+              flexShrink: 0,
+              marginTop: 'clamp(0.5rem, 1vh, 0.75rem)',
+              borderRadius: 10,
+              transition: 'height 0.25s ease'
+            }}
+          >
+            <SignageAdSlot
+              placement="BOTTOM"
+              ads={adsData.bottomAds}
+              isPaused={isBottomAdPaused}
+              style={{ height: '100%', width: '100%', marginTop: 0 }}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -944,6 +1392,297 @@ const getBallChipStyle = (ball) => {
    Phone (<768px): Mobile layout preserved
    ───────────────────────────────────────────────────────────── */
 const MatchCardHero = ({ match }) => {
+  const isRacquetSport = ['pickleball', 'badminton', 'tennis', 'table-tennis'].includes(match.sportSlug?.toLowerCase());
+
+  if (isRacquetSport) {
+    const courtState = getCourtState(match);
+    const {
+      sport: sportSlug,
+      mainScoreText,
+      gamesWonText,
+      servingTeam,
+      isTeamAServing,
+      serverBox: serverCourt,
+      serverNumber,
+      servingTeamName,
+      servingStatusText,
+      isGamePoint,
+      isMatchPoint
+    } = courtState;
+
+    return (
+      <div style={{
+        width: '100%',
+        height: '100%',
+        minHeight: 0,
+        background: 'var(--display-surface)',
+        border: '1px solid var(--display-border)',
+        borderRadius: 18,
+        padding: 'clamp(0.8rem, 1.6vh, 1.4rem)',
+        boxShadow: 'var(--display-shadow)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        overflow: 'hidden'
+      }}>
+        {/* Top Header Tag */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexShrink: 0, marginBottom: '0.35rem' }}>
+          <span style={{
+            fontSize: 'clamp(0.68rem, 0.9vw, 0.8rem)',
+            fontWeight: 800,
+            background: 'var(--display-accent-subtle)',
+            border: '1px solid var(--display-accent)',
+            color: 'var(--display-accent)',
+            padding: '2px 10px',
+            borderRadius: 20,
+            textTransform: 'uppercase'
+          }}>
+            {match.sportSlug?.toUpperCase()} • {match.courtName || 'Court 1'} • MATCH #{match.matchNumber || 1}
+          </span>
+          <span style={{
+            fontSize: '0.75rem',
+            fontWeight: 800,
+            color: match.status === 'LIVE' ? '#10b981' : 'var(--display-text-muted)',
+            background: match.status === 'LIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.06)',
+            padding: '2px 10px',
+            borderRadius: 12
+          }}>
+            {match.status === 'LIVE' ? '🔴 LIVE ON DISPLAY' : match.status}
+          </span>
+        </div>
+
+        {/* 3-Column Header Strip with Non-Wrapping Score */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
+          alignItems: 'center',
+          gap: 'clamp(0.5rem, 1.5vw, 1.5rem)',
+          width: '100%',
+          flexShrink: 0,
+          margin: '0.2rem 0'
+        }}>
+          {/* Team A */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minWidth: 0 }}>
+            {match.teamA?.logo ? (
+              <img
+                src={match.teamA.logo}
+                alt={match.teamA.name}
+                style={{ width: 'clamp(44px, 4.5vw, 64px)', height: 'clamp(44px, 4.5vw, 64px)', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--display-border)' }}
+              />
+            ) : (
+              <div style={{
+                width: 'clamp(44px, 4.5vw, 64px)',
+                height: 'clamp(44px, 4.5vw, 64px)',
+                borderRadius: '50%',
+                background: 'var(--display-accent-subtle)',
+                color: 'var(--display-accent)',
+                fontWeight: 900,
+                fontSize: '1.2rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {(match.teamA?.name || 'A').substring(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div style={{
+              fontSize: 'clamp(1rem, 1.8vw, 1.5rem)',
+              fontWeight: 900,
+              color: 'var(--display-text-primary)',
+              marginTop: '0.3rem',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%'
+            }}>
+              {match.teamA?.name}
+            </div>
+            {isTeamAServing ? (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '2px 9px',
+                borderRadius: 14,
+                background: '#10b981',
+                color: '#ffffff',
+                fontSize: '0.7rem',
+                fontWeight: 900,
+                letterSpacing: '0.04em',
+                boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)',
+                marginTop: '0.15rem'
+              }}>
+                🏸 SERVE
+              </span>
+            ) : (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 9px',
+                borderRadius: 14,
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: 'var(--display-text-muted)',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                marginTop: '0.15rem'
+              }}>
+                RECEIVING
+              </span>
+            )}
+          </div>
+
+          {/* Center Point Score & Sets Won */}
+          <div style={{
+            background: 'var(--display-surface-elevated, rgba(15, 23, 42, 0.8))',
+            padding: 'clamp(0.4rem, 0.8vh, 0.75rem) clamp(0.9rem, 1.8vw, 1.8rem)',
+            borderRadius: 16,
+            border: '2px solid var(--display-border)',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+          }}>
+            <div style={{
+              fontSize: 'clamp(2rem, 4vw, 3.8rem)',
+              fontWeight: 950,
+              color: 'var(--display-accent)',
+              lineHeight: 1,
+              letterSpacing: '-1px',
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap'
+            }}>
+              {mainScoreText}
+            </div>
+            {gamesWonText && (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                fontSize: 'clamp(0.68rem, 0.9vw, 0.82rem)',
+                fontWeight: 800,
+                color: '#f59e0b',
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                padding: '2px 9px',
+                borderRadius: 14,
+                marginTop: '0.3rem',
+                whiteSpace: 'nowrap'
+              }}>
+                {gamesWonText}
+              </div>
+            )}
+          </div>
+
+          {/* Team B */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minWidth: 0 }}>
+            {match.teamB?.logo ? (
+              <img
+                src={match.teamB.logo}
+                alt={match.teamB.name}
+                style={{ width: 'clamp(44px, 4.5vw, 64px)', height: 'clamp(44px, 4.5vw, 64px)', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--display-border)' }}
+              />
+            ) : (
+              <div style={{
+                width: 'clamp(44px, 4.5vw, 64px)',
+                height: 'clamp(44px, 4.5vw, 64px)',
+                borderRadius: '50%',
+                background: 'var(--display-accent-subtle)',
+                color: 'var(--display-accent)',
+                fontWeight: 900,
+                fontSize: '1.2rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {(match.teamB?.name || 'B').substring(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div style={{
+              fontSize: 'clamp(1rem, 1.8vw, 1.5rem)',
+              fontWeight: 900,
+              color: 'var(--display-text-primary)',
+              marginTop: '0.3rem',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%'
+            }}>
+              {match.teamB?.name}
+            </div>
+            {!isTeamAServing ? (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '2px 9px',
+                borderRadius: 14,
+                background: '#10b981',
+                color: '#ffffff',
+                fontSize: '0.7rem',
+                fontWeight: 900,
+                letterSpacing: '0.04em',
+                boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)',
+                marginTop: '0.15rem'
+              }}>
+                🏸 SERVE
+              </span>
+            ) : (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 9px',
+                borderRadius: 14,
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: 'var(--display-text-muted)',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                marginTop: '0.15rem'
+              }}>
+                RECEIVING
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Central Responsive Animated Court Visual */}
+        <div style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0.2rem 0',
+          width: '100%'
+        }}>
+          <CourtView
+            match={match}
+            courtColor={match.courtColor || '#0d5c3a'}
+            courtAds={match.courtAds || []}
+            ambientRally={true}
+          />
+        </div>
+
+        {/* Serving Status Strip Under Court */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderTop: '1px solid var(--display-border)',
+          paddingTop: '0.5rem',
+          color: 'var(--display-text-muted)',
+          fontSize: 'clamp(0.72rem, 0.9vw, 0.85rem)',
+          flexShrink: 0,
+          flexWrap: 'wrap',
+          gap: '0.4rem'
+        }}>
+          <span style={{ color: '#34d399', fontWeight: 800 }}>
+            {servingStatusText}
+          </span>
+          <span>{match.venueName || 'Turf Arena'}</span>
+        </div>
+      </div>
+    );
+  }
+
   const state = match.score?.details || {};
   const striker = state.striker;
   const nonStriker = state.nonStriker;
@@ -1579,6 +2318,93 @@ const MatchCardHero = ({ match }) => {
    GRID MATCH CARD (Multi-Match Mode)
    ───────────────────────────────────────────────────────────── */
 const MatchCardGrid = ({ match, matchCount }) => {
+  const isRacquetSport = ['pickleball', 'badminton', 'tennis', 'table-tennis'].includes(match.sportSlug?.toLowerCase());
+
+  if (isRacquetSport) {
+    const parsed = parseRacquetScoreDetails(match);
+    const { sportSlug, mainScoreText, gamesWonText, servingSide, serverCourt, serverNumber, servingTeamName } = parsed;
+    return (
+      <div
+        className="display-theme-transition"
+        style={{
+          position: 'relative',
+          background: 'var(--display-surface)',
+          borderRadius: 16,
+          border: '1px solid var(--display-border)',
+          padding: 'clamp(0.6rem, 1.2vh, 1rem)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          boxShadow: 'var(--display-shadow-subtle)',
+          overflow: 'hidden',
+          gap: '0.35rem'
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 'clamp(0.62rem, 0.78vw, 0.72rem)', fontWeight: 800, background: 'var(--display-accent-subtle)', border: '1px solid var(--display-accent)', color: 'var(--display-accent)', padding: '2px 8px', borderRadius: 6 }}>
+            {match.courtName || 'Court'} • M#{match.matchNumber}
+          </span>
+          <span style={{ fontSize: 'clamp(0.62rem, 0.75vw, 0.7rem)', color: match.status === 'LIVE' ? '#10b981' : 'var(--display-text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>
+            {match.status === 'LIVE' ? '🔴 LIVE' : match.status}
+          </span>
+        </div>
+
+        {/* Teams and Score */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '0.4rem', margin: '2px 0' }}>
+          <div style={{ textAlign: 'left', minWidth: 0 }}>
+            <div style={{ fontSize: 'clamp(0.85rem, 1.3vw, 1.15rem)', fontWeight: 900, color: 'var(--display-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {match.teamA?.name}
+            </div>
+            {servingSide === 'team_a' && (
+              <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 5px', borderRadius: 4 }}>
+                SERVE
+              </span>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 'clamp(1.3rem, 2.2vw, 1.85rem)', fontWeight: 950, color: 'var(--display-accent)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+              {mainScoreText}
+            </div>
+            {gamesWonText && (
+              <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#f59e0b', marginTop: 2, whiteSpace: 'nowrap' }}>
+                {gamesWonText}
+              </div>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'right', minWidth: 0 }}>
+            <div style={{ fontSize: 'clamp(0.85rem, 1.3vw, 1.15rem)', fontWeight: 900, color: 'var(--display-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {match.teamB?.name}
+            </div>
+            {servingSide === 'team_b' && (
+              <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 5px', borderRadius: 4 }}>
+                SERVE
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Compact Court Preview */}
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0', maxHeight: '140px', overflow: 'hidden' }}>
+          <CourtView
+            match={match}
+            courtColor={match.courtColor || '#0d5c3a'}
+            compact={true}
+            ambientRally={true}
+          />
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--display-border)', paddingTop: '0.25rem', fontSize: '0.68rem', color: 'var(--display-text-muted)' }}>
+          <span>Serving: <strong style={{ color: '#10b981' }}>{servingTeamName}</strong></span>
+          <span>{match.venueName || 'Court'}</span>
+        </div>
+      </div>
+    );
+  }
+
   const state = match.score?.details || {};
   const currentOverBalls = state.currentOverBalls || [];
 

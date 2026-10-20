@@ -1,18 +1,21 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from '../lib/routerCompat';
 import axios from 'axios';
 import { useMatchLive } from '../hooks/useMatchLive';
 import { Radio, ArrowLeft, Send, Trophy, MapPin, Calendar, Clock, ExternalLink, Zap } from 'lucide-react';
 import ScoreCelebration from '../components/scorer/ScoreCelebration';
+import CourtView, { getServeState, parseRacquetScoreDetails } from '../components/court/CourtView';
 
-const MatchDetailPage = () => {
-  const { id } = useParams();
+const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
+  const routeParams = useParams();
+  const matchIdFromUrl = typeof window !== 'undefined' ? window.location.pathname.match(/\/matches\/([^/]+)/)?.[1] : null;
+  const id = propsMatchId || routeParams?.id || matchIdFromUrl;
 
-  const [match, setMatch] = useState(null);
+  const [match, setMatch] = useState(initialMatch);
   const [events, setEvents] = useState([]);
   const [eventsPagination, setEventsPagination] = useState({ hasMore: false, nextCursor: null });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialMatch);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [celebration, setCelebration] = useState(null);
   const [ads, setAds] = useState({ topAd: null, bottomAd: null });
@@ -353,6 +356,25 @@ const MatchDetailPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Animated Court for Court-Based Sports (Pickleball, Badminton, Tennis) */}
+        {['pickleball', 'badminton', 'tennis', 'table-tennis'].includes(match.sport?.slug?.toLowerCase()) && (() => {
+          const serveState = getServeState(match);
+          const parsed = parseRacquetScoreDetails(match);
+          return (
+            <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+              <CourtView
+                match={match}
+                serveState={serveState}
+                courtColor={match.courtColor || match.court?.courtColor || '#0d5c3a'}
+                ambientRally={true}
+              />
+              <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 700 }}>
+                {serveState.label || parsed.servingStatusText}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Real-time Scorer Test Panel */}

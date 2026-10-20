@@ -93,23 +93,23 @@
    ============================ */
 [data-theme="light"] {
   color-scheme: light;
-  --bg-dark:          #f0f4f8;
-  --bg-page:          #f0f4f8;
-  --bg-card:          rgba(255, 255, 255, 0.85);
+  --bg-dark:          #f8fafc;
+  --bg-page:          #f8fafc;
+  --bg-card:          #ffffff;
   --bg-card-solid:    #ffffff;
-  --bg-card-hover:    rgba(255, 255, 255, 0.98);
-  --bg-elevated:      #e8f0fe;
+  --bg-card-hover:    #f8fafc;
+  --bg-elevated:      #f1f5f9;
   --bg-input:         #ffffff;
-  --bg-nav:           rgba(255, 255, 255, 0.92);
+  --bg-nav:           rgba(255, 255, 255, 0.95);
   --bg-modal:         #ffffff;
-  --bg-overlay:       rgba(15, 23, 42, 0.6);
-  --bg-tag:           rgba(16, 185, 129, 0.08);
+  --bg-overlay:       rgba(15, 23, 42, 0.65);
+  --bg-tag:           rgba(5, 150, 105, 0.08);
 
-  --border-color:     rgba(0, 0, 0, 0.1);
-  --border-hover:     rgba(0, 0, 0, 0.2);
-  --border-glow:      rgba(16, 185, 129, 0.35);
+  --border-color:     #e2e8f0;
+  --border-hover:     #cbd5e1;
+  --border-glow:      rgba(5, 150, 105, 0.25);
 
-  /* Accent stays green — on-brand */
+  /* Emerald Accent (Curated for WCAG contrast in light mode) */
   --accent-primary:        #059669;
   --accent-primary-hover:  #047857;
   --accent-primary-glow:   rgba(5, 150, 105, 0.2);
@@ -118,20 +118,21 @@
   --accent-rose:           #e11d48;
   --accent-purple:         #7c3aed;
 
+  /* Crisp Typography with guaranteed contrast */
   --text-main:        #0f172a;
   --text-primary:     #0f172a;
-  --text-heading:     #0a0f1e;
+  --text-heading:     #020617;
   --text-secondary:   #334155;
   --text-muted:       #475569;
   --text-dim:         #64748b;
   --text-on-accent:   #ffffff;
 
   --card-bg:          #ffffff;
-  --bg-secondary:     rgba(0, 0, 0, 0.04);
-  --border-light:     rgba(0, 0, 0, 0.08);
+  --bg-secondary:     #f8fafc;
+  --border-light:     #f1f5f9;
 
   --slot-available-bg:     rgba(5, 150, 105, 0.08);
-  --slot-available-border: rgba(5, 150, 105, 0.3);
+  --slot-available-border: rgba(5, 150, 105, 0.35);
   --slot-available-text:   #047857;
 
   --slot-booked-bg:        rgba(225, 29, 72, 0.08);
@@ -142,19 +143,19 @@
   --slot-selected-text:    #ffffff;
 
   --slot-blocked-bg:       rgba(100, 116, 139, 0.1);
-  --slot-blocked-text:     #94a3b8;
+  --slot-blocked-text:     #64748b;
 
-  --scrollbar-track:  #e2e8f0;
+  --scrollbar-track:  #f1f5f9;
   --scrollbar-thumb:  #cbd5e1;
 
-  --glass-bg:       rgba(255, 255, 255, 0.65);
+  --glass-bg:       rgba(255, 255, 255, 0.85);
   --shadow-glow:    0 10px 30px -10px rgba(5, 150, 105, 0.2);
-  --shadow-card:    0 4px 20px rgba(0, 0, 0, 0.08);
-  --shadow-elevated:0 12px 32px rgba(0, 0, 0, 0.12);
+  --shadow-card:    0 4px 20px -2px rgba(15, 23, 42, 0.07), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --shadow-elevated:0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
 
-  --hero-gradient: radial-gradient(circle at 50% 20%, rgba(5, 150, 105, 0.1) 0%, transparent 60%);
-  --btn-secondary-bg: rgba(0, 0, 0, 0.05);
-  --btn-secondary-hover: rgba(0, 0, 0, 0.09);
+  --hero-gradient: radial-gradient(circle at 50% 20%, rgba(5, 150, 105, 0.08) 0%, transparent 60%);
+  --btn-secondary-bg: #f1f5f9;
+  --btn-secondary-hover: #e2e8f0;
 }
 
 /* ============================
@@ -422,56 +423,185 @@ input, select, textarea {
 }
 
 /* ============================
-   FORM CONTROLS
+   FORM CONTROLS & DROPDOWNS
    ============================ */
 .form-group   { margin-bottom: 1.25rem; }
 
-.form-label {
+.form-label, label {
   display: block;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 0.45rem;
+  letter-spacing: 0.01em;
 }
 
-.form-input {
+[data-theme="light"] .form-label,
+[data-theme="light"] label {
+  color: #334155;
+}
+
+/* Universal Select & Dropdown Styling */
+select, .form-input[as="select"] {
   width: 100%;
-  padding: 0.8rem 1rem;
-  background: var(--bg-input);
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  background-color: var(--bg-input);
+  color: var(--text-main);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  color: var(--text-main);
-  font-size: 0.95rem;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 16px 16px;
   transition: var(--transition-fast);
+  color-scheme: dark;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2334d399' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 }
-.form-input::placeholder { color: var(--text-dim); }
-.form-input:focus {
+
+select:focus {
   border-color: var(--accent-primary);
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-primary-glow);
 }
-[data-theme="light"] .form-input {
-  background: #ffffff;
-  border-color: #cbd5e1;
+
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
-[data-theme="light"] .form-input:focus {
+
+/* Native Option Dropdown Popup Styling */
+select option, select optgroup {
+  background-color: #101929 !important;
+  color: #f8fafc !important;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+}
+
+/* Universal Input & Textarea Styling */
+.form-input,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="date"],
+input[type="time"],
+textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  transition: var(--transition-fast);
+  color-scheme: dark;
+}
+
+.form-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+
+.form-input:focus,
+input:focus,
+textarea:focus {
   border-color: var(--accent-primary);
+  outline: none;
   box-shadow: 0 0 0 3px var(--accent-primary-glow);
 }
 
-select, input, textarea {
-  color-scheme: inherit;
+/* Light Theme Explicit Form Overrides */
+[data-theme="light"] select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  color-scheme: light !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
 }
 
-select option {
-  background-color: var(--bg-card-solid, #101929);
-  color: var(--text-main, #f8fafc);
-  padding: 8px 12px;
+[data-theme="light"] select:focus {
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2) !important;
 }
 
-[data-theme="light"] select option {
-  background-color: #ffffff;
-  color: #0f172a;
+[data-theme="light"] select option,
+[data-theme="light"] select optgroup {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .form-input,
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] input[type="tel"],
+[data-theme="light"] input[type="date"],
+[data-theme="light"] input[type="time"],
+[data-theme="light"] textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  color-scheme: light !important;
+}
+
+[data-theme="light"] .form-input::placeholder,
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
+
+[data-theme="light"] .form-input:focus,
+[data-theme="light"] input:focus,
+[data-theme="light"] textarea:focus {
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2) !important;
+}
+
+/* Custom Dropdown Menus & Popovers */
+.dropdown-menu,
+.dropdown-panel,
+.select-dropdown,
+.menu-popup {
+  background-color: var(--bg-card-solid);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+}
+
+[data-theme="light"] .dropdown-menu,
+[data-theme="light"] .dropdown-panel,
+[data-theme="light"] .select-dropdown,
+[data-theme="light"] .menu-popup {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Universal Image Badge Overlay */
+.badge-overlay {
+  background: rgba(15, 23, 42, 0.78) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
 }
 
 /* ============================

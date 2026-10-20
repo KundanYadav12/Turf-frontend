@@ -1,21 +1,25 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from '../lib/routerCompat';
 import axios from 'axios';
 import { socket } from '../services/socket';
 import {
   Trophy, ArrowLeft, Users, Zap, RotateCcw, Edit3, CheckCircle,
   AlertCircle, Play, Shield, Clock, Award, Sparkles, ChevronRight
 } from 'lucide-react';
+import CourtView from '../components/court/CourtView';
 
-export default function PickleballScorerPage() {
-  const { id } = useParams();
+export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
+  const routeParams = useParams();
+  const matchIdFromUrl = typeof window !== 'undefined' ? window.location.pathname.match(/\/matches\/([^/]+)/)?.[1] : null;
+  const id = propsMatchId || routeParams?.id || matchIdFromUrl;
 
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [lastEventType, setLastEventType] = useState(null);
 
   // Lineup selection state
   const [selectedLineupA, setSelectedLineupA] = useState([]);
@@ -80,11 +84,24 @@ export default function PickleballScorerPage() {
       fetchState();
     };
 
+    const handleCourtColor = (data) => {
+      if (data?.courtColor) {
+        setState((prev) => prev ? {
+          ...prev,
+          tournament: { ...prev.tournament, courtColor: data.courtColor }
+        } : prev);
+      }
+    };
+
     socket.on('match:pickleballScore', handleScore);
+    socket.on('tournament:courtColorUpdated', handleCourtColor);
+    socket.on('court:colorUpdated', handleCourtColor);
 
     return () => {
       socket.emit('leave:match', { matchId: id });
       socket.off('match:pickleballScore', handleScore);
+      socket.off('tournament:courtColorUpdated', handleCourtColor);
+      socket.off('court:colorUpdated', handleCourtColor);
     };
   }, [id, fetchState]);
 
@@ -132,6 +149,7 @@ export default function PickleballScorerPage() {
     setActionLoading(true);
     setError('');
     try {
+      setLastEventType('POINT');
       const res = await axios.post(`/api/matches/${id}/pickleball/point`, { pointTo });
       if (res.data.success) {
         setState(res.data.data);
@@ -148,6 +166,7 @@ export default function PickleballScorerPage() {
     setActionLoading(true);
     setError('');
     try {
+      setLastEventType('UNDO');
       const res = await axios.post(`/api/matches/${id}/pickleball/undo`);
       if (res.data.success) {
         setState(res.data.data);
@@ -179,6 +198,20 @@ export default function PickleballScorerPage() {
       setError(err?.response?.data?.message || 'Failed to correct score.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Update tournament court color live across all displays
+  const handleCourtColorChange = async (newColor) => {
+    try {
+      const token = localStorage.getItem('turf_token') || localStorage.getItem('token');
+      await axios.put(`/api/tournaments/${tournament.id}/court-color`, { courtColor: newColor }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      setSuccess('Court color updated live across all displays!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.warn('Failed to update court color:', err);
     }
   };
 
@@ -386,6 +419,26 @@ export default function PickleballScorerPage() {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Animated Recolorable Court Visualization */}
+        <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <CourtView
+            sport="pickleball"
+            format={rules?.matchFormat || 'DOUBLES'}
+            teamA={{ id: teamA.id, name: teamA.name, score: scores.teamA }}
+            teamB={{ id: teamB.id, name: teamB.name, score: scores.teamB }}
+            lineup={lineup}
+            servingSide={scores.teamA % 2 === 0 ? 'team_a' : 'team_b'}
+            serverCourt={scores.teamA % 2 === 0 ? 'RIGHT' : 'LEFT'}
+            courtColor={tournament?.courtColor || '#0d5c3a'}
+            canEditColor={true}
+            onColorChange={handleCourtColorChange}
+            status={status}
+            winner={winner}
+            lastEventType={lastEventType}
+            ambientRally={false}
+          />
         </div>
       </div>
 

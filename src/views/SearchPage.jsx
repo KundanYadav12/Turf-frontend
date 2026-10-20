@@ -41,7 +41,7 @@ const SearchPage = () => {
     setSearchParams(np);
   };
 
-  const optStyle = { background: 'var(--bg-modal)' };
+  const optStyle = { background: 'var(--bg-modal)', color: 'var(--text-main)' };
 
   return (
     <div className="container" style={{ padding: 'clamp(1.5rem, 3.5vw, 3rem) clamp(0.75rem, 2.5vw, 1.5rem)' }}>

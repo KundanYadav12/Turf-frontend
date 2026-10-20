@@ -43,11 +43,14 @@ coverage/
 .nyc_output/
 *.lcov
 test_*.js
+test_*.mjs
+test_serve_state.mjs
 *_test.js
 *.test.js
 *.test.jsx
 *.test.ts
 *.test.tsx
+*.test.mjs
 *.spec.js
 *.spec.jsx
 *.spec.ts

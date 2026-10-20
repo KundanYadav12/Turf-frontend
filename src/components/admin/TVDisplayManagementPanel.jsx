@@ -5,7 +5,7 @@ import {
   Tv, Monitor, Play, Pause, RefreshCw, Layout,
   Sliders, Save, Plus, Trash2, CheckCircle2, AlertCircle,
   ExternalLink, Eye, EyeOff, KeyRound, Sparkles, Loader2,
-  Calendar, Table, Award, Flame, Zap
+  Calendar, Table, Award, Flame, Zap, RotateCw
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -17,6 +17,7 @@ export default function TVDisplayManagementPanel() {
 
   // Live Interactive Preview state
   const [showLivePreview, setShowLivePreview] = useState(false);
+  const [previewOrientation, setPreviewOrientation] = useState('LANDSCAPE'); // 'LANDSCAPE' | 'PORTRAIT'
 
   // Pairing code form state
   const [pairingCodeInput, setPairingCodeInput] = useState('');
@@ -287,24 +288,37 @@ export default function TVDisplayManagementPanel() {
             boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
               <h3 style={{ fontSize: '1.05rem', fontWeight: 900, margin: 0, color: '#fff' }}>
-                Simulated 16:9 Smart TV Preview: {selectedDisplay.name}
+                Simulated {previewOrientation === 'PORTRAIT' ? '9:16 Portrait' : '16:9 Landscape'} Smart TV: {selectedDisplay.name}
               </h3>
             </div>
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-              Layout: <strong>{selectedDisplay.layoutType}</strong> • Matches: <strong>{selectedDisplay.matchCount}</strong> • Theme: <strong>{selectedDisplay.theme}</strong>
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setPreviewOrientation(prev => prev === 'LANDSCAPE' ? 'PORTRAIT' : 'LANDSCAPE')}
+                className="btn btn-outline btn-xs"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
+                title="Rotate TV Preview between Landscape and Portrait"
+              >
+                <RotateCw size={12} /> Rotate Preview ({previewOrientation === 'PORTRAIT' ? '9:16' : '16:9'})
+              </button>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                Orientation: <strong>{selectedDisplay.orientation || 'AUTO'}</strong> • Matches: <strong>{selectedDisplay.matchCount}</strong>
+              </span>
+            </div>
           </div>
 
-          {/* Scaled 16:9 Responsive TV Frame */}
+          {/* Scaled Responsive TV Frame (Landscape 16:9 or Portrait 9:16) */}
           <div
             style={{
               position: 'relative',
-              width: '100%',
-              paddingTop: '56.25%', // 16:9 Aspect Ratio
+              width: previewOrientation === 'PORTRAIT' ? '280px' : '100%',
+              paddingTop: previewOrientation === 'PORTRAIT' ? '0' : '56.25%', // 16:9 Aspect Ratio
+              height: previewOrientation === 'PORTRAIT' ? '498px' : 'auto',
+              margin: previewOrientation === 'PORTRAIT' ? '0 auto' : '0',
               background: '#090d16',
               borderRadius: 12,
               overflow: 'hidden',
@@ -315,7 +329,7 @@ export default function TVDisplayManagementPanel() {
               src={`/tv/${selectedDisplay.uuid}`}
               title="TV Live Preview"
               style={{
-                position: 'absolute',
+                position: previewOrientation === 'PORTRAIT' ? 'relative' : 'absolute',
                 top: 0,
                 left: 0,
                 width: '100%',
@@ -488,8 +502,8 @@ export default function TVDisplayManagementPanel() {
                 </select>
               </div>
 
-              {/* Layout Engine Selector */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              {/* Layout Engine & Orientation Selectors */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
                     Multi-Match Layout Engine
@@ -512,6 +526,22 @@ export default function TVDisplayManagementPanel() {
 
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
+                    Display Orientation
+                  </label>
+                  <select
+                    value={selectedDisplay.orientation || 'AUTO'}
+                    onChange={(e) => setSelectedDisplay({ ...selectedDisplay, orientation: e.target.value })}
+                    className="input"
+                    style={{ width: '100%' }}
+                  >
+                    <option value="AUTO">AUTO (Detect from screen aspect ratio)</option>
+                    <option value="LANDSCAPE">Landscape (16:9 Horizontal)</option>
+                    <option value="PORTRAIT">Portrait (9:16 Vertical Signage/Totem)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
                     Simultaneous Matches Count
                   </label>
                   <select
@@ -523,6 +553,21 @@ export default function TVDisplayManagementPanel() {
                     {[1, 2, 3, 4, 6, 8].map(n => (
                       <option key={n} value={n}>{n} Matches</option>
                     ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
+                    Portrait Sidebar Placement
+                  </label>
+                  <select
+                    value={selectedDisplay.sidebarsMode || 'STRIP'}
+                    onChange={(e) => setSelectedDisplay({ ...selectedDisplay, sidebarsMode: e.target.value })}
+                    className="input"
+                    style={{ width: '100%' }}
+                  >
+                    <option value="STRIP">Horizontal Sponsor Strips</option>
+                    <option value="HIDDEN">Hide Sidebars in Portrait</option>
                   </select>
                 </div>
               </div>

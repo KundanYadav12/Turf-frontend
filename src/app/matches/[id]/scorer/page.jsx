@@ -10,10 +10,10 @@ export const metadata = {
   }
 };
 
-export default function ScorerPageRoute() {
+export default function ScorerPageRoute({ params }) {
   return (
     <Suspense fallback={<div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading Scorer Console…</div>}>
-      <UniversalScorerPage />
+      <UniversalScorerPage matchId={params?.id} />
     </Suspense>
   );
 }

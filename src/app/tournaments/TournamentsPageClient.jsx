@@ -102,11 +102,11 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
 
         {/* Global Stats Counter & Actions */}
         <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ background: 'var(--bg-card, #1e293b)', padding: '0.75rem 1.25rem', borderRadius: 'var(--radius-sm, 8px)', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', boxShadow: 'var(--shadow-card)' }}>
+          <div style={{ background: 'var(--bg-card)', padding: '0.75rem 1.25rem', borderRadius: 'var(--radius-sm, 8px)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent-primary, #10b981)' }}>
               {tournaments.length}
             </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>Active Leagues</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Active Leagues</div>
           </div>
 
           {isMounted && canCreateTournament && (
@@ -220,7 +220,7 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
                       <Radio size={12} /> LIVE NOW
                     </span>
                   )}
-                  <span className="badge badge-info">{t.sport?.name || 'Cricket'}</span>
+                  <span className="badge badge-info badge-overlay">{t.sport?.name || 'Cricket'}</span>
                 </div>
               </div>
 

@@ -577,11 +577,11 @@ const TeamsPage = () => {
       {/* Create Team Modal */}
       {showCreateModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-overlay, rgba(0,0,0,0.8))', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}>
-          <div style={{ backgroundColor: 'var(--bg-modal, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', borderRadius: '18px', padding: '1.75rem', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.25)' }}>
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: 'var(--text-heading, #0f172a)' }}>
+          <div style={{ backgroundColor: 'var(--bg-modal, var(--bg-card))', border: '1px solid var(--border-color)', borderRadius: '18px', padding: '1.75rem', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-elevated)' }}>
+            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: 'var(--text-heading)' }}>
               Create New Sports Team
             </h2>
-            <p style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.85rem', margin: '0 0 1.25rem 0' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 1.25rem 0' }}>
               Create your squad, assign sport rules, division, and seed initial players.
             </p>
 
@@ -593,7 +593,7 @@ const TeamsPage = () => {
 
             <form onSubmit={handleCreateTeamSubmit}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                   Team Name *
                 </label>
                 <input
@@ -602,19 +602,19 @@ const TeamsPage = () => {
                   placeholder="e.g. Apex Blasters"
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.9rem' }}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.9rem' }}
                 />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                     Sport *
                   </label>
                   <select
                     value={teamSportId}
                     onChange={(e) => setTeamSportId(parseInt(e.target.value, 10))}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   >
                     {SPORTS_OPTIONS.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
@@ -623,13 +623,13 @@ const TeamsPage = () => {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                     Division / Category
                   </label>
                   <select
                     value={teamDivision}
                     onChange={(e) => setTeamDivision(e.target.value)}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   >
                     <option value="Open">Open Category</option>
                     <option value="Corporate">Corporate Cup</option>
@@ -642,7 +642,7 @@ const TeamsPage = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                     Coach / Manager
                   </label>
                   <input
@@ -650,12 +650,12 @@ const TeamsPage = () => {
                     placeholder="e.g. Rahul Dravid"
                     value={coachName}
                     onChange={(e) => setCoachName(e.target.value)}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                     Contact Phone
                   </label>
                   <input
@@ -663,14 +663,14 @@ const TeamsPage = () => {
                     placeholder="+91 9876543210"
                     value={contactPhone}
                     onChange={(e) => setContactPhone(e.target.value)}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                     Home City / Location
                   </label>
                   <input
@@ -678,12 +678,12 @@ const TeamsPage = () => {
                     placeholder="e.g. Mumbai, Maharashtra"
                     value={homeLocation}
                     onChange={(e) => setHomeLocation(e.target.value)}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                     Logo Image URL
                   </label>
                   <input
@@ -691,13 +691,13 @@ const TeamsPage = () => {
                     placeholder="https://..."
                     value={teamLogo}
                     onChange={(e) => setTeamLogo(e.target.value)}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
 
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-primary, #0f172a)' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4, color: 'var(--text-heading)' }}>
                   Initial Players (Optional, one name per line)
                 </label>
                 <textarea
@@ -705,12 +705,12 @@ const TeamsPage = () => {
                   placeholder="Player 1&#10;Player 2&#10;Player 3..."
                   value={initialPlayersText}
                   onChange={(e) => setInitialPlayersText(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                 />
               </div>
 
               <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-primary, #0f172a)' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-heading)' }}>
                   Description (Optional)
                 </label>
                 <textarea
@@ -718,7 +718,7 @@ const TeamsPage = () => {
                   placeholder="Team history, home turf, or tournament ambitions..."
                   value={teamDesc}
                   onChange={(e) => setTeamDesc(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input, #ffffff)', border: '1px solid var(--border-color, rgba(0,0,0,0.15))', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                 />
               </div>
 
