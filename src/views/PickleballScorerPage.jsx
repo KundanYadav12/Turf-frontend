@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from '../lib/routerCompat';
 import axios from 'axios';
 import { socket } from '../services/socket';
@@ -215,6 +215,18 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     }
   };
 
+  const courtTeamA = useMemo(() => ({
+    id: state?.teamA?.id,
+    name: state?.teamA?.name || 'Team A',
+    score: state?.scores?.teamA || 0
+  }), [state?.teamA?.id, state?.teamA?.name, state?.scores?.teamA]);
+
+  const courtTeamB = useMemo(() => ({
+    id: state?.teamB?.id,
+    name: state?.teamB?.name || 'Team B',
+    score: state?.scores?.teamB || 0
+  }), [state?.teamB?.id, state?.teamB?.name, state?.scores?.teamB]);
+
   if (loading) {
     return (
       <div className="container" style={{ textAlign: 'center', padding: '6rem 1rem', color: 'var(--text-muted)' }}>
@@ -426,8 +438,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
           <CourtView
             sport="pickleball"
             format={rules?.matchFormat || 'DOUBLES'}
-            teamA={{ id: teamA.id, name: teamA.name, score: scores.teamA }}
-            teamB={{ id: teamB.id, name: teamB.name, score: scores.teamB }}
+            teamA={courtTeamA}
+            teamB={courtTeamB}
             lineup={lineup}
             servingSide={scores.teamA % 2 === 0 ? 'team_a' : 'team_b'}
             serverCourt={scores.teamA % 2 === 0 ? 'RIGHT' : 'LEFT'}

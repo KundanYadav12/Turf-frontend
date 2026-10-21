@@ -18,20 +18,24 @@ export { getServeState, getCourtState, parseRacquetScoreDetails, getCourtContras
  * 6. Ambient idle rally between points (non-intrusive, stops immediately on live events).
  * 7. Instant authoritative undo with smooth rewind and banner clearance.
  */
+const DEFAULT_TEAM_A = { name: 'Team A', score: 0 };
+const DEFAULT_TEAM_B = { name: 'Team B', score: 0 };
+const DEFAULT_ADS = [];
+
 export default function CourtView({
   match = null,
   serveState: propServeState = null,
   sport = 'badminton',
   format = 'DOUBLES',
-  teamA = { name: 'Team A', score: 0 },
-  teamB = { name: 'Team B', score: 0 },
+  teamA = DEFAULT_TEAM_A,
+  teamB = DEFAULT_TEAM_B,
   lineup = null,
   scoreSummary = null,
   servingSide: propServingSide = null,
   serverCourt: propServerCourt = null,
   serverNumber: propServerNumber = 1,
   courtColor: initialCourtColor = '#0d5c3a',
-  courtAds = [],
+  courtAds = DEFAULT_ADS,
   onColorChange = null,
   canEditColor = false,
   status = 'LIVE',
@@ -87,9 +91,12 @@ export default function CourtView({
       _eventSeq: eventSeq
     };
   }, [
-    match, propServeState, sport, format, teamA, teamB, lineup, scoreSummary,
+    match, propServeState, sport, format,
+    teamA?.id, teamA?.name, teamA?.score,
+    teamB?.id, teamB?.name, teamB?.score,
+    lineup, scoreSummary,
     propServingSide, propServerCourt, propServerNumber,
-    initialCourtColor, courtAds, lastEventType, eventSeq,
+    initialCourtColor, courtAds?.length, lastEventType, eventSeq,
     status, winner, isGamePoint, isMatchPoint
   ]);
 
@@ -109,8 +116,8 @@ export default function CourtView({
 
   useEffect(() => {
     if (initialCourtColor) {
-      setCourtColor(initialCourtColor);
-      setCustomHex(initialCourtColor);
+      setCourtColor(prev => prev !== initialCourtColor ? initialCourtColor : prev);
+      setCustomHex(prev => prev !== initialCourtColor ? initialCourtColor : prev);
     }
   }, [initialCourtColor]);
 
@@ -143,7 +150,7 @@ export default function CourtView({
       }
     }, 8000);
     return () => clearInterval(interval);
-  }, [courtAds, isTabVisible]);
+  }, [courtAds?.length, isTabVisible]);
 
   // ── 3. CHOREOGRAPHY CONTROLLER STATE ──
   const [ballState, setBallState] = useState(() => ({
@@ -204,21 +211,14 @@ export default function CourtView({
 
   // ── 4. EVENT-TO-CHOREOGRAPHY PIPELINE ──
   useEffect(() => {
-    // Initial mount: render authoritative state immediately with NO animation replay
+    // Initial mount: authoritative ballState already initialized in useState
     if (isInitialMount.current) {
       isInitialMount.current = false;
       prevCourtRef.current = courtState;
-      setBallState({
-        x: courtState.defaultBallCoords.x,
-        y: courtState.defaultBallCoords.y,
-        elevation: 0,
-        rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-        trail: []
-      });
       return;
     }
 
-    const prev = prevCourtRef.current;
+    const prev = prevCourtRef.current || courtState;
     const isScoreChanged = courtState.scoreA !== prev.scoreA || courtState.scoreB !== prev.scoreB;
     const isUndo = (
       unifiedMatch._lastEventType === 'UNDO' ||
@@ -287,15 +287,15 @@ export default function CourtView({
 
       // Calculate Deterministic Rally Waypoints
       // Start at previous server
-      const prevServerSide = prev.teamSides[prev.servingTeam];
-      const prevServerBox = prev.serverBox;
+      const prevServerSide = prev.teamSides?.[prev.servingTeam] || 'LEFT';
+      const prevServerBox = prev.serverBox || 'RIGHT';
       const startX = prevServerSide === 'LEFT' ? 101 : 699;
       const startY = prevServerBox === 'RIGHT' ? 285 : 115;
       const startSlot = `${prevServerSide}_${prevServerBox}`;
 
       // Target diagonal receiver
       const prevReceiverSide = prevServerSide === 'LEFT' ? 'RIGHT' : 'LEFT';
-      const prevReceiverBox = prev.receiverBox;
+      const prevReceiverBox = prev.receiverBox || 'RIGHT';
       const recX = prevReceiverSide === 'LEFT' ? 120 : 680;
       const recY = prevReceiverBox === 'RIGHT' ? 285 : 115;
       const recSlot = `${prevReceiverSide}_${prevReceiverBox}`;
@@ -400,14 +400,44 @@ export default function CourtView({
     }
 
     // ── SCENARIO C: SERVER / END CHANGE WITHOUT SCORE ──
-    setBallState({
-      x: courtState.defaultBallCoords.x,
-      y: courtState.defaultBallCoords.y,
-      elevation: 0,
-      rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-      trail: []
-    });
+    const prevServingSide = prev.teamSides?.[prev.servingTeam];
+    const currServingSide = courtState.teamSides?.[courtState.servingTeam];
+    const prevCoords = prev.defaultBallCoords;
+    const currCoords = courtState.defaultBallCoords;
+
+    const isPositionChanged = (
+      prev.servingTeam !== courtState.servingTeam ||
+      prev.serverBox !== courtState.serverBox ||
+      prevServingSide !== currServingSide ||
+      prevCoords?.x !== currCoords?.x ||
+      prevCoords?.y !== currCoords?.y
+    );
+
     prevCourtRef.current = courtState;
+
+    if (!isPositionChanged) {
+      return;
+    }
+
+    const targetRotation = currServingSide === 'LEFT' ? 35 : -145;
+    setBallState(curr => {
+      if (
+        curr.x === currCoords.x &&
+        curr.y === currCoords.y &&
+        curr.elevation === 0 &&
+        curr.rotation === targetRotation &&
+        (!curr.trail || curr.trail.length === 0)
+      ) {
+        return curr;
+      }
+      return {
+        x: currCoords.x,
+        y: currCoords.y,
+        elevation: 0,
+        rotation: targetRotation,
+        trail: []
+      };
+    });
 
     return () => {
       if (choreographyTimerRef.current) clearTimeout(choreographyTimerRef.current);
@@ -417,50 +447,58 @@ export default function CourtView({
 
   // ── 5. AMBIENT IDLE RALLY LOOP ──
   // Decorative, slow background motion between points. Stops immediately on real live events.
+  const ballCoordsRef = useRef(ballState);
+  ballCoordsRef.current = ballState;
+
   useEffect(() => {
     if (!ambientRally || !isTabVisible || courtState.status !== 'LIVE' || courtState.isMatchWon) {
       return;
     }
 
-    let ambientInterval = null;
-    const startAmbientCheck = () => {
-      ambientInterval = setInterval(() => {
-        const timeSinceLastEvent = Date.now() - lastEventTimestampRef.current;
-        if (timeSinceLastEvent > 4500 && !isChoreographingRef.current && !undoActive) {
-          // Play a gentle, slow decorative pass across the net
-          const currentSide = ballState.x < 400 ? 'LEFT' : 'RIGHT';
-          const targetX = currentSide === 'LEFT' ? 680 : 120;
-          const targetY = (Date.now() % 2 === 0) ? 275 : 125;
+    const ambientInterval = setInterval(() => {
+      const timeSinceLastEvent = Date.now() - lastEventTimestampRef.current;
+      if (timeSinceLastEvent > 4500 && !isChoreographingRef.current && !undoActive) {
+        // Play a gentle, slow decorative pass across the net
+        const currentSide = (ballCoordsRef.current?.x || 0) < 400 ? 'LEFT' : 'RIGHT';
+        const targetX = currentSide === 'LEFT' ? 680 : 120;
+        const targetY = (Date.now() % 2 === 0) ? 275 : 125;
 
-          setBallState(prev => ({
-            ...prev,
-            x: targetX,
-            y: targetY,
-            elevation: 25,
-            rotation: currentSide === 'LEFT' ? 40 : -140
-          }));
+        setBallState(prev => ({
+          ...prev,
+          x: targetX,
+          y: targetY,
+          elevation: 25,
+          rotation: currentSide === 'LEFT' ? 40 : -140
+        }));
 
-          // Settle back to server after 2 seconds
-          setTimeout(() => {
-            if (!isChoreographingRef.current && !undoActive) {
-              setBallState({
-                x: courtState.defaultBallCoords.x,
-                y: courtState.defaultBallCoords.y,
-                elevation: 0,
-                rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-                trail: []
-              });
-            }
-          }, 2100);
-        }
-      }, 5000);
-    };
+        // Settle back to server after 2 seconds
+        setTimeout(() => {
+          if (!isChoreographingRef.current && !undoActive) {
+            setBallState({
+              x: courtState.defaultBallCoords.x,
+              y: courtState.defaultBallCoords.y,
+              elevation: 0,
+              rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
+              trail: []
+            });
+          }
+        }, 2100);
+      }
+    }, 5000);
 
-    startAmbientCheck();
     return () => {
-      if (ambientInterval) clearInterval(ambientInterval);
+      clearInterval(ambientInterval);
     };
-  }, [ambientRally, isTabVisible, courtState, ballState.x, undoActive]);
+  }, [
+    ambientRally,
+    isTabVisible,
+    courtState.status,
+    courtState.isMatchWon,
+    courtState.defaultBallCoords?.x,
+    courtState.defaultBallCoords?.y,
+    courtState.servingTeam,
+    undoActive
+  ]);
 
   // Visual Tokens & Contrast
   const contrastLinesColor = useMemo(() => getCourtContrastColor(courtColor), [courtColor]);

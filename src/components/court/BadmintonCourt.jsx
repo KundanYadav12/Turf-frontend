@@ -22,11 +22,13 @@ export { getServeState, getCourtState };
  * @param {string} props.lastEventType - 'POINT' | 'UNDO'.
  * @param {number} props.eventSeq - Monotonic event sequence.
  */
+const DEFAULT_ADS = [];
+
 export default function BadmintonCourt({
   match = null,
   serveState: propServeState = null,
   courtColor = '#0d5c3a',
-  courtAds = [],
+  courtAds = DEFAULT_ADS,
   theme = 'dark',
   showFooter = false,
   ambientRally = true,

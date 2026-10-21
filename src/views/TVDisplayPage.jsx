@@ -1515,7 +1515,7 @@ function TVMatchCardHeroRacquet({ match, theme }) {
           match={match}
           serveState={serveState}
           courtColor={match.courtColor || '#0d5c3a'}
-          courtAds={match.courtAds || []}
+          courtAds={match.courtAds}
           theme={theme}
           ambientRally={true}
         />
