@@ -656,7 +656,7 @@ export default function TournamentStreamingPermissionsManager({
                   {/* Watch Stream Button (Always accessible to viewers when live) */}
                   {m.hasLiveStream && (
                     <Link
-                      to={`/matches/${m.matchId}/watch`}
+                      href={`/matches/${m.matchId || m.uuid || m.id || ''}/watch`}
                       style={{
                         flex: 1,
                         display: 'inline-flex',
@@ -706,7 +706,7 @@ export default function TournamentStreamingPermissionsManager({
                   )}
 
                   <Link
-                    to={`/matches/${m.matchId}`}
+                    href={`/matches/${m.matchId || m.uuid || m.id || ''}`}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
