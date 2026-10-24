@@ -880,7 +880,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           </div>
 
           {/* Action Links */}
-          <div className="tournament-hero-action-buttons">
+          <div className="tournament-hero-action-buttons" suppressHydrationWarning>
             {/* 1. Register as Player */}
             <Link
               href={`/tournaments/${tournamentId}/register`}
@@ -921,6 +921,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                   ? `/matches/${liveMatches[0].uuid || liveMatches[0].id}/scorer`
                   : `/tournaments/${tournamentId}?tab=matches`}
                 className="btn tournament-btn-scorer-console"
+                suppressHydrationWarning
                 style={{
                   background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                   color: '#ffffff',
@@ -948,6 +949,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 href={`/display/tournament/${tournamentId}`}
                 target="_blank"
                 className="btn tournament-btn-display"
+                suppressHydrationWarning
               >
                 <Monitor size={16} /> Signage TV Display
               </Link>
@@ -960,6 +962,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 onClick={handleOpenDeleteModal}
                 className="btn tournament-btn-delete"
                 title="Delete this tournament"
+                suppressHydrationWarning
               >
                 <Trash2 size={16} /> Delete Tournament
               </button>
@@ -969,7 +972,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
       </div>
 
       {/* Tabs Bar */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.75rem', overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.75rem', overflowX: 'auto' }} suppressHydrationWarning>
         {[
           { key: 'overview', label: 'Overview', icon: <Trophy size={15} /> },
           { key: 'matches', label: 'Fixtures & Schedule', icon: <Calendar size={15} /> },
