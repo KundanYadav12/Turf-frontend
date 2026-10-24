@@ -147,10 +147,10 @@ export default function TVEmulatorPage() {
                 setTelemetry(`PLATFORM SWITCHED: ${e.target.value.toUpperCase()}`);
               }}
               style={{
-                background: '#1e293b',
+                backgroundColor: '#1e293b',
                 color: '#ffffff',
                 border: '1px solid rgba(255,255,255,0.22)',
-                padding: '0.35rem 0.6rem',
+                padding: '0.35rem 2.2rem 0.35rem 0.6rem',
                 borderRadius: '6px',
                 fontSize: '0.8rem',
                 fontWeight: 600,
@@ -173,10 +173,10 @@ export default function TVEmulatorPage() {
               value={resolution}
               onChange={(e) => setResolution(e.target.value)}
               style={{
-                background: '#1e293b',
+                backgroundColor: '#1e293b',
                 color: '#ffffff',
                 border: '1px solid rgba(255,255,255,0.22)',
-                padding: '0.35rem 0.6rem',
+                padding: '0.35rem 2.2rem 0.35rem 0.6rem',
                 borderRadius: '6px',
                 fontSize: '0.8rem',
                 fontWeight: 600,
@@ -228,10 +228,10 @@ export default function TVEmulatorPage() {
               value={viewSource}
               onChange={(e) => setViewSource(e.target.value)}
               style={{
-                background: '#1e293b',
+                backgroundColor: '#1e293b',
                 color: '#ffffff',
                 border: '1px solid rgba(255,255,255,0.22)',
-                padding: '0.35rem 0.65rem',
+                padding: '0.35rem 2.2rem 0.35rem 0.65rem',
                 borderRadius: '6px',
                 fontSize: '0.8rem',
                 fontWeight: 600,

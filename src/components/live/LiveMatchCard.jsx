@@ -5,14 +5,16 @@ import CricketLiveCard from './CricketLiveCard';
 import FootballLiveCard from './FootballLiveCard';
 import BadmintonLiveCard from './BadmintonLiveCard';
 import CourtView from '../court/CourtView';
-import { Radio, Eye, EyeOff } from 'lucide-react';
+import { Radio, Eye, EyeOff, Video } from 'lucide-react';
 
 /**
  * High-performance memoized Live Match Card.
  * Re-renders only when this specific match's score or status changes.
  */
 const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
-  const { id, matchNumber, status, courtName, venueName, sportSlug, teamA, teamB, score, showOnDisplay = true } = match;
+  const { id, uuid, matchNumber, status, courtName, venueName, sportSlug, teamA, teamB, score, showOnDisplay = true, has_live_stream, streamStatus } = match;
+  const matchIdentifier = uuid || id;
+  const isLiveStream = Boolean(has_live_stream || streamStatus === 'LIVE' || match.hasLiveStream);
 
   const renderSportCard = () => {
     switch (sportSlug?.toLowerCase()) {
@@ -103,15 +105,16 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            background: 'rgba(239, 68, 68, 0.15)',
+            background: isLiveStream ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)',
             color: 'var(--accent-rose, #ef4444)',
             padding: '2px 8px',
             borderRadius: '12px',
             fontSize: '0.72rem',
-            fontWeight: 800
+            fontWeight: 800,
+            border: isLiveStream ? '1px solid rgba(239, 68, 68, 0.4)' : 'none'
           }}>
             <Radio size={12} className="animate-pulse" />
-            <span>LIVE</span>
+            <span>{isLiveStream ? 'LIVE STREAM' : 'LIVE'}</span>
           </div>
         </div>
       </div>
@@ -137,24 +140,62 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
       {renderSportCard()}
 
       {/* Action CTA */}
-      <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color, rgba(255,255,255,0.06))', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Link
-          to={`/matches/${id}/scorer`}
-          style={{
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            color: 'var(--accent-secondary, #06b6d4)',
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}
-        >
-          🏏 Scorer Console
-        </Link>
+      <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color, rgba(255,255,255,0.06))', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <Link
+            to={`/matches/${matchIdentifier}/live`}
+            style={{
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              color: '#ef4444',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <Radio size={12} /> Live Score
+          </Link>
+
+          <Link
+            to={`/matches/${matchIdentifier}/scorer`}
+            style={{
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              color: 'var(--accent-secondary, #06b6d4)',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            🏏 Scorer
+          </Link>
+
+          {isLiveStream && (
+            <Link
+              to={`/matches/${matchIdentifier}/watch`}
+              style={{
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                color: '#ef4444',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                padding: '2px 8px',
+                borderRadius: '6px'
+              }}
+            >
+              <Video size={12} />
+              <span>Watch Live</span>
+            </Link>
+          )}
+        </div>
 
         <Link
-          to={`/matches/${id}`}
+          to={`/matches/${matchIdentifier}`}
           style={{
             fontSize: '0.78rem',
             fontWeight: 600,

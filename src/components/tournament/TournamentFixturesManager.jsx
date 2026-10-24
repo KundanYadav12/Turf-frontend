@@ -23,7 +23,9 @@ import {
   X,
   Shield,
   ChevronRight,
-  Info
+  Info,
+  Radio,
+  Play
 } from 'lucide-react';
 
 const CATEGORY_STYLES = {
@@ -52,6 +54,78 @@ const CATEGORY_STYLES = {
     text: '#eab308',
     border: 'rgba(234, 179, 8, 0.4)'
   }
+};
+
+const STATUS_STYLES = {
+  SCHEDULED: {
+    bg: 'rgba(56, 189, 248, 0.12)',
+    text: '#38bdf8',
+    border: 'rgba(56, 189, 248, 0.35)',
+    label: 'Scheduled'
+  },
+  LIVE: {
+    bg: 'rgba(239, 68, 68, 0.18)',
+    text: '#ef4444',
+    border: 'rgba(239, 68, 68, 0.5)',
+    label: 'Live Now'
+  },
+  COMPLETED: {
+    bg: 'rgba(16, 185, 129, 0.15)',
+    text: '#34d399',
+    border: 'rgba(16, 185, 129, 0.35)',
+    label: 'Completed'
+  }
+};
+
+const formatDateForInput = (raw) => {
+  if (!raw) return '';
+  if (typeof raw === 'string') {
+    if (raw.includes('T')) return raw.split('T')[0];
+    if (raw.length === 10 && raw.includes('-')) return raw;
+  }
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return '';
+  }
+};
+
+const formatFriendlyDate = (raw) => {
+  if (!raw) return '';
+  try {
+    const dateStr = typeof raw === 'string' && raw.includes('T') ? raw.split('T')[0] : raw;
+    const parts = String(dateStr).split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  } catch {}
+  return String(raw).slice(0, 10);
+};
+
+const formatFriendlyTime = (raw) => {
+  if (!raw) return '';
+  const timeStr = String(raw).trim();
+  if (timeStr.includes(':')) {
+    const parts = timeStr.split(':');
+    const hour = parseInt(parts[0], 10);
+    const min = parts[1];
+    if (!isNaN(hour)) {
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const formattedHour = hour % 12 === 0 ? 12 : hour % 12;
+      return `${formattedHour}:${min} ${ampm}`;
+    }
+  }
+  return timeStr;
 };
 
 const getAuthToken = () => {
@@ -85,14 +159,33 @@ export default function TournamentFixturesManager({
   const [bracketData, setBracketData] = useState(null);
   const [loadingBracket, setLoadingBracket] = useState(false);
 
+  // Action loading state (e.g. while toggling LIVE status)
+  const [actionLoadingMatchId, setActionLoadingMatchId] = useState(null);
+
   // Available courts
   const [courts, setCourts] = useState([]);
+
+  // Internal Teams (with auto-fallback fetch if prop is empty)
+  const [internalTeams, setInternalTeams] = useState(teams || []);
+
+  useEffect(() => {
+    if (teams && teams.length > 0) {
+      setInternalTeams(teams);
+    } else if (tournamentId) {
+      axios.get(`/api/tournaments/${tournamentId}/teams`).then(res => {
+        if (res.data?.success) {
+          setInternalTeams(res.data.data?.items || res.data.data || []);
+        }
+      }).catch(() => {});
+    }
+  }, [teams, tournamentId]);
 
   // Modal States
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [editingFixture, setEditingFixture] = useState(null);
   const [fixtureForm, setFixtureForm] = useState({
     category: 'League',
+    status: 'SCHEDULED',
     matchNumber: '',
     roundNumber: 1,
     teamAId: '',
@@ -114,7 +207,7 @@ export default function TournamentFixturesManager({
   const [showAutoLeagueModal, setShowAutoLeagueModal] = useState(false);
   const [autoLeagueForm, setAutoLeagueForm] = useState({
     groupName: 'ALL',
-    startDate: tournament?.startDate ? new Date(tournament.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+    startDate: tournament?.startDate ? formatDateForInput(tournament.startDate) : new Date().toISOString().slice(0, 10),
     dailyStartTime: '09:00:00',
     matchDurationMinutes: 60
   });
@@ -124,7 +217,7 @@ export default function TournamentFixturesManager({
   const [showAutoKnockoutModal, setShowAutoKnockoutModal] = useState(false);
   const [autoKnockoutForm, setAutoKnockoutForm] = useState({
     seedFromStandings: true,
-    startDate: tournament?.startDate ? new Date(tournament.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+    startDate: tournament?.startDate ? formatDateForInput(tournament.startDate) : new Date().toISOString().slice(0, 10)
   });
   const [autoKnockoutSubmitting, setAutoKnockoutSubmitting] = useState(false);
 
@@ -181,18 +274,49 @@ export default function TournamentFixturesManager({
     return fixtures.filter(f => (f.category || 'League') === categoryFilter);
   }, [fixtures, categoryFilter]);
 
+  // Quick 1-click Set Match Status (SCHEDULED / LIVE / COMPLETED)
+  const handleQuickSetStatus = async (fixture, newStatus) => {
+    const matchId = fixture.id || fixture.uuid || fixture.internalId;
+    setActionLoadingMatchId(matchId);
+    setErrorMsg('');
+    try {
+      const res = await axios.put(
+        `/api/tournaments/${tournamentId}/fixtures/${matchId}/status`,
+        { status: newStatus },
+        { headers: getAuthHeaders() }
+      );
+      if (res.data?.success) {
+        if (newStatus === 'LIVE') {
+          setNotification(`🔥 Match #${fixture.matchNumber} is now LIVE on TV & Displays!`);
+        } else if (newStatus === 'COMPLETED') {
+          setNotification(`✅ Match #${fixture.matchNumber} marked as COMPLETED.`);
+        } else {
+          setNotification(`Match #${fixture.matchNumber} updated to ${newStatus}.`);
+        }
+        if (onRefresh) onRefresh();
+        if (viewMode === 'bracket') fetchBracket();
+        setTimeout(() => setNotification(''), 4500);
+      }
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || `Failed to set match #${fixture.matchNumber} to ${newStatus}.`);
+    } finally {
+      setActionLoadingMatchId(null);
+    }
+  };
+
   // Open Create Fixture Modal
   const handleOpenCreateFixture = () => {
     setEditingFixture(null);
     setConflictWarning(null);
     setFixtureForm({
       category: categoryFilter !== 'ALL' ? categoryFilter : 'League',
+      status: 'SCHEDULED',
       matchNumber: '',
       roundNumber: 1,
       teamAId: '',
       teamBId: '',
       groupName: 'Group 1',
-      matchDate: tournament?.startDate ? new Date(tournament.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      matchDate: formatDateForInput(tournament?.startDate) || new Date().toISOString().slice(0, 10),
       startTime: '09:00:00',
       endTime: '10:00:00',
       courtId: courts[0]?.id || '',
@@ -210,17 +334,18 @@ export default function TournamentFixturesManager({
     setConflictWarning(null);
     setFixtureForm({
       category: fixture.category || 'League',
+      status: fixture.status || 'SCHEDULED',
       matchNumber: fixture.matchNumber || '',
       roundNumber: fixture.roundNumber || 1,
-      teamAId: fixture.teamA?.internalId || fixture.teamA?.id || '',
-      teamBId: fixture.teamB?.internalId || fixture.teamB?.id || '',
-      groupName: fixture.groupName || 'Group 1',
-      matchDate: fixture.date || '',
-      startTime: fixture.startTime || '09:00:00',
-      endTime: fixture.endTime || '10:00:00',
-      courtId: fixture.courtId || '',
-      courtName: fixture.courtName || '',
-      scorerId: fixture.scorerId || '',
+      teamAId: fixture.teamA?.internalId || fixture.teamA?.id || fixture.teamAId || fixture.team_a_id || '',
+      teamBId: fixture.teamB?.internalId || fixture.teamB?.id || fixture.teamBId || fixture.team_b_id || '',
+      groupName: fixture.groupName || fixture.group_name || 'Group 1',
+      matchDate: formatDateForInput(fixture.date || fixture.match_date || fixture.matchDate),
+      startTime: fixture.startTime || fixture.start_time || '09:00:00',
+      endTime: fixture.endTime || fixture.end_time || '10:00:00',
+      courtId: fixture.courtId || fixture.court_id || '',
+      courtName: fixture.courtName || fixture.court_name || '',
+      scorerId: fixture.scorerId || fixture.scorer_id || '',
       countsInStandings: fixture.countsInStandings !== undefined ? fixture.countsInStandings : (fixture.category === 'League'),
       allowConflictOverride: false
     });
@@ -235,6 +360,7 @@ export default function TournamentFixturesManager({
     try {
       const payload = {
         category: fixtureForm.category,
+        status: fixtureForm.status,
         matchNumber: fixtureForm.matchNumber ? parseInt(fixtureForm.matchNumber, 10) : undefined,
         roundNumber: fixtureForm.roundNumber ? parseInt(fixtureForm.roundNumber, 10) : 1,
         teamAId: fixtureForm.teamAId ? parseInt(fixtureForm.teamAId, 10) : null,
@@ -253,7 +379,7 @@ export default function TournamentFixturesManager({
       let res;
       if (editingFixture) {
         res = await axios.put(
-          `/api/tournaments/${tournamentId}/fixtures/${editingFixture.id || editingFixture.internalId}`,
+          `/api/tournaments/${tournamentId}/fixtures/${editingFixture.id || editingFixture.internalId || editingFixture.uuid}`,
           payload,
           { headers: getAuthHeaders() }
         );
@@ -645,33 +771,44 @@ export default function TournamentFixturesManager({
               const catStyle = CATEGORY_STYLES[cat] || CATEGORY_STYLES.League;
               const isLive = f.status === 'LIVE';
               const isCompleted = f.status === 'COMPLETED';
+              const isActionLoading = actionLoadingMatchId === (f.id || f.uuid || f.internalId);
 
               return (
                 <div
                   key={f.id || f.uuid || f.internalId}
                   style={{
-                    background: 'var(--bg-card, rgba(30, 41, 59, 0.7))',
-                    borderRadius: '14px',
-                    border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+                    background: isLive
+                      ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, var(--bg-card, rgba(30, 41, 59, 0.75)) 100%)'
+                      : 'var(--bg-card, rgba(30, 41, 59, 0.7))',
+                    borderRadius: '16px',
+                    border: isLive
+                      ? '1px solid rgba(239, 68, 68, 0.45)'
+                      : '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+                    borderLeft: isLive
+                      ? '5px solid #ef4444'
+                      : isCompleted
+                      ? '5px solid #10b981'
+                      : '5px solid #38bdf8',
                     padding: '1.25rem 1.5rem',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     flexWrap: 'wrap',
-                    gap: '1rem',
-                    transition: 'all 0.15s ease'
+                    gap: '1.25rem',
+                    boxShadow: isLive ? '0 8px 24px -4px rgba(239, 68, 68, 0.2)' : 'none',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   {/* Left: Metadata & Teams */}
                   <div style={{ flex: '1 1 300px', minWidth: 0 }}>
                     {/* Badges Bar */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
                       {/* Category Badge */}
                       <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
-                        padding: '2px 8px',
+                        padding: '3px 10px',
                         borderRadius: '6px',
                         fontSize: '0.75rem',
                         fontWeight: 800,
@@ -686,7 +823,7 @@ export default function TournamentFixturesManager({
                       <span style={{
                         fontSize: '0.75rem',
                         fontWeight: 700,
-                        padding: '2px 8px',
+                        padding: '3px 10px',
                         borderRadius: '6px',
                         background: 'rgba(255,255,255,0.06)',
                         color: 'var(--text-muted, #94a3b8)'
@@ -695,21 +832,56 @@ export default function TournamentFixturesManager({
                       </span>
 
                       {/* Status */}
-                      <span style={{
-                        fontSize: '0.74rem',
-                        fontWeight: 800,
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        background: isLive ? 'rgba(239,68,68,0.2)' : isCompleted ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.06)',
-                        color: isLive ? '#ef4444' : isCompleted ? '#34d399' : 'var(--text-muted, #94a3b8)',
-                        border: isLive ? '1px solid rgba(239,68,68,0.4)' : 'none'
-                      }}>
-                        {f.status}
-                      </span>
+                      {isLive ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          padding: '3px 10px',
+                          borderRadius: '20px',
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.55)',
+                          boxShadow: '0 0 12px rgba(239, 68, 68, 0.25)'
+                        }}>
+                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 6px #ef4444' }} />
+                          LIVE NOW
+                        </span>
+                      ) : isCompleted ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          padding: '3px 10px',
+                          borderRadius: '20px',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#34d399',
+                          border: '1px solid rgba(16, 185, 129, 0.35)'
+                        }}>
+                          <CheckCircle size={12} /> COMPLETED
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          padding: '3px 10px',
+                          borderRadius: '20px',
+                          background: 'rgba(56, 189, 248, 0.12)',
+                          color: '#38bdf8',
+                          border: '1px solid rgba(56, 189, 248, 0.3)'
+                        }}>
+                          SCHEDULED
+                        </span>
+                      )}
 
                       {/* Standings inclusion indicator */}
                       <span style={{
                         fontSize: '0.72rem',
+                        fontWeight: 600,
                         color: f.countsInStandings ? '#10b981' : 'var(--text-muted, #64748b)',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -720,44 +892,134 @@ export default function TournamentFixturesManager({
                     </div>
 
                     {/* Team Matchup Title */}
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-heading, #fff)', marginBottom: '0.35rem' }}>
-                      <span>{f.teamA?.name || f.teamAName || 'TBD (Seed / Winner)'}</span>
-                      <span style={{ color: '#10b981', margin: '0 0.5rem', fontSize: '0.9rem', fontWeight: 700 }}>vs</span>
-                      <span>{f.teamB?.name || f.teamBName || 'TBD (Seed / Winner)'}</span>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-heading, #fff)', marginBottom: '0.45rem', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--text-heading, #fff)' }}>{f.teamA?.name || f.teamAName || 'TBD (Seed / Winner)'}</span>
+                      <span style={{
+                        color: '#10b981',
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '6px',
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        fontSize: '0.75rem',
+                        fontWeight: 800
+                      }}>
+                        VS
+                      </span>
+                      <span style={{ color: 'var(--text-heading, #fff)' }}>{f.teamB?.name || f.teamBName || 'TBD (Seed / Winner)'}</span>
                     </div>
 
                     {/* Schedule & Location */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.82rem', color: 'var(--text-muted, #94a3b8)' }}>
-                      {f.date && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Calendar size={13} /> {f.date}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap', fontSize: '0.84rem', color: 'var(--text-muted, #94a3b8)' }}>
+                      {(f.date || f.match_date) && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Calendar size={14} style={{ color: '#38bdf8' }} /> {formatFriendlyDate(f.date || f.match_date)}
                         </span>
                       )}
-                      {f.startTime && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={13} /> {f.startTime} {f.endTime ? `- ${f.endTime}` : ''}
+                      {(f.startTime || f.start_time) && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Clock size={14} style={{ color: '#fbbf24' }} /> {formatFriendlyTime(f.startTime || f.start_time)} {(f.endTime || f.end_time) ? `- ${formatFriendlyTime(f.endTime || f.end_time)}` : ''}
                         </span>
                       )}
                       {(f.courtName || f.venueName) && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <MapPin size={13} /> {f.courtName || f.venueName}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <MapPin size={14} style={{ color: '#34d399' }} /> {f.courtName || f.venueName}
                         </span>
                       )}
                       {f.groupName && f.groupName !== 'null' && (
-                        <span>• {f.groupName}</span>
+                        <span style={{ padding: '2px 8px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.06)', fontWeight: 600 }}>
+                          {f.groupName}
+                        </span>
                       )}
                     </div>
 
                     {/* Result or Live Summary */}
                     {(f.resultSummary || (f.liveScoreSummary && f.liveScoreSummary !== 'Yet to Start')) && (
-                      <div style={{ marginTop: '0.4rem', fontSize: '0.84rem', color: '#34d399', fontWeight: 700 }}>
-                        {f.resultSummary ? `Result: ${f.resultSummary}` : `Score: ${f.liveScoreSummary}`}
+                      <div style={{
+                        marginTop: '0.5rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.45rem',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '8px',
+                        background: isLive ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                        border: isLive ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                        fontSize: '0.88rem',
+                        color: isLive ? '#f87171' : '#34d399',
+                        fontWeight: 800
+                      }}>
+                        {f.resultSummary ? `🏆 Result: ${f.resultSummary}` : `⚡ Live Score: ${f.liveScoreSummary}`}
                       </div>
                     )}
                   </div>
 
                   {/* Right: Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+                    {/* Quick 1-click GO LIVE button when not LIVE */}
+                    {canManage && !isLive && (
+                      <button
+                        type="button"
+                        disabled={isActionLoading}
+                        onClick={() => handleQuickSetStatus(f, 'LIVE')}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.52rem 1.05rem',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: '0.84rem',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="Set match to LIVE on displays and scoring immediately"
+                      >
+                        {isActionLoading ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> Starting...
+                          </>
+                        ) : (
+                          <>
+                            <Radio size={14} /> 🔴 Go Live
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Quick action to Mark Completed when LIVE */}
+                    {canManage && isLive && (
+                      <button
+                        type="button"
+                        disabled={isActionLoading}
+                        onClick={() => handleQuickSetStatus(f, 'COMPLETED')}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          padding: '0.52rem 0.95rem',
+                          borderRadius: '10px',
+                          border: '1px solid rgba(16, 185, 129, 0.5)',
+                          background: 'rgba(16, 185, 129, 0.18)',
+                          color: '#34d399',
+                          fontWeight: 800,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer'
+                        }}
+                        title="Conclude match and mark as Completed"
+                      >
+                        {isActionLoading ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <>
+                            <Check size={14} /> End Match
+                          </>
+                        )}
+                      </button>
+                    )}
+
                     {/* Live Scorer Button */}
                     <Link
                       href={isPickleball ? `/matches/${f.id || f.uuid}/pickleball-scorer` : `/matches/${f.id || f.uuid}/scorer`}
@@ -765,10 +1027,16 @@ export default function TournamentFixturesManager({
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '0.4rem',
-                        background: '#10b981',
-                        border: 'none',
-                        fontWeight: 700
+                        gap: '0.45rem',
+                        background: isLive ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(16, 185, 129, 0.18)',
+                        color: isLive ? '#ffffff' : '#34d399',
+                        border: isLive ? 'none' : '1px solid rgba(16, 185, 129, 0.4)',
+                        fontWeight: 800,
+                        padding: '0.52rem 1rem',
+                        borderRadius: '10px',
+                        boxShadow: isLive ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+                        textDecoration: 'none',
+                        fontSize: '0.82rem'
                       }}
                     >
                       <Zap size={14} /> Live Scorer
@@ -781,7 +1049,15 @@ export default function TournamentFixturesManager({
                           type="button"
                           onClick={() => handleOpenEditFixture(f)}
                           className="btn btn-outline btn-sm"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.35rem 0.65rem' }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.5rem 0.8rem',
+                            borderRadius: '10px',
+                            fontWeight: 700,
+                            fontSize: '0.82rem'
+                          }}
                           title="Edit / Reschedule Fixture"
                         >
                           <Edit2 size={13} /> Edit
@@ -795,8 +1071,10 @@ export default function TournamentFixturesManager({
                             alignItems: 'center',
                             gap: '0.35rem',
                             color: '#f87171',
-                            borderColor: 'rgba(239, 68, 68, 0.3)',
-                            padding: '0.35rem 0.65rem'
+                            borderColor: 'rgba(239, 68, 68, 0.35)',
+                            padding: '0.5rem 0.7rem',
+                            borderRadius: '10px',
+                            fontSize: '0.82rem'
                           }}
                           title="Delete Fixture"
                         >
@@ -826,15 +1104,15 @@ export default function TournamentFixturesManager({
           zIndex: 9999
         }}>
           <div style={{
-            background: 'var(--bg-modal, var(--bg-card))',
-            border: '1px solid var(--border-color)',
+            background: 'var(--bg-modal, var(--bg-card, #1e293b))',
+            border: '1px solid var(--border-color, rgba(255, 255, 255, 0.12))',
             borderRadius: '20px',
             width: '100%',
             maxWidth: '560px',
-            maxHeight: '90vh',
+            maxHeight: '92vh',
             display: 'flex',
             flexDirection: 'column',
-            boxShadow: 'var(--shadow-elevated)',
+            boxShadow: 'var(--shadow-elevated, 0 20px 45px rgba(0,0,0,0.5))',
             overflow: 'hidden'
           }}>
             {/* Modal Header */}
@@ -843,25 +1121,25 @@ export default function TournamentFixturesManager({
               justifyContent: 'space-between',
               alignItems: 'center',
               padding: '1.25rem 1.5rem',
-              borderBottom: '1px solid var(--border-color)'
+              borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <Calendar size={22} style={{ color: '#10b981' }} />
-                <h4 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-heading)' }}>
+                <h4 style={{ margin: 0, fontSize: '1.18rem', fontWeight: 800, color: 'var(--text-heading, #ffffff)' }}>
                   {editingFixture ? `Edit Match #${editingFixture.matchNumber}` : 'Create Tournament Fixture'}
                 </h4>
               </div>
               <button
                 type="button"
                 onClick={() => setShowFixtureModal(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted, #94a3b8)', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleFixtureFormSubmit} style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleFixtureFormSubmit} spellCheck={false} style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
               {/* Conflict Warning Alert */}
               {conflictWarning && (
                 <div style={{
@@ -894,7 +1172,7 @@ export default function TournamentFixturesManager({
 
               {/* 1. Category Selector */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-heading)' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.45rem', color: 'var(--text-heading, #ffffff)' }}>
                   Fixture Category *
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '0.5rem' }}>
@@ -913,14 +1191,15 @@ export default function TournamentFixturesManager({
                           }));
                         }}
                         style={{
-                          padding: '0.5rem 0.25rem',
+                          padding: '0.55rem 0.35rem',
                           borderRadius: '8px',
-                          border: isSelected ? `2px solid ${style.text}` : '1px solid var(--border-color)',
-                          background: isSelected ? style.bg : 'var(--bg-elevated)',
-                          color: isSelected ? style.text : 'var(--text-muted)',
+                          border: isSelected ? `2px solid ${style.text}` : '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+                          background: isSelected ? style.bg : 'var(--bg-elevated, rgba(255, 255, 255, 0.05))',
+                          color: isSelected ? style.text : 'var(--text-muted, #94a3b8)',
                           fontWeight: 700,
-                          fontSize: '0.78rem',
-                          cursor: 'pointer'
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
                         }}
                       >
                         {cat}
@@ -930,29 +1209,77 @@ export default function TournamentFixturesManager({
                 </div>
               </div>
 
+              {/* 1b. Match Status Selector (SCHEDULED / LIVE / COMPLETED) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.45rem', color: 'var(--text-heading, #ffffff)' }}>
+                  Match Status *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
+                  {[
+                    { key: 'SCHEDULED', label: '📅 Scheduled', bg: 'rgba(56, 189, 248, 0.15)', text: '#38bdf8', border: '#38bdf8' },
+                    { key: 'LIVE', label: '🔴 Live Now', bg: 'rgba(239, 68, 68, 0.2)', text: '#ef4444', border: '#ef4444' },
+                    { key: 'COMPLETED', label: '✅ Completed', bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', border: '#10b981' }
+                  ].map((st) => {
+                    const isSelected = fixtureForm.status === st.key;
+                    return (
+                      <button
+                        key={st.key}
+                        type="button"
+                        onClick={() => setFixtureForm(prev => ({ ...prev, status: st.key }))}
+                        style={{
+                          padding: '0.65rem 0.5rem',
+                          borderRadius: '10px',
+                          border: isSelected ? `2px solid ${st.border}` : '1px solid var(--border-color, rgba(255, 255, 255, 0.12))',
+                          background: isSelected ? st.bg : 'var(--bg-elevated, rgba(255, 255, 255, 0.04))',
+                          color: isSelected ? st.text : 'var(--text-muted, #94a3b8)',
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer',
+                          boxShadow: isSelected ? `0 0 12px ${st.border}33` : 'none',
+                          transition: 'all 0.15s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.35rem'
+                        }}
+                      >
+                        {st.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {fixtureForm.status === 'LIVE' && (
+                  <div style={{ marginTop: '0.45rem', fontSize: '0.78rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Info size={13} /> Setting to LIVE activates Smart TV broadcast mode and scoring displays.
+                  </div>
+                )}
+              </div>
+
               {/* 2. Team A vs Team B */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-muted)' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading, #ffffff)' }}>
                     Team A
                   </label>
                   <select
                     value={fixtureForm.teamAId}
                     onChange={(e) => setFixtureForm(prev => ({ ...prev, teamAId: e.target.value }))}
                     className="form-control"
+                    spellCheck={false}
                     style={{
                       width: '100%',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
+                      backgroundColor: 'var(--bg-input, rgba(15, 23, 42, 0.8))',
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                      color: 'var(--text-heading, #ffffff)',
                       borderRadius: '8px',
-                      padding: '0.6rem 0.75rem',
-                      fontSize: '0.85rem'
+                      padding: '0.65rem 2.5rem 0.65rem 0.75rem',
+                      fontSize: '0.86rem',
+                      fontFamily: 'inherit'
                     }}
                   >
-                    <option value="">-- TBD (Winner / Seed) --</option>
-                    {teams.map(t => (
-                      <option key={t.id || t.team_id} value={t.id || t.team_id}>
+                    <option value="">-- Select Team A / TBD --</option>
+                    {internalTeams.map(t => (
+                      <option key={t.id || t.team_id || t.uuid} value={t.id || t.team_id}>
                         {t.name || t.teamName}
                       </option>
                     ))}
@@ -960,26 +1287,28 @@ export default function TournamentFixturesManager({
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-muted)' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading, #ffffff)' }}>
                     Team B
                   </label>
                   <select
                     value={fixtureForm.teamBId}
                     onChange={(e) => setFixtureForm(prev => ({ ...prev, teamBId: e.target.value }))}
                     className="form-control"
+                    spellCheck={false}
                     style={{
                       width: '100%',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
+                      backgroundColor: 'var(--bg-input, rgba(15, 23, 42, 0.8))',
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                      color: 'var(--text-heading, #ffffff)',
                       borderRadius: '8px',
-                      padding: '0.6rem 0.75rem',
-                      fontSize: '0.85rem'
+                      padding: '0.65rem 2.5rem 0.65rem 0.75rem',
+                      fontSize: '0.86rem',
+                      fontFamily: 'inherit'
                     }}
                   >
-                    <option value="">-- TBD (Winner / Seed) --</option>
-                    {teams.map(t => (
-                      <option key={t.id || t.team_id} value={t.id || t.team_id}>
+                    <option value="">-- Select Team B / TBD --</option>
+                    {internalTeams.map(t => (
+                      <option key={t.id || t.team_id || t.uuid} value={t.id || t.team_id}>
                         {t.name || t.teamName}
                       </option>
                     ))}
@@ -990,7 +1319,7 @@ export default function TournamentFixturesManager({
               {/* 3. Date & Times */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-muted)' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading, #ffffff)' }}>
                     Match Date *
                   </label>
                   <input
@@ -1001,18 +1330,19 @@ export default function TournamentFixturesManager({
                     className="form-control"
                     style={{
                       width: '100%',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
+                      background: 'var(--bg-input, rgba(15, 23, 42, 0.8))',
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                      color: 'var(--text-heading, #ffffff)',
                       borderRadius: '8px',
-                      padding: '0.55rem 0.75rem',
-                      fontSize: '0.85rem'
+                      padding: '0.6rem 0.75rem',
+                      fontSize: '0.86rem',
+                      fontFamily: 'inherit'
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-muted)' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading, #ffffff)' }}>
                     Start Time *
                   </label>
                   <input
@@ -1024,18 +1354,19 @@ export default function TournamentFixturesManager({
                     className="form-control"
                     style={{
                       width: '100%',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
+                      background: 'var(--bg-input, rgba(15, 23, 42, 0.8))',
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                      color: 'var(--text-heading, #ffffff)',
                       borderRadius: '8px',
-                      padding: '0.55rem 0.75rem',
-                      fontSize: '0.85rem'
+                      padding: '0.6rem 0.75rem',
+                      fontSize: '0.86rem',
+                      fontFamily: 'inherit'
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-muted)' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading, #ffffff)' }}>
                     End Time *
                   </label>
                   <input
@@ -1047,12 +1378,13 @@ export default function TournamentFixturesManager({
                     className="form-control"
                     style={{
                       width: '100%',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
+                      background: 'var(--bg-input, rgba(15, 23, 42, 0.8))',
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                      color: 'var(--text-heading, #ffffff)',
                       borderRadius: '8px',
-                      padding: '0.55rem 0.75rem',
-                      fontSize: '0.85rem'
+                      padding: '0.6rem 0.75rem',
+                      fontSize: '0.86rem',
+                      fontFamily: 'inherit'
                     }}
                   />
                 </div>
@@ -1060,7 +1392,7 @@ export default function TournamentFixturesManager({
 
               {/* 4. Court / Venue */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-muted)' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading, #ffffff)' }}>
                   Court / Turf
                 </label>
                 <select
@@ -1071,14 +1403,16 @@ export default function TournamentFixturesManager({
                     setFixtureForm(prev => ({ ...prev, courtId: cId, courtName: found ? found.name : '' }));
                   }}
                   className="form-control"
+                  spellCheck={false}
                   style={{
                     width: '100%',
-                    background: 'var(--bg-input)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-main)',
+                    backgroundColor: 'var(--bg-input, rgba(15, 23, 42, 0.8))',
+                    border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                    color: 'var(--text-heading, #ffffff)',
                     borderRadius: '8px',
-                    padding: '0.6rem 0.75rem',
-                    fontSize: '0.85rem'
+                    padding: '0.65rem 2.5rem 0.65rem 0.75rem',
+                    fontSize: '0.86rem',
+                    fontFamily: 'inherit'
                   }}
                 >
                   <option value="">-- Default / Center Court --</option>
@@ -1090,21 +1424,22 @@ export default function TournamentFixturesManager({
 
               {/* 5. Counts in Standings Checkbox */}
               <div style={{
-                padding: '0.75rem 1rem',
-                borderRadius: '8px',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-color)',
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                background: 'var(--bg-elevated, rgba(255, 255, 255, 0.04))',
+                border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.6rem'
+                gap: '0.65rem'
               }}>
                 <input
                   type="checkbox"
                   id="countsInStandingsCheck"
                   checked={fixtureForm.countsInStandings}
                   onChange={(e) => setFixtureForm(prev => ({ ...prev, countsInStandings: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', accentColor: '#10b981', cursor: 'pointer' }}
                 />
-                <label htmlFor="countsInStandingsCheck" style={{ fontSize: '0.85rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+                <label htmlFor="countsInStandingsCheck" style={{ fontSize: '0.85rem', color: 'var(--text-heading, #ffffff)', cursor: 'pointer' }}>
                   <strong>Count match toward League Standings Table</strong> (Standard for League fixtures; excluded for Knockouts)
                 </label>
               </div>
@@ -1115,7 +1450,7 @@ export default function TournamentFixturesManager({
                   type="button"
                   onClick={() => setShowFixtureModal(false)}
                   className="btn btn-outline"
-                  style={{ padding: '0.55rem 1.25rem' }}
+                  style={{ padding: '0.6rem 1.35rem', borderRadius: '10px', fontWeight: 600 }}
                 >
                   Cancel
                 </button>
@@ -1123,7 +1458,7 @@ export default function TournamentFixturesManager({
                   type="submit"
                   disabled={formSubmitting}
                   className="btn btn-primary"
-                  style={{ padding: '0.55rem 1.5rem', background: '#10b981', border: 'none', fontWeight: 700 }}
+                  style={{ padding: '0.6rem 1.6rem', background: '#10b981', border: 'none', fontWeight: 800, borderRadius: '10px', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)' }}
                 >
                   {formSubmitting ? 'Saving...' : editingFixture ? 'Update Fixture' : 'Create Fixture'}
                 </button>

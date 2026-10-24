@@ -40,16 +40,14 @@ import {
 } from 'lucide-react';
 
 const selectStyle = {
-  padding: '7px 28px 7px 10px',
+  padding: '7px 2.5rem 7px 10px',
   borderRadius: 8,
-  background: 'var(--bg-input, #ffffff)',
+  backgroundColor: 'var(--bg-input, #ffffff)',
   color: 'var(--text-main, #0f172a)',
   border: '1px solid var(--border-color, #cbd5e1)',
   fontSize: '0.85rem',
   fontWeight: 600,
-  cursor: 'pointer',
-  appearance: 'auto',
-  WebkitAppearance: 'menulist'
+  cursor: 'pointer'
 };
 
 const optionStyle = {
@@ -68,6 +66,9 @@ const inputStyle = {
 
 const PRESET_SIZES = [
   { id: 'RESPONSIVE', label: 'Responsive (Auto Fit Container)', width: '100%', height: 'auto', fit: 'contain' },
+  { id: 'MOBILE_TOP_STRIP', label: 'Mobile Top Strip (720px × 120px / ~64px)', width: '100%', height: '64px', fit: 'contain' },
+  { id: 'MOBILE_BOTTOM_STRIP', label: 'Mobile Bottom Strip (720px × 110px / ~56px)', width: '100%', height: '56px', fit: 'contain' },
+  { id: 'COURT_MIDDLE_STRIP', label: 'Court Middle Strip (Vertical Beside Net ~80×240px)', width: '80px', height: '240px', fit: 'cover' },
   { id: 'SIGNAGE_TOP_BANNER', label: 'Signage Top Banner (Full Width × 76px)', width: '100%', height: '76px', fit: 'contain' },
   { id: 'SIGNAGE_BOTTOM_TICKER', label: 'Signage Bottom Ticker (Full Width × 48px)', width: '100%', height: '48px', fit: 'contain' },
   { id: 'SIGNAGE_SIDEBAR_TALL', label: 'Signage Tall Sidebar (240px × 680px)', width: '240px', height: '680px', fit: 'contain' },
@@ -98,7 +99,11 @@ const AdManagementPanel = () => {
     leftSidebarPaused: false,
     rightSidebarPaused: false,
     zoneSettings: { topHeight: 120, leftWidth: 220, rightWidth: 220, bottomHeight: 70 },
-    venueZoneSettings: {}
+    venueZoneSettings: {},
+    portraitZoneSettings: { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' },
+    venuePortraitZoneSettings: {},
+    mobileZoneSettings: { topHeight: 64, bottomHeight: 56, topSpeed: 50, bottomSpeed: 40 },
+    venueMobileZoneSettings: {}
   });
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -112,6 +117,8 @@ const AdManagementPanel = () => {
   // Comprehensive Form State with Sizing, Placement & Movement Controls
   const [formData, setFormData] = useState({
     title: '',
+    description: '',
+    linkUrl: '',
     position: 'TOP',
     sizePreset: 'RESPONSIVE',
     width: '100%',
@@ -134,6 +141,7 @@ const AdManagementPanel = () => {
     status: 'ACTIVE',
     targetPage: 'ALL',
     deviceTarget: 'ALL',
+    devices: ['MOBILE', 'TV', 'SIGNAGE'],
     imageFile: null
   });
   const [formImagePreview, setFormImagePreview] = useState('');
@@ -333,6 +341,107 @@ const AdManagementPanel = () => {
     }
   };
 
+  // Active Mobile Zone Sizes (resolved per venue with global fallback)
+  const currentMobileZoneSizes = useMemo(() => {
+    const defaults = { topHeight: 64, bottomHeight: 56, topSpeed: 50, bottomSpeed: 40 };
+    const globalZones = { ...defaults, ...(playbackState?.mobileZoneSettings || {}) };
+    if (venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL') {
+      const vSettings = playbackState?.venueMobileZoneSettings?.[String(venueFilter)];
+      return { ...globalZones, ...(vSettings || {}) };
+    }
+    return globalZones;
+  }, [playbackState, venueFilter]);
+
+  const handleMobileZoneSizeChange = async (zoneKey, value) => {
+    const numVal = parseInt(value, 10);
+    if (isNaN(numVal)) return;
+
+    setPlaybackState(prev => {
+      const isVenueSpecific = venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL';
+      const defaults = { topHeight: 64, bottomHeight: 56, topSpeed: 50, bottomSpeed: 40 };
+      if (isVenueSpecific) {
+        const vKey = String(venueFilter);
+        return {
+          ...prev,
+          venueMobileZoneSettings: {
+            ...prev.venueMobileZoneSettings,
+            [vKey]: {
+              ...(prev.venueMobileZoneSettings?.[vKey] || prev.mobileZoneSettings || defaults),
+              [zoneKey]: numVal
+            }
+          }
+        };
+      }
+      return {
+        ...prev,
+        mobileZoneSettings: {
+          ...(prev.mobileZoneSettings || defaults),
+          [zoneKey]: numVal
+        }
+      };
+    });
+
+    try {
+      await controlAdsAdminApi('UPDATE_ZONE_SIZES', {
+        venueId: venueFilter,
+        isMobile: true,
+        orientation: 'MOBILE',
+        sizes: { [zoneKey]: numVal }
+      });
+    } catch (err) {
+      console.warn('Mobile zone size update error:', err);
+    }
+  };
+
+  const handleResetMobileZone = async (zoneKey) => {
+    const defaults = { topHeight: 64, bottomHeight: 56, topSpeed: 50, bottomSpeed: 40 };
+    const defaultVal = defaults[zoneKey] || 64;
+
+    setPlaybackState(prev => {
+      const isVenueSpecific = venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL';
+      if (isVenueSpecific) {
+        const vKey = String(venueFilter);
+        if (zoneKey === 'ALL') {
+          const nextVenueSettings = { ...(prev.venueMobileZoneSettings || {}) };
+          delete nextVenueSettings[vKey];
+          return { ...prev, venueMobileZoneSettings: nextVenueSettings };
+        }
+        return {
+          ...prev,
+          venueMobileZoneSettings: {
+            ...prev.venueMobileZoneSettings,
+            [vKey]: {
+              ...(prev.venueMobileZoneSettings?.[vKey] || prev.mobileZoneSettings || defaults),
+              [zoneKey]: defaultVal
+            }
+          }
+        };
+      }
+      if (zoneKey === 'ALL') {
+        return { ...prev, mobileZoneSettings: { ...defaults } };
+      }
+      return {
+        ...prev,
+        mobileZoneSettings: {
+          ...(prev.mobileZoneSettings || defaults),
+          [zoneKey]: defaultVal
+        }
+      };
+    });
+
+    try {
+      await controlAdsAdminApi('RESET_ZONE_SIZE', {
+        venueId: venueFilter,
+        isMobile: true,
+        orientation: 'MOBILE',
+        zone: zoneKey
+      });
+      showToast(`Reset mobile ${zoneKey} to default`);
+    } catch (err) {
+      console.warn('Mobile zone reset error:', err);
+    }
+  };
+
   const handleZoneSizeChange = async (zoneKey, value) => {
     const numVal = parseInt(value, 10);
     if (isNaN(numVal)) return;
@@ -456,24 +565,31 @@ const AdManagementPanel = () => {
     return { val: defaultVal, unit: defaultUnit };
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = (initialPosition = 'TOP') => {
     setEditingAd(null);
     setModalError('');
     setTournamentSearchQuery('');
+
+    const isCourtMiddle = initialPosition === 'COURT_MIDDLE';
+    const isMobileTop = initialPosition === 'MOBILE_TOP';
+    const isMobileBottom = initialPosition === 'MOBILE_BOTTOM';
+
     setFormData({
       title: '',
-      position: 'TOP',
-      sizePreset: 'RESPONSIVE',
-      width: '100%',
-      height: 'auto',
-      widthUnit: '%',
-      widthValue: 100,
+      description: '',
+      linkUrl: '',
+      position: initialPosition,
+      sizePreset: isCourtMiddle ? 'COURT_MIDDLE_STRIP' : isMobileTop ? 'MOBILE_TOP_STRIP' : isMobileBottom ? 'MOBILE_BOTTOM_STRIP' : 'RESPONSIVE',
+      width: isCourtMiddle ? '80px' : '100%',
+      height: isCourtMiddle ? '240px' : isMobileTop ? '64px' : isMobileBottom ? '56px' : 'auto',
+      widthUnit: isCourtMiddle ? 'px' : '%',
+      widthValue: isCourtMiddle ? 80 : 100,
       heightUnit: 'px',
-      heightValue: 76,
-      imageFit: 'contain',
-      motionType: 'STATIC',
-      movementDirection: 'RIGHT_TO_LEFT',
-      speed: 25,
+      heightValue: isCourtMiddle ? 240 : isMobileTop ? 64 : isMobileBottom ? 56 : 76,
+      imageFit: isCourtMiddle ? 'cover' : 'contain',
+      motionType: isMobileTop || isMobileBottom ? 'SCROLL' : 'STATIC',
+      movementDirection: isMobileBottom ? 'LEFT_TO_RIGHT' : 'RIGHT_TO_LEFT',
+      speed: isMobileTop ? 50 : isMobileBottom ? 40 : 25,
       slideInterval: 6,
       pauseOnHover: true,
       venueIds: [],
@@ -484,6 +600,7 @@ const AdManagementPanel = () => {
       status: 'ACTIVE',
       targetPage: 'ALL',
       deviceTarget: 'ALL',
+      devices: isMobileTop || isMobileBottom ? ['MOBILE'] : ['MOBILE', 'TV', 'SIGNAGE'],
       imageFile: null
     });
     setFormImagePreview('');
@@ -499,6 +616,8 @@ const AdManagementPanel = () => {
 
     setFormData({
       title: ad.title || '',
+      description: ad.description || '',
+      linkUrl: ad.linkUrl || ad.clickUrl || '',
       position: ad.position || 'TOP',
       sizePreset: ad.sizePreset || 'RESPONSIVE',
       width: ad.width || '100%',
@@ -521,6 +640,7 @@ const AdManagementPanel = () => {
       status: ad.status || 'ACTIVE',
       targetPage: ad.targetPage || 'ALL',
       deviceTarget: ad.deviceTarget || 'ALL',
+      devices: Array.isArray(ad.devices) && ad.devices.length > 0 ? ad.devices : ['MOBILE', 'TV', 'SIGNAGE'],
       imageFile: null
     });
     setFormImagePreview(ad.imageUrl || '');
@@ -553,6 +673,15 @@ const AdManagementPanel = () => {
       } else if (preset.id === 'SIGNAGE_BOTTOM_TICKER') {
         nextPos = 'BOTTOM';
         nextMotion = 'SCROLL';
+      } else if (preset.id === 'MOBILE_TOP_STRIP') {
+        nextPos = 'MOBILE_TOP';
+        nextMotion = 'SCROLL';
+      } else if (preset.id === 'MOBILE_BOTTOM_STRIP') {
+        nextPos = 'MOBILE_BOTTOM';
+        nextMotion = 'SCROLL';
+      } else if (preset.id === 'COURT_MIDDLE_STRIP') {
+        nextPos = 'COURT_MIDDLE';
+        nextMotion = 'STATIC';
       } else if (preset.id === 'SIGNAGE_TOP_BANNER' || preset.id === 'LEADERBOARD' || preset.id === 'LARGE_LEADERBOARD') {
         nextPos = 'TOP';
       }
@@ -616,6 +745,8 @@ const AdManagementPanel = () => {
       setActionLoading(true);
       const payload = new FormData();
       payload.append('title', formData.title || 'Stadium Ad');
+      payload.append('description', formData.description || '');
+      payload.append('linkUrl', formData.linkUrl || '');
       payload.append('position', formData.position);
       payload.append('sizePreset', formData.sizePreset);
 
@@ -640,6 +771,7 @@ const AdManagementPanel = () => {
       payload.append('status', formData.status);
       payload.append('targetPage', formData.targetPage);
       payload.append('deviceTarget', formData.deviceTarget);
+      payload.append('devices', JSON.stringify(formData.devices || ['MOBILE', 'TV', 'SIGNAGE']));
       payload.append('venueIds', JSON.stringify(formData.venueIds || []));
       payload.append('tournamentIds', JSON.stringify(formData.tournamentIds || []));
       if (formData.startDate) payload.append('startDate', formData.startDate);
@@ -699,6 +831,9 @@ const AdManagementPanel = () => {
   const sidebarAds = filterAds(ads.filter(a => a.position === 'LEFT' || a.position === 'RIGHT' || a.position === 'BOTH_SIDEBARS'));
   const bottomAds = filterAds(ads.filter(a => a.position === 'BOTTOM'));
   const courtAds = filterAds(ads.filter(a => a.position === 'COURT'));
+  const courtMiddleAds = filterAds(ads.filter(a => a.position === 'COURT_MIDDLE' || a.position === 'court_middle'));
+  const mobileTopAds = filterAds(ads.filter(a => a.position === 'MOBILE_TOP' || a.position === 'mobile_top'));
+  const mobileBottomAds = filterAds(ads.filter(a => a.position === 'MOBILE_BOTTOM' || a.position === 'mobile_bottom'));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -966,6 +1101,8 @@ const AdManagementPanel = () => {
                 onClick={() => {
                   if (zoneOrientationTab === 'PORTRAIT') {
                     handleResetPortraitZone('ALL');
+                  } else if (zoneOrientationTab === 'MOBILE') {
+                    handleResetMobileZone('ALL');
                   } else {
                     handleResetZone('ALL');
                   }
@@ -974,13 +1111,13 @@ const AdManagementPanel = () => {
                 style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                 title="Reset all zones to default sizes"
               >
-                Reset All Zones ({zoneOrientationTab === 'PORTRAIT' ? 'Portrait' : 'Landscape'})
+                Reset All Zones ({zoneOrientationTab === 'PORTRAIT' ? 'Portrait' : zoneOrientationTab === 'MOBILE' ? 'Mobile' : 'Landscape'})
               </button>
             </div>
           </div>
 
-          {/* Orientation Mode Switcher: Landscape (16:9) vs Portrait (9:16) */}
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+          {/* Orientation Mode Switcher: Landscape (16:9) vs Portrait (9:16) vs Mobile (Live Viewer) */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={() => setZoneOrientationTab('LANDSCAPE')}
@@ -1018,6 +1155,25 @@ const AdManagementPanel = () => {
               }}
             >
               📱 Portrait (9:16 Vertical Displays)
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoneOrientationTab('MOBILE')}
+              style={{
+                background: zoneOrientationTab === 'MOBILE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: zoneOrientationTab === 'MOBILE' ? '#10b981' : '#94a3b8',
+                border: `1px solid ${zoneOrientationTab === 'MOBILE' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              📲 Mobile (Live Viewer Strips)
             </button>
           </div>
 
@@ -1325,7 +1481,7 @@ const AdManagementPanel = () => {
               </div>
             </div>
           </div>
-          ) : (
+          ) : zoneOrientationTab === 'PORTRAIT' ? (
           /* ── PORTRAIT (9:16) AD ZONES & LIVE MINI-PREVIEW ── */
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', alignItems: 'center' }}>
             {/* Left Column: Portrait Sliders */}
@@ -1567,6 +1723,351 @@ const AdManagementPanel = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
                 Portrait WebSocket sync active
+              </div>
+            </div>
+          </div>
+          ) : (
+          /* ── MOBILE (LIVE VIEWER STRIPS) AD ZONES & PHONE MINI-PREVIEW ── */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', alignItems: 'center' }}>
+            {/* Left Column: Mobile Sliders & Inputs */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Mobile Top Strip Height */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Layers size={14} color="#ef4444" /> Mobile Top Strip Height
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min={36}
+                      max={160}
+                      value={currentMobileZoneSizes.topHeight}
+                      onChange={(e) => handleMobileZoneSizeChange('topHeight', e.target.value)}
+                      style={{ ...inputStyle, width: '70px', padding: '4px 8px', fontSize: '0.82rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>px</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetMobileZone('topHeight')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (64)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={36}
+                  max={160}
+                  step={2}
+                  value={currentMobileZoneSizes.topHeight}
+                  onChange={(e) => handleMobileZoneSizeChange('topHeight', e.target.value)}
+                  style={{ width: '100%', accentColor: '#ef4444', cursor: 'pointer' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                  <span>36px (Compact)</span>
+                  <span>Default: 64px (Under App Header)</span>
+                  <span>160px (Tall)</span>
+                </div>
+              </div>
+
+              {/* Mobile Top Strip Speed */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Move size={14} color="#ef4444" /> Top Strip Scroll Speed
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min={15}
+                      max={150}
+                      value={currentMobileZoneSizes.topSpeed || 50}
+                      onChange={(e) => handleMobileZoneSizeChange('topSpeed', e.target.value)}
+                      style={{ ...inputStyle, width: '70px', padding: '4px 8px', fontSize: '0.82rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>px/s</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetMobileZone('topSpeed')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (50)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={15}
+                  max={150}
+                  step={5}
+                  value={currentMobileZoneSizes.topSpeed || 50}
+                  onChange={(e) => handleMobileZoneSizeChange('topSpeed', e.target.value)}
+                  style={{ width: '100%', accentColor: '#ef4444', cursor: 'pointer' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                  <span>15 px/s (Slow)</span>
+                  <span>Default: 50 px/s (Right → Left)</span>
+                  <span>150 px/s (Fast)</span>
+                </div>
+              </div>
+
+              {/* Mobile Bottom Strip Height */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Layers size={14} color="#f59e0b" /> Mobile Bottom Strip Height
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min={36}
+                      max={140}
+                      value={currentMobileZoneSizes.bottomHeight}
+                      onChange={(e) => handleMobileZoneSizeChange('bottomHeight', e.target.value)}
+                      style={{ ...inputStyle, width: '70px', padding: '4px 8px', fontSize: '0.82rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>px</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetMobileZone('bottomHeight')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (56)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={36}
+                  max={140}
+                  step={2}
+                  value={currentMobileZoneSizes.bottomHeight}
+                  onChange={(e) => handleMobileZoneSizeChange('bottomHeight', e.target.value)}
+                  style={{ width: '100%', accentColor: '#f59e0b', cursor: 'pointer' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                  <span>36px (Slim)</span>
+                  <span>Default: 56px (Docked at Bottom)</span>
+                  <span>140px (Prominent)</span>
+                </div>
+              </div>
+
+              {/* Mobile Bottom Strip Speed */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Move size={14} color="#f59e0b" /> Bottom Strip Scroll Speed
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min={15}
+                      max={150}
+                      value={currentMobileZoneSizes.bottomSpeed || 40}
+                      onChange={(e) => handleMobileZoneSizeChange('bottomSpeed', e.target.value)}
+                      style={{ ...inputStyle, width: '70px', padding: '4px 8px', fontSize: '0.82rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>px/s</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetMobileZone('bottomSpeed')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (40)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={15}
+                  max={150}
+                  step={5}
+                  value={currentMobileZoneSizes.bottomSpeed || 40}
+                  onChange={(e) => handleMobileZoneSizeChange('bottomSpeed', e.target.value)}
+                  style={{ width: '100%', accentColor: '#f59e0b', cursor: 'pointer' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                  <span>15 px/s (Slow)</span>
+                  <span>Default: 40 px/s (Left → Right)</span>
+                  <span>150 px/s (Fast)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Live Phone-Shaped Mini-Preview (approx 9:19.5 aspect ratio) */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.5px' }}>
+                LIVE VIEWER SCREEN MOCKUP (9:19.5 PHONE)
+              </div>
+              <div
+                style={{
+                  width: '210px',
+                  height: '425px',
+                  borderRadius: '28px',
+                  border: '3px solid rgba(255,255,255,0.22)',
+                  boxShadow: '0 16px 36px rgba(0,0,0,0.5)',
+                  background: '#090d16',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                {/* Phone Speaker Notch */}
+                <div style={{
+                  width: 54,
+                  height: 10,
+                  borderRadius: 6,
+                  background: '#000000',
+                  margin: '6px auto 3px',
+                  flexShrink: 0
+                }} />
+
+                {/* Mini App Header */}
+                <div style={{
+                  padding: '4px 10px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: 'rgba(255,255,255,0.04)',
+                  borderBottom: '1px solid rgba(255,255,255,0.08)',
+                  flexShrink: 0
+                }}>
+                  <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#10b981' }}>🏆 TurfSpot</span>
+                  <span style={{ fontSize: '0.52rem', color: '#94a3b8' }}>Live Sync</span>
+                </div>
+
+                {/* Top Mobile Ad Strip Preview */}
+                {playbackState.adsEnabled ? (
+                  <div style={{
+                    height: `${Math.max(24, Math.min(46, (currentMobileZoneSizes.topHeight / 64) * 32))}px`,
+                    background: 'rgba(239, 68, 68, 0.22)',
+                    borderBottom: '1px solid rgba(239, 68, 68, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#f87171',
+                    fontSize: '0.54rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.4px',
+                    transition: 'height 0.2s ease',
+                    flexShrink: 0,
+                    textAlign: 'center',
+                    padding: '0 4px'
+                  }}>
+                    TOP STRIP ({currentMobileZoneSizes.topHeight}px · {currentMobileZoneSizes.topSpeed || 50}px/s · RTL)
+                  </div>
+                ) : (
+                  <div style={{ height: 18, background: 'rgba(239,68,68,0.1)', color: '#f87171', fontSize: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    ADS STOPPED (COLLAPSED)
+                  </div>
+                )}
+
+                {/* Match Header Card Preview */}
+                <div style={{
+                  margin: '4px 8px',
+                  padding: '6px',
+                  borderRadius: 8,
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  textAlign: 'center',
+                  flexShrink: 0
+                }}>
+                  <div style={{ fontSize: '0.52rem', color: '#10b981', fontWeight: 800 }}>PICKLEBALL • LIVE</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', marginTop: 2 }}>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#fff' }}>Team A (A1)</span>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 900, color: '#10b981' }}>13 - 12</span>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#fff' }}>Team B (A3)</span>
+                  </div>
+                </div>
+
+                {/* Sample Court with On-Court Scores */}
+                <div style={{
+                  flex: 1,
+                  margin: '0 8px 4px',
+                  borderRadius: 8,
+                  background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+                  border: '1.5px solid #10b981',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  boxShadow: 'inset 0 0 12px rgba(0,0,0,0.4)'
+                }}>
+                  {/* Center Net Line */}
+                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1.5, background: 'rgba(255,255,255,0.7)', zIndex: 2 }} />
+
+                  {/* Left Half (Team A) */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px', position: 'relative' }}>
+                    <div style={{ fontSize: '0.54rem', fontWeight: 800, color: '#ffffff', background: 'rgba(0,0,0,0.5)', padding: '1px 6px', borderRadius: 4 }}>
+                      Team A
+                    </div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#ffffff', textShadow: '0 2px 8px rgba(0,0,0,0.8)' }}>
+                      13
+                    </div>
+                    <div style={{ fontSize: '0.5rem', fontWeight: 800, color: '#047857', background: '#34d399', padding: '1px 5px', borderRadius: 4 }}>
+                      SERVE #1
+                    </div>
+                  </div>
+
+                  {/* Right Half (Team B) */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px', position: 'relative' }}>
+                    <div style={{ fontSize: '0.54rem', fontWeight: 800, color: '#ffffff', background: 'rgba(0,0,0,0.5)', padding: '1px 6px', borderRadius: 4 }}>
+                      Team B
+                    </div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#ffffff', textShadow: '0 2px 8px rgba(0,0,0,0.8)' }}>
+                      12
+                    </div>
+                    <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.75)', background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 4 }}>
+                      RECEIVE
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Mobile Ad Strip Preview */}
+                {playbackState.adsEnabled ? (
+                  <div style={{
+                    height: `${Math.max(22, Math.min(42, (currentMobileZoneSizes.bottomHeight / 56) * 28))}px`,
+                    background: 'rgba(245, 158, 11, 0.22)',
+                    borderTop: '1px solid rgba(245, 158, 11, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fbbf24',
+                    fontSize: '0.54rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.4px',
+                    transition: 'height 0.2s ease',
+                    flexShrink: 0,
+                    textAlign: 'center',
+                    padding: '0 4px'
+                  }}>
+                    BOTTOM STRIP ({currentMobileZoneSizes.bottomHeight}px · {currentMobileZoneSizes.bottomSpeed || 40}px/s · LTR)
+                  </div>
+                ) : (
+                  <div style={{ height: 18, background: 'rgba(245,158,11,0.1)', color: '#fbbf24', fontSize: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    ADS STOPPED (COLLAPSED)
+                  </div>
+                )}
+
+                {/* Home Indicator */}
+                <div style={{
+                  width: 50,
+                  height: 3,
+                  borderRadius: 2,
+                  background: 'rgba(255,255,255,0.4)',
+                  margin: '4px auto 3px',
+                  flexShrink: 0
+                }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                Mobile Live Viewer WebSocket sync active
               </div>
             </div>
           </div>
@@ -2076,6 +2577,413 @@ const AdManagementPanel = () => {
         )}
       </div>
 
+      {/* ── 5. MOBILE & COURT MIDDLE ADVERTISEMENTS ── */}
+      <div className="glass-panel" style={{ padding: '1.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Smartphone size={18} color="var(--accent-primary)" /> Mobile Viewer Ads (Live Match Screen)
+            </h3>
+            <p style={{ margin: '0.25rem 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Dedicated top &amp; bottom banner strips and vertical court middle strips beside net for viewers on /matches/:id/live with seamless infinite cycling.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {mobileTopAds.length} Top Ads
+            </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {mobileBottomAds.length} Bottom Ads
+            </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {courtMiddleAds.length} Court Middle Strip Ads
+            </span>
+            <button
+              type="button"
+              onClick={() => openCreateModal('MOBILE_TOP')}
+              className="btn btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+            >
+              <Plus size={15} /> Configure &amp; Upload Ad
+            </button>
+          </div>
+        </div>
+
+        {/* ── 5A. MOBILE TOP STRIP ADS TABLE ── */}
+        <div style={{ marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
+            <h4 style={{ fontSize: '1rem', margin: 0, fontWeight: 800, color: '#f8fafc' }}>
+              Mobile Top Strip (Scrolls Right → Left under App Header)
+            </h4>
+          </div>
+          {mobileTopAds.length === 0 ? (
+            <div style={{ padding: '1.75rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 10, fontSize: '0.85rem' }}>
+              No Mobile Top advertisements configured. Click &quot;Configure &amp; Upload Ad&quot; above to create one with position &quot;Mobile Top (Right → Left)&quot;.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Preview</th>
+                    <th>Title</th>
+                    <th>Motion</th>
+                    <th>Speed</th>
+                    <th>Tournament</th>
+                    <th>Venue</th>
+                    <th>Device</th>
+                    <th>Order</th>
+                    <th>Schedule</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mobileTopAds.map(ad => (
+                    <tr key={ad.id}>
+                      <td>
+                        <img
+                          src={ad.imageUrl}
+                          alt={ad.title}
+                          onClick={() => setPreviewModal(ad)}
+                          style={{ width: 80, height: 32, objectFit: ad.imageFit || 'contain', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--border-color)' }}
+                        />
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{ad.title}</div>
+                        {ad.description && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.description}</div>}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ef4444' }}>
+                          {ad.motionType || 'SCROLL'} (RTL)
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                        {ad.speed || 50} px/s
+                      </td>
+                      <td>
+                        {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                            All Tournaments
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {!ad.venueIds || ad.venueIds.length === 0 ? (
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
+                            All Venues
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.78rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.devices && ad.devices.length ? ad.devices.join(', ') : 'All Devices'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
+                        {ad.sortOrder ?? 0}
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
+                      </td>
+                      <td>
+                        <span
+                          onClick={() => handleToggleStatus(ad)}
+                          style={{
+                            cursor: 'pointer',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                            color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
+                          }}
+                        >
+                          {ad.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
+                            <Eye size={14} />
+                          </button>
+                          <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── 5B. MOBILE BOTTOM STRIP ADS TABLE ── */}
+        <div style={{ marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
+            <h4 style={{ fontSize: '1rem', margin: 0, fontWeight: 800, color: '#f8fafc' }}>
+              Mobile Bottom Strip (Scrolls Left → Right docked at Bottom)
+            </h4>
+          </div>
+          {mobileBottomAds.length === 0 ? (
+            <div style={{ padding: '1.75rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 10, fontSize: '0.85rem' }}>
+              No Mobile Bottom advertisements configured. Click &quot;Configure &amp; Upload Ad&quot; above to create one with position &quot;Mobile Bottom (Left → Right)&quot;.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Preview</th>
+                    <th>Title</th>
+                    <th>Motion</th>
+                    <th>Speed</th>
+                    <th>Tournament</th>
+                    <th>Venue</th>
+                    <th>Device</th>
+                    <th>Order</th>
+                    <th>Schedule</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mobileBottomAds.map(ad => (
+                    <tr key={ad.id}>
+                      <td>
+                        <img
+                          src={ad.imageUrl}
+                          alt={ad.title}
+                          onClick={() => setPreviewModal(ad)}
+                          style={{ width: 80, height: 32, objectFit: ad.imageFit || 'contain', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--border-color)' }}
+                        />
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{ad.title}</div>
+                        {ad.description && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.description}</div>}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#f59e0b' }}>
+                          {ad.motionType || 'SCROLL'} (LTR)
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                        {ad.speed || 40} px/s
+                      </td>
+                      <td>
+                        {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                            All Tournaments
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {!ad.venueIds || ad.venueIds.length === 0 ? (
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
+                            All Venues
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.78rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.devices && ad.devices.length ? ad.devices.join(', ') : 'All Devices'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
+                        {ad.sortOrder ?? 0}
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
+                      </td>
+                      <td>
+                        <span
+                          onClick={() => handleToggleStatus(ad)}
+                          style={{
+                            cursor: 'pointer',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                            color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
+                          }}
+                        >
+                          {ad.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
+                            <Eye size={14} />
+                          </button>
+                          <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── 5C. COURT MIDDLE STRIP ADS TABLE ── */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
+            <h4 style={{ fontSize: '1rem', margin: 0, fontWeight: 800, color: '#f8fafc' }}>
+              Court Middle Strip (Vertical Beside Net / Center Line)
+            </h4>
+          </div>
+          {courtMiddleAds.length === 0 ? (
+            <div style={{ padding: '1.75rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 10, fontSize: '0.85rem' }}>
+              No Court Middle Strip advertisements configured. Click &quot;Configure &amp; Upload Ad&quot; above to create one with position &quot;Court Middle Strip (Vertical Beside Net)&quot;.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Preview</th>
+                    <th>Title</th>
+                    <th>Motion</th>
+                    <th>Speed</th>
+                    <th>Tournament</th>
+                    <th>Venue</th>
+                    <th>Device</th>
+                    <th>Order</th>
+                    <th>Schedule</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courtMiddleAds.map(ad => (
+                    <tr key={ad.id}>
+                      <td>
+                        <img
+                          src={ad.imageUrl}
+                          alt={ad.title}
+                          onClick={() => setPreviewModal(ad)}
+                          style={{ width: 44, height: 44, objectFit: ad.imageFit || 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid var(--border-color)' }}
+                        />
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{ad.title}</div>
+                        {ad.description && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.description}</div>}
+                        {ad.linkUrl && (
+                          <a href={ad.linkUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.7rem', color: 'var(--accent-primary, #10b981)', textDecoration: 'none' }}>
+                            🔗 Link
+                          </a>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#10b981' }}>
+                          {ad.motionType || 'STATIC'} (ROTATE)
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                        {ad.slideInterval ? `${ad.slideInterval}s rotate` : '6s rotate'}
+                      </td>
+                      <td>
+                        {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                            All Tournaments
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {!ad.venueIds || ad.venueIds.length === 0 ? (
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
+                            All Venues
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.78rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.devices && ad.devices.length ? ad.devices.join(', ') : 'All Devices'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
+                        {ad.sortOrder ?? 0}
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
+                      </td>
+                      <td>
+                        <span
+                          onClick={() => handleToggleStatus(ad)}
+                          style={{
+                            cursor: 'pointer',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                            color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
+                          }}
+                        >
+                          {ad.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
+                            <Eye size={14} />
+                          </button>
+                          <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── ADVANCED AD CONFIGURATION / UPLOAD MODAL ── */}
       {modalOpen && (
         <div style={{
@@ -2157,6 +3065,34 @@ const AdManagementPanel = () => {
                 />
               </div>
 
+              {/* Description and Link URL */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: 4 }}>
+                    Ad Description / Tagline (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="e.g. Official Tournament Sponsor"
+                    style={{ ...inputStyle, width: '100%' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: 4 }}>
+                    Destination Link URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    value={formData.linkUrl}
+                    onChange={(e) => setFormData(prev => ({ ...prev, linkUrl: e.target.value }))}
+                    placeholder="https://sponsor.example.com"
+                    style={{ ...inputStyle, width: '100%' }}
+                  />
+                </div>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
                 {/* Placement Selector */}
                 <div>
@@ -2167,11 +3103,36 @@ const AdManagementPanel = () => {
                     value={formData.position}
                     onChange={(e) => {
                       const nextPos = e.target.value;
+                      let nextMotion = formData.motionType;
+                      let nextDir = formData.movementDirection;
+
+                      if (nextPos === 'BOTTOM') {
+                        nextMotion = 'SCROLL';
+                        nextDir = 'RIGHT_TO_LEFT';
+                      } else if (nextPos === 'MOBILE_TOP') {
+                        nextMotion = 'SCROLL';
+                        nextDir = 'RIGHT_TO_LEFT';
+                      } else if (nextPos === 'MOBILE_BOTTOM') {
+                        nextMotion = 'SCROLL';
+                        nextDir = 'LEFT_TO_RIGHT';
+                      } else if (nextPos === 'COURT_MIDDLE') {
+                        nextMotion = 'STATIC';
+                        nextDir = 'RIGHT_TO_LEFT';
+                      } else if (nextPos === 'LEFT' || nextPos === 'RIGHT') {
+                        nextDir = 'BOTTOM_TO_TOP';
+                      }
+
                       setFormData(prev => ({
                         ...prev,
                         position: nextPos,
-                        motionType: nextPos === 'BOTTOM' ? 'SCROLL' : prev.motionType,
-                        movementDirection: nextPos === 'LEFT' || nextPos === 'RIGHT' ? 'BOTTOM_TO_TOP' : 'RIGHT_TO_LEFT'
+                        motionType: nextMotion,
+                        movementDirection: nextDir,
+                        height: nextPos === 'MOBILE_TOP' ? '64px' : nextPos === 'MOBILE_BOTTOM' ? '56px' : nextPos === 'COURT_MIDDLE' ? '240px' : prev.height,
+                        heightValue: nextPos === 'MOBILE_TOP' ? 64 : nextPos === 'MOBILE_BOTTOM' ? 56 : nextPos === 'COURT_MIDDLE' ? 240 : prev.heightValue,
+                        width: nextPos === 'COURT_MIDDLE' ? '80px' : prev.width,
+                        widthValue: nextPos === 'COURT_MIDDLE' ? 80 : prev.widthValue,
+                        widthUnit: nextPos === 'COURT_MIDDLE' ? 'px' : prev.widthUnit,
+                        imageFit: nextPos === 'COURT_MIDDLE' ? 'cover' : prev.imageFit
                       }));
                     }}
                     style={{ ...selectStyle, width: '100%' }}
@@ -2182,6 +3143,9 @@ const AdManagementPanel = () => {
                     <option value="BOTH_SIDEBARS" style={optionStyle}>Both Left &amp; Right Sidebars</option>
                     <option value="BOTTOM" style={optionStyle}>Bottom Banner / Marquee Ticker</option>
                     <option value="COURT" style={optionStyle}>Court Box Overlay (Pickleball &amp; Badminton)</option>
+                    <option value="COURT_MIDDLE" style={optionStyle}>Court Middle Strip (Vertical Beside Net)</option>
+                    <option value="MOBILE_TOP" style={optionStyle}>Mobile Top (Right → Left)</option>
+                    <option value="MOBILE_BOTTOM" style={optionStyle}>Mobile Bottom (Left → Right)</option>
                   </select>
                 </div>
 
@@ -2520,6 +3484,22 @@ const AdManagementPanel = () => {
                     color: 'var(--text-main, #ffffff)'
                   }}
                 />
+                {(formData.position === 'MOBILE_TOP' || formData.position === 'MOBILE_BOTTOM') && (
+                  <div style={{
+                    marginTop: '0.6rem',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    fontSize: '0.82rem',
+                    color: '#34d399',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    💡 <strong>Recommended Mobile Creative Size:</strong> 720×120px banner (aspect ratio ~6:1) for sharp retina display on mobile viewer screens.
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
@@ -2549,6 +3529,55 @@ const AdManagementPanel = () => {
                     onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
                     style={{ ...inputStyle, width: '100%' }}
                   />
+                </div>
+              </div>
+
+              {/* Target Devices Multi-Select */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: 6 }}>
+                  Target Devices (Multi-Select)
+                </label>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'MOBILE', label: '📱 Mobile Live Match Viewer' },
+                    { id: 'TV', label: '📺 Smart TV Display' },
+                    { id: 'SIGNAGE', label: '🖥️ Digital Signage' }
+                  ].map(dev => {
+                    const isChecked = (formData.devices || []).includes(dev.id);
+                    return (
+                      <label
+                        key={dev.id}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.45rem 0.85rem',
+                          borderRadius: '8px',
+                          background: isChecked ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                          border: `1px solid ${isChecked ? '#10b981' : 'rgba(255, 255, 255, 0.1)'}`,
+                          cursor: 'pointer',
+                          fontSize: '0.84rem',
+                          fontWeight: 600,
+                          color: isChecked ? '#10b981' : 'var(--text-main, #fff)'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setFormData(prev => {
+                              const current = prev.devices || [];
+                              const next = current.includes(dev.id)
+                                ? current.filter(d => d !== dev.id)
+                                : [...current, dev.id];
+                              return { ...prev, devices: next.length > 0 ? next : [dev.id] };
+                            });
+                          }}
+                        />
+                        <span>{dev.label}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

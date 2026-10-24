@@ -7,7 +7,7 @@ import {
   setTournamentsLoading,
   setTournamentsFeed
 } from '../../features/tournament/tournamentSlice';
-import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Eye } from 'lucide-react';
 import CreateTournamentModal from '../../components/tournament/CreateTournamentModal';
 
 const formatTournamentDate = (dateStr) => {
@@ -221,6 +221,10 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
                     </span>
                   )}
                   <span className="badge badge-info badge-overlay">{t.sport?.name || 'Cricket'}</span>
+                  <span className="badge badge-overlay" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', color: '#e2e8f0' }}>
+                    <Eye size={11} color="#34d399" />
+                    {(t.totalViews || t.total_views || 0).toLocaleString()}
+                  </span>
                 </div>
               </div>
 
@@ -242,6 +246,10 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                     <Users size={14} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
                     <span>{(t.registeredTeamsCount ?? t.registeredTeams ?? t.teamsCount ?? 0)} Registered Teams</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Eye size={14} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+                    <span>{(t.totalViews || t.total_views || 0).toLocaleString()} views</span>
                   </div>
                 </div>
 

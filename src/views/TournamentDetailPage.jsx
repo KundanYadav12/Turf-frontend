@@ -9,7 +9,7 @@ import {
 import { useTournamentLive } from '../hooks/useTournamentLive';
 import LiveMatchCard from '../components/live/LiveMatchCard';
 import TournamentAuctionTab from '../components/auction/TournamentAuctionTab';
-import { Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft, Shield, Gavel, Tv } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft, Shield, Gavel, Tv, Eye } from 'lucide-react';
 
 const TournamentDetailPage = () => {
   const { id } = useParams();
@@ -47,6 +47,53 @@ const TournamentDetailPage = () => {
     };
     fetchOverview();
     return () => { isMounted = false; };
+  }, [id]);
+
+  // View Tracking Hook: Record view once per session, deduplicated with 15-min cooldown
+  useEffect(() => {
+    if (!id) return;
+
+    let viewerId = null;
+    try {
+      viewerId = localStorage.getItem('turf_viewer_uuid');
+      if (!viewerId) {
+        viewerId = 'v_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now().toString(36);
+        localStorage.setItem('turf_viewer_uuid', viewerId);
+      }
+    } catch {
+      viewerId = 'v_' + Date.now().toString(36);
+    }
+
+    const sessionKey = `viewed_tournament_${id}`;
+    try {
+      if (sessionStorage.getItem(sessionKey)) return;
+      sessionStorage.setItem(sessionKey, '1');
+    } catch {
+      // Ignore private mode storage errors
+    }
+
+    const token = typeof window !== 'undefined' ? (localStorage.getItem('turf_auth_token') || localStorage.getItem('token')) : null;
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    axios.post(`/api/tournaments/${id}/view`, {
+      viewerId,
+      platform: 'WEB'
+    }, { headers })
+      .then((res) => {
+        if (res.data?.success && res.data?.data) {
+          setTournament((prev) => prev ? ({
+            ...prev,
+            totalViews: res.data.data.totalViews,
+            uniqueViewers: res.data.data.uniqueViewers,
+            total_views: res.data.data.totalViews,
+            unique_viewers: res.data.data.uniqueViewers,
+            lastViewedAt: res.data.data.lastViewedAt
+          }) : prev);
+        }
+      })
+      .catch(() => {
+        // Non-blocking: analytics failures should never disrupt tournament experience
+      });
   }, [id]);
 
   // 2. Tab Lazy Loader (Only fetch data when user clicks the tab)
@@ -209,6 +256,13 @@ const TournamentDetailPage = () => {
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <Users size={15} color="var(--accent-amber, #f59e0b)" style={{ flexShrink: 0 }} /> {tournament.registeredTeamsCount} / {tournament.maxTeams} Teams
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Eye size={15} color="var(--accent-primary, #10b981)" style={{ flexShrink: 0 }} />
+                {(tournament.totalViews || tournament.total_views || 0).toLocaleString()} views
+                {((tournament.uniqueViewers || tournament.unique_viewers || 0) > 0) && (
+                  <> • {(tournament.uniqueViewers || tournament.unique_viewers).toLocaleString()} unique viewers</>
+                )}
               </span>
             </div>
           </div>

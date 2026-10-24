@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import axios from 'axios';
 import {
@@ -14,12 +15,16 @@ import TournamentAuctionTab from '../../../components/auction/TournamentAuctionT
 import {
   Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft,
   Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv,
-  ChevronRight, Trash2, Search, Check, Filter, X, ClipboardList
+  ChevronRight, Trash2, Search, Check, Filter, X, ClipboardList, Settings, AlertTriangle, Info, Clock, ExternalLink,
+  Eye, Activity, Video
 } from 'lucide-react';
 import TeamRosterDrawer from '../../../components/tournament/TeamRosterDrawer';
 import PlayerRegistrationsManager from '../../../components/tournament/PlayerRegistrationsManager';
 import OfficialScorersManager from '../../../components/tournament/OfficialScorersManager';
 import TournamentFixturesManager from '../../../components/tournament/TournamentFixturesManager';
+import TournamentStreamingPermissionsManager from '../../../components/streaming/TournamentStreamingPermissionsManager';
+
+const EMPTY_ARRAY = [];
 
 const formatTournamentDate = (dateStr) => {
   if (!dateStr) return '';
@@ -34,8 +39,23 @@ const formatTournamentDate = (dateStr) => {
 
 export default function TournamentDetailClient({ tournament: initialTournament, tournamentId }) {
   const dispatch = useDispatch();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState('live');
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const urlTab = searchParams?.get('tab');
+  const [activeTab, setActiveTab] = useState(urlTab || 'overview');
+
+  useEffect(() => {
+    const qTab = searchParams?.get('tab');
+    if (qTab && qTab !== activeTab) {
+      setActiveTab(qTab);
+    }
+  }, [searchParams]);
   const [tournament, setTournament] = useState(initialTournament);
   const [fixtures, setFixtures] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -46,6 +66,13 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   const [actionLoading, setActionLoading] = useState(false);
   const [notification, setNotification] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Delete Tournament modal & action state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState(null);
+  const [loadingImpact, setLoadingImpact] = useState(false);
+  const [deleteConfirmationWord, setDeleteConfirmationWord] = useState('');
+  const [deletingTournament, setDeletingTournament] = useState(false);
 
   // Team Squad Roster drawer state
   const [selectedRosterTeam, setSelectedRosterTeam] = useState(null);
@@ -65,18 +92,25 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   const [selectedExistingTeamId, setSelectedExistingTeamId] = useState('');
   const [registrationMode, setRegistrationMode] = useState('existing'); // 'existing' | 'new'
 
-  // Auth state from Redux
-  const { user, isAuthenticated } = useSelector((state) => state.auth || {});
+  // Auth state from Redux - memoized individual selector subscriptions
+  const user = useSelector((state) => state.auth?.user);
+  const isAuthenticated = useSelector((state) => state.auth?.isAuthenticated);
 
-  // Organizer / Admin permission check
-  const canManage = Boolean(
-    user && (
-      user.role === 'ADMIN' ||
-      user.role === 'SUPER_ADMIN' ||
-      user.id === tournament?.createdBy ||
-      user.id === tournament?.venueOwnerId
+  // Organizer / Admin permission check with mounted guard to guarantee identical SSR & client hydration
+  const userRole = (user?.role || '').toUpperCase();
+  const isSuperAdmin = Boolean(mounted && (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'));
+  const isCreator = Boolean(
+    mounted &&
+    user?.id && (
+      Number(user.id) === Number(tournament?.createdBy) ||
+      Number(user.id) === Number(tournament?.created_by) ||
+      Number(user.id) === Number(tournament?.venueOwnerId) ||
+      Number(user.id) === Number(tournament?.venue_owner_id)
     )
   );
+  const canManage = Boolean(mounted && user && (isSuperAdmin || isCreator));
+  const canDeleteTournament = Boolean(mounted && user && (isSuperAdmin || isCreator));
+  const canScore = Boolean(mounted && user && (isSuperAdmin || isCreator || userRole === 'SCORER' || userRole === 'ORGANIZER'));
 
   // Module A1: Remove Team Confirmation State
   const [teamToRemove, setTeamToRemove] = useState(null);
@@ -95,19 +129,51 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   // Module D: Live match display selection state
   const [displayUpdating, setDisplayUpdating] = useState(false);
 
-  // Redux live matches
-  const liveMatchIds = useSelector((state) => state.tournament.liveMatchesByTournament[tournamentId] || []);
-  const liveMatchesById = useSelector((state) => state.tournament.liveMatchesById);
-  const liveMatches = liveMatchIds.map((mId) => liveMatchesById[mId]).filter(Boolean);
+  // Redux live matches with stable selector and memoization
+  const liveMatchIds = useSelector((state) => state.tournament?.liveMatchesByTournament?.[tournamentId] || EMPTY_ARRAY);
+  const liveMatchesById = useSelector((state) => state.tournament?.liveMatchesById);
+  const liveMatches = useMemo(() => (liveMatchIds || []).map((mId) => liveMatchesById?.[mId]).filter(Boolean), [liveMatchIds, liveMatchesById]);
 
   const isPickleball = tournament?.sport?.slug === 'pickleball' || tournament?.name?.toLowerCase().includes('pickleball');
 
   // Load Tab Data dynamically
-  const loadTabData = useCallback(async () => {
-    setLoadingTab(true);
+  const loadTabData = useCallback(async (isBackground = false) => {
+    const hasData = (activeTab === 'live' && liveMatches.length > 0) ||
+      (activeTab === 'teams' && teams.length > 0) ||
+      (activeTab === 'matches' && fixtures.length > 0) ||
+      (activeTab === 'overview' && fixtures.length > 0);
+
+    if (!isBackground && !hasData) {
+      setLoadingTab(true);
+    }
     setErrorMsg('');
     try {
-      if (activeTab === 'live') {
+      if (activeTab === 'overview') {
+        const [resM, resT, resL] = await Promise.allSettled([
+          axios.get(`/api/tournaments/${tournamentId}/matches`),
+          axios.get(`/api/tournaments/${tournamentId}/teams`),
+          axios.get(`/api/tournaments/${tournamentId}/live`)
+        ]);
+        if (resM.status === 'fulfilled' && resM.value?.data?.success) {
+          setFixtures(resM.value.data.data.items || []);
+        }
+        if (resT.status === 'fulfilled' && resT.value?.data?.success) {
+          const teamItems = resT.value.data.data.items || [];
+          setTeams(teamItems);
+          setTournament(prev => ({
+            ...prev,
+            registeredTeamsCount: teamItems.length,
+            registeredTeams: teamItems.length,
+            teamsCount: teamItems.length
+          }));
+        }
+        if (resL.status === 'fulfilled' && resL.value?.data?.success) {
+          dispatch(setTournamentLiveMatches({
+            tournamentId,
+            matches: resL.value.data.data.items || []
+          }));
+        }
+      } else if (activeTab === 'live') {
         const res = await axios.get(`/api/tournaments/${tournamentId}/live`);
         if (res.data.success) {
           dispatch(setTournamentLiveMatches({
@@ -160,31 +226,32 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
     } finally {
       setLoadingTab(false);
     }
-  }, [tournamentId, activeTab, dispatch]);
+  }, [tournamentId, activeTab, dispatch, fixtures.length, teams.length, liveMatches.length]);
 
   useEffect(() => {
     loadTabData();
   }, [loadTabData]);
 
-  // Socket.IO Room Hook: Subscribe strictly when on 'live' tab
+  // Socket.IO Room Hook: Subscribe continuously to tournament live updates
   const handleLiveMatchUpdate = useCallback((data) => {
+    if (!data) return;
     if (data?.matchId && data?.showOnDisplay !== undefined) {
-      loadTabData();
+      loadTabData(true);
       return;
     }
     dispatch(updateLiveMatchSummary({
-      matchId: data.matchId,
-      liveScoreSummary: data.liveScoreSummary,
-      liveSubtext: data.liveSubtext,
+      matchId: data.matchId || data.public_id || data.id,
+      liveScoreSummary: data.liveScoreSummary || data.scoreSummary,
+      liveSubtext: data.liveSubtext || data.subtext,
       status: data.status
     }));
-    // If fixtures or standings tab is open, also refresh
-    if (activeTab === 'matches' || activeTab === 'standings') {
-      loadTabData();
+    // If fixtures or standings tab is open, also refresh in background
+    if (activeTab === 'matches' || activeTab === 'standings' || activeTab === 'overview') {
+      loadTabData(true);
     }
   }, [dispatch, activeTab, loadTabData]);
 
-  useTournamentLive(activeTab === 'live' ? tournamentId : null, handleLiveMatchUpdate);
+  useTournamentLive(tournamentId, handleLiveMatchUpdate);
 
   // Module D: Toggle single match display on TV/Signage
   const handleToggleMatchDisplay = async (matchId, showOnDisplay) => {
@@ -257,6 +324,99 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
     const token = getAuthToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [getAuthToken]);
+
+  // View Tracking Hook: Record view once per session, deduplicated with 15-min cooldown
+  useEffect(() => {
+    if (!tournamentId) return;
+
+    let viewerId = null;
+    try {
+      viewerId = localStorage.getItem('turf_viewer_uuid');
+      if (!viewerId) {
+        viewerId = 'v_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now().toString(36);
+        localStorage.setItem('turf_viewer_uuid', viewerId);
+      }
+    } catch {
+      viewerId = 'v_' + Date.now().toString(36);
+    }
+
+    const sessionKey = `viewed_tournament_${tournamentId}`;
+    try {
+      if (sessionStorage.getItem(sessionKey)) return;
+      sessionStorage.setItem(sessionKey, '1');
+    } catch {
+      // Ignore storage errors in private mode
+    }
+
+    axios.post(`/api/tournaments/${tournamentId}/view`, {
+      viewerId,
+      platform: 'WEB'
+    }, { headers: getAuthHeaders() })
+      .then((res) => {
+        if (res.data?.success && res.data?.data) {
+          setTournament((prev) => ({
+            ...prev,
+            totalViews: res.data.data.totalViews,
+            uniqueViewers: res.data.data.uniqueViewers,
+            total_views: res.data.data.totalViews,
+            unique_viewers: res.data.data.uniqueViewers,
+            lastViewedAt: res.data.data.lastViewedAt
+          }));
+        }
+      })
+      .catch(() => {
+        // Non-blocking: analytics failures should never disrupt page experience
+      });
+  }, [tournamentId, getAuthHeaders]);
+
+  // Open Delete Tournament modal & fetch record impact analysis
+  const handleOpenDeleteModal = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setErrorMsg('Authentication required. Please sign in to delete this tournament.');
+      return;
+    }
+    setShowDeleteModal(true);
+    setLoadingImpact(true);
+    setDeleteConfirmationWord('');
+    try {
+      const res = await axios.get(`/api/tournaments/${tournamentId}/delete-impact`, {
+        headers: getAuthHeaders()
+      });
+      if (res.data?.success) {
+        setDeleteImpact(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch tournament delete impact:', err);
+      setErrorMsg(err?.response?.data?.message || 'Failed to inspect tournament records before deletion.');
+    } finally {
+      setLoadingImpact(false);
+    }
+  };
+
+  // Safe Permanent Tournament Deletion
+  const handleConfirmDeleteTournament = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setErrorMsg('Authentication session expired. Please sign in again.');
+      return;
+    }
+    setDeletingTournament(true);
+    setErrorMsg('');
+    try {
+      const res = await axios.delete(`/api/tournaments/${tournamentId}?force=true`, {
+        headers: getAuthHeaders()
+      });
+      if (res.data?.success) {
+        setShowDeleteModal(false);
+        router.push('/tournaments');
+      }
+    } catch (err) {
+      console.error('Failed to delete tournament:', err);
+      setErrorMsg(err?.response?.data?.message || 'Failed to delete tournament. Please try again.');
+      setDeletingTournament(false);
+    }
+  };
 
   // Generate Round-Robin Fixtures handler
   const handleGenerateFixtures = async () => {
@@ -588,76 +748,222 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
       )}
 
       {/* Header Banner Card */}
-      <div className="glass-panel" style={{ padding: 'clamp(1.25rem, 2.5vw, 2rem)', marginBottom: '1.75rem', borderRadius: 'var(--radius-lg)', background: isPickleball ? 'linear-gradient(135deg, rgba(15,23,42,0.95), rgba(6,78,59,0.3))' : undefined, border: isPickleball ? '1px solid rgba(16,185,129,0.3)' : undefined }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.25rem' }}>
-          <div style={{ flex: '1 1 300px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
-              <span className="badge badge-info">{tournament.sport?.name || (isPickleball ? 'Pickleball' : 'Cricket')}</span>
+      <div
+        className="tournament-detail-hero"
+        style={{
+          padding: 'clamp(1.5rem, 3vw, 2.25rem)',
+          marginBottom: '1.75rem',
+          borderRadius: '24px',
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Subtle ambient lighting accent */}
+        <div style={{
+          position: 'absolute',
+          top: '-80px',
+          right: '-80px',
+          width: '260px',
+          height: '260px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(16, 185, 129, 0.22) 0%, transparent 70%)',
+          pointerEvents: 'none'
+        }} />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
+          <div style={{ flex: '1 1 320px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <span className="tournament-pill-sport" style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '0.35rem 0.85rem',
+                borderRadius: '9999px',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase'
+              }}>
+                {tournament.sport?.name || (isPickleball ? 'Pickleball' : 'Cricket')}
+              </span>
               {isPickleball && (
                 <>
-                  <span className="badge" style={{ background: 'rgba(16,185,129,0.2)', color: '#34d399', fontWeight: 800 }}>
+                  <span className="tournament-pill-format" style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: '9999px',
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    letterSpacing: '0.04em'
+                  }}>
                     {tournament.matchFormat || 'DOUBLES'}
                   </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: '#cbd5e1' }}>
+                  <span className="tournament-pill-neutral" style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: '9999px',
+                    fontWeight: 600,
+                    fontSize: '0.78rem'
+                  }}>
                     Target: {tournament.targetScore || 15} pts {tournament.winByTwo ? '(Win-by-2)' : ''}
                   </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: '#cbd5e1' }}>
-                    {tournament.groupsCount || 2} Groups &bull; Squad: {tournament.rosterSize || 12} Players
+                  <span className="tournament-pill-neutral" style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: '9999px',
+                    fontWeight: 600,
+                    fontSize: '0.78rem'
+                  }}>
+                    {tournament.groupsCount || 2} Groups • Squad: {tournament.rosterSize || 12} Players
                   </span>
                 </>
               )}
-              {tournament.isLive && (
-                <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Radio size={12} /> LIVE MATCHES ACTIVE
+              {(tournament.isLive || (fixtures && fixtures.some(f => f.status === 'LIVE'))) && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.35rem 0.85rem',
+                  borderRadius: '9999px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: '#dc2626',
+                  border: '1px solid rgba(239, 68, 68, 0.45)',
+                  fontWeight: 800,
+                  fontSize: '0.78rem',
+                  boxShadow: '0 0 15px rgba(239, 68, 68, 0.25)'
+                }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
+                  LIVE MATCHES ACTIVE
                 </span>
               )}
             </div>
 
-            <h1 style={{ fontSize: 'clamp(1.5rem, 3.5vw, 2.2rem)', fontWeight: 800, margin: '0 0 0.85rem 0', color: 'var(--text-heading)' }}>
+            <h1 className="tournament-hero-title" style={{
+              fontSize: 'clamp(1.75rem, 4vw, 2.5rem)',
+              fontWeight: 900,
+              margin: '0 0 0.95rem 0',
+              letterSpacing: '-0.025em',
+              lineHeight: 1.2
+            }}>
               {tournament.name}
             </h1>
 
-            <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <MapPin size={15} color="var(--accent-primary)" />
-                <span>{tournament.venue?.name || 'Sports Arena'}, {tournament.city || 'India'}</span>
+            <div style={{ display: 'flex', gap: '1.4rem', flexWrap: 'wrap', fontSize: '0.9rem', fontWeight: 600 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <MapPin size={16} color="#059669" />
+                <span className="tournament-hero-meta-text">{tournament.venue?.name || 'Sports Arena'}, {tournament.city || 'India'}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Calendar size={15} color="var(--accent-primary)" />
-                <span suppressHydrationWarning>{tournament.startDate ? formatTournamentDate(tournament.startDate) : 'Active'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Calendar size={16} color="#0284c7" />
+                <span suppressHydrationWarning className="tournament-hero-meta-text">
+                  {tournament.startDate ? formatTournamentDate(tournament.startDate) : 'Active'}
+                </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Users size={15} color="var(--accent-primary)" />
-                <span>{(teams && teams.length > 0 ? teams.length : (tournament?.registeredTeamsCount ?? tournament?.registeredTeams ?? tournament?.teamsCount ?? 0))} Registered Teams</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Users size={16} color="#7c3aed" />
+                <span className="tournament-hero-meta-text">
+                  {(teams && teams.length > 0 ? teams.length : (tournament?.registeredTeamsCount ?? tournament?.registeredTeams ?? tournament?.teamsCount ?? 0))} Registered Teams
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Eye size={16} color="#10b981" />
+                <span className="tournament-hero-meta-text">
+                  {(tournament?.totalViews ?? tournament?.total_views ?? 0).toLocaleString()} views
+                  {((tournament?.uniqueViewers ?? tournament?.unique_viewers ?? 0) > 0) && (
+                    <> • {(tournament?.uniqueViewers ?? tournament?.unique_viewers).toLocaleString()} unique viewers</>
+                  )}
+                </span>
               </div>
             </div>
           </div>
 
           {/* Action Links */}
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div className="tournament-hero-action-buttons">
+            {/* 1. Register as Player */}
             <Link
               href={`/tournaments/${tournamentId}/register`}
-              className="btn btn-outline"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#10b981', fontWeight: 600 }}
+              className="btn tournament-btn-player"
             >
               <UserPlus size={16} /> Register as Player
             </Link>
-            <Link
-              href={`/display/tournament/${tournamentId}`}
-              target="_blank"
-              className="btn btn-outline"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-            >
-              <Monitor size={16} /> Signage TV Display
-            </Link>
+
+            {/* 2. Live Score (Read-Only Live Viewer - Visible to ALL users) */}
+            {liveMatches.length === 1 ? (
+              <Link
+                href={`/matches/${liveMatches[0].uuid || liveMatches[0].id}/live`}
+                className="btn tournament-btn-live-scorer"
+              >
+                <Activity size={16} /> Live Score
+              </Link>
+            ) : liveMatches.length > 1 ? (
+              <Link
+                href={`/tournaments/${tournamentId}/live`}
+                className="btn tournament-btn-live-scorer"
+              >
+                <Activity size={16} /> Live Score ({liveMatches.length} Live)
+              </Link>
+            ) : (
+              <Link
+                href={`/tournaments/${tournamentId}/live`}
+                className="btn tournament-btn-live-scorer"
+                title="View live score arena and upcoming matches"
+              >
+                <Activity size={16} /> Live Score (No live match)
+              </Link>
+            )}
+
+            {/* 2b. Scorer Console (Visible ONLY to users with scoring access: Organizer, Scorer, Admin) */}
+            {canScore && (
+              <Link
+                href={liveMatches.length > 0
+                  ? `/matches/${liveMatches[0].uuid || liveMatches[0].id}/scorer`
+                  : `/tournaments/${tournamentId}?tab=matches`}
+                className="btn tournament-btn-scorer-console"
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)'
+                }}
+                title="Open Official Scorer Console"
+              >
+                <Zap size={16} /> Scorer Console
+              </Link>
+            )}
+
+            {/* 3. Smart TV Broadcast Mode (Visible to ALL users) */}
             <Link
               href={`/tv/${tournamentId}`}
               target="_blank"
-              className="btn btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#10b981', borderColor: '#10b981' }}
+              className="btn tournament-btn-tv"
             >
               <Tv size={16} /> Smart TV Broadcast Mode
             </Link>
+
+            {/* 4. Signage TV Display (Visible ONLY to Superadmin) */}
+            {isSuperAdmin && (
+              <Link
+                href={`/display/tournament/${tournamentId}`}
+                target="_blank"
+                className="btn tournament-btn-display"
+              >
+                <Monitor size={16} /> Signage TV Display
+              </Link>
+            )}
+
+            {/* Delete Tournament (Admin/Creator only) */}
+            {canDeleteTournament && (
+              <button
+                type="button"
+                onClick={handleOpenDeleteModal}
+                className="btn tournament-btn-delete"
+                title="Delete this tournament"
+              >
+                <Trash2 size={16} /> Delete Tournament
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -665,15 +971,18 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
       {/* Tabs Bar */}
       <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.75rem', overflowX: 'auto' }}>
         {[
-          { key: 'live', label: 'Live Matches', icon: <Radio size={15} /> },
+          { key: 'overview', label: 'Overview', icon: <Trophy size={15} /> },
           { key: 'matches', label: 'Fixtures & Schedule', icon: <Calendar size={15} /> },
-          { key: 'standings', label: 'Standings & Table', icon: <Table size={15} /> },
+          { key: 'live', label: 'Live Matches', icon: <Radio size={15} />, badge: liveMatches.length > 0 ? `${liveMatches.length}` : null },
           { key: 'teams', label: 'Registered Teams', icon: <Shield size={15} /> },
+          { key: 'standings', label: 'Results & Points Table', icon: <Table size={15} /> },
           { key: 'registrations', label: 'Player Registrations', icon: <UserPlus size={15} /> },
           { key: 'scorers', label: 'Official Scorers', icon: <ClipboardList size={15} /> },
+          { key: 'streaming', label: 'Live Streaming Access', icon: <Video size={15} /> },
           { key: 'awards', label: 'Awards & Leaders', icon: <Award size={15} /> },
           ...(isPickleball ? [{ key: 'groups', label: 'Groups & Squads', icon: <Users size={15} /> }] : []),
-          ...(tournament.hasAuction ? [{ key: 'auction', label: 'Player Auction', icon: <Gavel size={15} /> }] : [])
+          ...(tournament.hasAuction ? [{ key: 'auction', label: 'Player Auction', icon: <Gavel size={15} /> }] : []),
+          ...(canManage ? [{ key: 'settings', label: 'Settings & Management', icon: <Settings size={15} /> }] : [])
         ].map((tab) => (
           <button
             key={tab.key}
@@ -695,12 +1004,309 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           >
             {tab.icon}
             {tab.label}
+            {tab.badge && (
+              <span style={{
+                background: '#ef4444',
+                color: '#ffffff',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                padding: '1px 6px',
+                borderRadius: '9999px',
+                marginLeft: '0.2rem'
+              }}>
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {/* Tab Panels */}
       <div>
+        {/* ── Overview Tab ── */}
+        {activeTab === 'overview' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Quick Metrics Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+              <div
+                onClick={() => setActiveTab('teams')}
+                className="tournament-metric-card"
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>Registered Teams</span>
+                  <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(56, 189, 248, 0.15)', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Shield size={18} />
+                  </div>
+                </div>
+                <div className="scorer-text-heading" style={{ fontSize: '1.85rem', fontWeight: 900 }}>
+                  {teams.length > 0 ? teams.length : (tournament?.registeredTeamsCount ?? tournament?.registeredTeams ?? tournament?.teamsCount ?? 0)}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#0284c7', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}>
+                  <span>View teams roster →</span>
+                </div>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('matches')}
+                className="tournament-metric-card"
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>Total Fixtures</span>
+                  <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Calendar size={18} />
+                  </div>
+                </div>
+                <div className="scorer-text-heading" style={{ fontSize: '1.85rem', fontWeight: 900 }}>
+                  {fixtures.length}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#059669', marginTop: '0.35rem', fontWeight: 600 }}>
+                  {fixtures.filter(f => f.status === 'COMPLETED').length} played • {fixtures.filter(f => f.status === 'SCHEDULED' || !f.status).length} scheduled
+                </div>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('live')}
+                className="tournament-metric-card"
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  border: liveMatches.length > 0 ? '1.5px solid rgba(239, 68, 68, 0.45)' : undefined,
+                  background: liveMatches.length > 0 ? 'rgba(239, 68, 68, 0.05)' : undefined,
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>Live Matches</span>
+                  <div style={{ width: 36, height: 36, borderRadius: '10px', background: liveMatches.length > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(100, 116, 139, 0.12)', color: liveMatches.length > 0 ? '#dc2626' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Radio size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: '1.85rem', fontWeight: 900, color: liveMatches.length > 0 ? '#dc2626' : 'var(--text-heading, #0f172a)' }}>
+                  {liveMatches.length}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: liveMatches.length > 0 ? '#dc2626' : '#64748b', marginTop: '0.35rem', fontWeight: 600 }}>
+                  {liveMatches.length > 0 ? 'Active on scorer & TV →' : 'No live match right now'}
+                </div>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('standings')}
+                className="tournament-metric-card"
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>Format & Groups</span>
+                  <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(168, 85, 247, 0.15)', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Table size={18} />
+                  </div>
+                </div>
+                <div className="scorer-text-heading" style={{ fontSize: '1.35rem', fontWeight: 800, textTransform: 'capitalize' }}>
+                  {tournament.sport?.name || (isPickleball ? 'Pickleball' : 'Cricket')}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#7c3aed', marginTop: '0.35rem', fontWeight: 600 }}>
+                  {tournament.matchFormat || 'Round-Robin'} • Points Table →
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions Bar for Tournament Organizers & Superadmins */}
+            {canManage && (
+              <div
+                className="tournament-quick-actions-card"
+                style={{
+                  padding: '1.25rem 1.5rem',
+                  borderRadius: '16px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <h4 className="scorer-text-heading" style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                      Organizer Quick Actions
+                    </h4>
+                    <p className="scorer-text-muted" style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem' }}>
+                      Fast-track your tournament setup, match scheduling, team assignments, and live scoring.
+                    </p>
+                  </div>
+                  <span className="quick-btn-emerald" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.65rem', borderRadius: '6px' }}>
+                    {userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' ? 'Superadmin Mode' : 'Organizer Mode'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTeamModal(true)}
+                    className="btn btn-sm quick-btn-emerald"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      fontWeight: 700,
+                      padding: '0.55rem 1rem',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <UserPlus size={15} /> Add / Register Teams
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('matches')}
+                    className="btn btn-sm quick-btn-sky"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      fontWeight: 700,
+                      padding: '0.55rem 1rem',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <Calendar size={15} /> Schedule Matches & Fixtures
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleGenerateFixtures}
+                    disabled={actionLoading}
+                    className="btn btn-sm quick-btn-neutral"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      fontWeight: 700,
+                      padding: '0.55rem 1rem',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <RefreshCw size={15} className={actionLoading ? 'spin' : ''} /> Generate Round-Robin Fixtures
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('scorers')}
+                    className="btn btn-sm quick-btn-neutral"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      fontWeight: 600,
+                      padding: '0.55rem 1rem',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <ClipboardList size={15} /> Assign Official Scorers
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('settings')}
+                    className="btn btn-sm quick-btn-neutral"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      fontWeight: 600,
+                      padding: '0.55rem 1rem',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <Settings size={15} /> Tournament Settings & Danger Zone
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tournament Overview Details & Rules */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+              <div className="tournament-info-card" style={{ padding: '1.5rem', borderRadius: '16px' }}>
+                <h4 className="scorer-text-heading" style={{ fontSize: '1.1rem', fontWeight: 800, margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Info size={18} color="#0284c7" /> Tournament Information
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.88rem' }}>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Status</span>
+                    <span style={{ fontWeight: 700, color: tournament.isLive ? '#dc2626' : '#059669' }}>
+                      {tournament.isLive ? '🔴 LIVE NOW' : (tournament.status || 'SCHEDULED')}
+                    </span>
+                  </div>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Sport & Category</span>
+                    <span className="scorer-text-heading" style={{ fontWeight: 600 }}>
+                      {tournament.sport?.name || 'Pickleball'} • {tournament.matchFormat || 'Open'}
+                    </span>
+                  </div>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Venue</span>
+                    <span className="scorer-text-heading" style={{ fontWeight: 600 }}>
+                      {tournament.venue?.name || 'Sports Arena'} ({tournament.city || 'India'})
+                    </span>
+                  </div>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Dates</span>
+                    <span className="scorer-text-heading" style={{ fontWeight: 600 }}>
+                      {tournament.startDate ? formatTournamentDate(tournament.startDate) : 'TBD'}
+                      {tournament.endDate ? ` — ${formatTournamentDate(tournament.endDate)}` : ''}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span className="scorer-text-muted">Player Auction</span>
+                    <span style={{ fontWeight: 600, color: tournament.hasAuction ? '#d97706' : '#64748b' }}>
+                      {tournament.hasAuction ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="tournament-info-card" style={{ padding: '1.5rem', borderRadius: '16px' }}>
+                <h4 className="scorer-text-heading" style={{ fontSize: '1.1rem', fontWeight: 800, margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Trophy size={18} color="#d97706" /> Match Rules & Format
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.88rem' }}>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Target Winning Score</span>
+                    <span style={{ fontWeight: 700, color: '#0284c7' }}>{tournament.targetScore || 15} Points</span>
+                  </div>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Win by Two Margin</span>
+                    <span className="scorer-text-heading" style={{ fontWeight: 600 }}>{tournament.winByTwo ? 'Enforced (+2 difference)' : 'Sudden Death'}</span>
+                  </div>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Squad Roster Size</span>
+                    <span className="scorer-text-heading" style={{ fontWeight: 600 }}>{tournament.rosterSize || 12} Players / Team</span>
+                  </div>
+                  <div className="tournament-row-divider" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
+                    <span className="scorer-text-muted">Tournament Structure</span>
+                    <span className="scorer-text-heading" style={{ fontWeight: 600 }}>{tournament.groupsCount || 2} Groups • Round Robin</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span className="scorer-text-muted">Points Table Calculation</span>
+                    <span style={{ fontWeight: 600, color: '#059669' }}>Wins &gt; Points For &gt; H2H &gt; Point Diff</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Live Tab ── */}
         {activeTab === 'live' && (
           <div>
@@ -763,7 +1369,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
               </div>
             )}
 
-            {loadingTab ? (
+            {loadingTab && liveMatches.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading live matches…</div>
             ) : liveMatches.length === 0 ? (
               <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
@@ -805,20 +1411,20 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.3rem 0', color: '#fff' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: 'var(--text-heading)' }}>
                   Pickleball Group Points Table
                 </h3>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span className="badge" style={{ background: 'rgba(16,185,129,0.15)', color: '#34d399' }}>
+                  <span className="badge" style={{ background: 'var(--slot-available-bg, rgba(16,185,129,0.12))', color: 'var(--accent-primary, #059669)', border: '1px solid var(--border-glow, rgba(16,185,129,0.3))', fontWeight: 700 }}>
                     1. Most Wins
                   </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: '#cbd5e1' }}>
+                  <span className="badge" style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.06))', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', fontWeight: 600 }}>
                     2. Higher Points Scored (PF)
                   </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: '#cbd5e1' }}>
+                  <span className="badge" style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.06))', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', fontWeight: 600 }}>
                     3. Head-to-Head Result
                   </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: '#cbd5e1' }}>
+                  <span className="badge" style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.06))', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', fontWeight: 600 }}>
                     4. Point Difference (PD)
                   </span>
                 </div>
@@ -839,7 +1445,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
             ) : (!standings || Object.keys(standings.groups || standings.standings || {}).length === 0) ? (
               <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
                 <Table size={40} color="var(--text-muted)" style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
-                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>No Standings Available</h3>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: 'var(--text-heading)' }}>No Standings Available</h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Standings will generate once teams are assigned and matches conclude.</p>
               </div>
             ) : (
@@ -856,15 +1462,23 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                       <div key={groupName} className="glass-panel" style={{ padding: '1.5rem', borderRadius: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} />
-                            <h4 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#fff' }}>
+                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary, #10b981)', boxShadow: '0 0 8px var(--accent-primary-glow, rgba(16,185,129,0.3))' }} />
+                            <h4 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-heading)' }}>
                               {groupName} Standings
                             </h4>
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                               ({groupTeams.length} Teams)
                             </span>
                           </div>
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '0.25rem 0.6rem', borderRadius: '6px' }}>
+                          <span style={{
+                            fontSize: '0.78rem',
+                            color: 'var(--text-secondary)',
+                            background: 'var(--bg-secondary)',
+                            border: '1px solid var(--border-color)',
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '6px',
+                            fontWeight: 600
+                          }}>
                             {isFootball ? '3-1-0 Point System • GD Tiebreaker' : isCricket ? 'NRR Tiebreaker' : 'Win-Loss • Point Diff'}
                           </span>
                         </div>
@@ -872,68 +1486,89 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                         <div style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                             <thead>
-                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>
-                                <th style={{ padding: '0.75rem 0.5rem' }}>Rank</th>
-                                <th style={{ padding: '0.75rem 1rem' }}>Team</th>
-                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>Played</th>
-                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>Won</th>
+                              <tr style={{ borderBottom: '1.5px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700 }}>Rank</th>
+                                <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Team</th>
+                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>Played</th>
+                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>Won</th>
                                 {isFootball && (
-                                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>Drawn</th>
+                                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>Drawn</th>
                                 )}
                                 {isCricket && (
-                                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>Tied</th>
+                                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>Tied</th>
                                 )}
-                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>Lost</th>
+                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>Lost</th>
                                 {isFootball ? (
                                   <>
-                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>GF</th>
-                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>GA</th>
-                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>GD</th>
+                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>GF</th>
+                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>GA</th>
+                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>GD</th>
                                   </>
                                 ) : isCricket ? (
-                                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>NRR</th>
+                                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>NRR</th>
                                 ) : (
                                   <>
-                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>PF</th>
-                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>PA</th>
-                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>Diff</th>
+                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>PF</th>
+                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>PA</th>
+                                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>Diff</th>
                                   </>
                                 )}
-                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 800, color: '#10b981' }}>Points</th>
+                                <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: 800, color: 'var(--accent-primary, #10b981)' }}>Points</th>
                               </tr>
                             </thead>
                             <tbody>
                               {groupTeams.map((row) => (
-                                <tr key={row.teamId || row.internalTeamId || row.name} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: row.rank === 1 ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
-                                  <td style={{ padding: '0.85rem 0.5rem', fontWeight: 800, color: row.rank === 1 ? '#34d399' : '#fff' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <tr
+                                  key={row.teamId || row.internalTeamId || row.name}
+                                  className="tournament-standings-row"
+                                  style={{
+                                    borderBottom: '1px solid var(--border-color)',
+                                    background: row.rank === 1 ? 'var(--slot-available-bg, rgba(16,185,129,0.08))' : 'transparent',
+                                    color: 'var(--text-secondary)'
+                                  }}
+                                >
+                                  <td style={{ padding: '0.85rem 0.5rem', fontWeight: 800, color: row.rank === 1 ? 'var(--accent-primary, #10b981)' : 'var(--text-primary)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                                       <span>#{row.rank}</span>
                                       {row.isQualified && (
-                                        <span title="Qualified for Playoffs" style={{ fontSize: '0.65rem', background: 'rgba(16,185,129,0.2)', color: '#34d399', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>Q</span>
+                                        <span
+                                          title="Qualified for Playoffs"
+                                          style={{
+                                            fontSize: '0.65rem',
+                                            background: 'var(--slot-available-bg, rgba(16,185,129,0.2))',
+                                            color: 'var(--accent-primary, #059669)',
+                                            border: '1px solid var(--border-glow, rgba(16,185,129,0.35))',
+                                            padding: '0.1rem 0.4rem',
+                                            borderRadius: '4px',
+                                            fontWeight: 800
+                                          }}
+                                        >
+                                          Q
+                                        </span>
                                       )}
                                     </div>
                                   </td>
-                                  <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#fff' }}>
+                                  <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-heading)' }}>
                                     {row.name || row.teamName}
                                   </td>
-                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>{row.played}</td>
-                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 700, color: row.won > 0 ? '#34d399' : 'inherit' }}>{row.won}</td>
+                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: 'var(--text-primary)' }}>{row.played}</td>
+                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 700, color: row.won > 0 ? 'var(--accent-primary, #059669)' : 'var(--text-primary)' }}>{row.won}</td>
                                   {isFootball && (
-                                    <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>{row.drawn ?? 0}</td>
+                                    <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: 'var(--text-primary)' }}>{row.drawn ?? 0}</td>
                                   )}
                                   {isCricket && (
-                                    <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>{row.drawn ?? row.tied ?? 0}</td>
+                                    <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: 'var(--text-primary)' }}>{row.drawn ?? row.tied ?? 0}</td>
                                   )}
-                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: row.lost > 0 ? '#f87171' : 'inherit' }}>{row.lost}</td>
+                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: row.lost > 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)' }}>{row.lost}</td>
                                   {isFootball ? (
                                     <>
-                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>{row.goalsFor ?? 0}</td>
-                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>{row.goalsAgainst ?? 0}</td>
+                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>{row.goalsFor ?? 0}</td>
+                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: 'var(--text-muted)' }}>{row.goalsAgainst ?? 0}</td>
                                       <td style={{
                                         padding: '0.85rem 0.75rem',
                                         textAlign: 'center',
                                         fontWeight: 700,
-                                        color: (row.goalDifference ?? 0) > 0 ? '#34d399' : (row.goalDifference ?? 0) < 0 ? '#f87171' : 'inherit'
+                                        color: (row.goalDifference ?? 0) > 0 ? 'var(--accent-primary, #059669)' : (row.goalDifference ?? 0) < 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)'
                                       }}>
                                         {(row.goalDifference ?? 0) > 0 ? `+${row.goalDifference}` : (row.goalDifference ?? 0) < 0 ? `${row.goalDifference}` : '0'}
                                       </td>
@@ -943,7 +1578,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                                       padding: '0.85rem 0.75rem',
                                       textAlign: 'center',
                                       fontWeight: 700,
-                                      color: Number(row.netRunRate || 0) > 0 ? '#34d399' : Number(row.netRunRate || 0) < 0 ? '#f87171' : 'inherit'
+                                      color: Number(row.netRunRate || 0) > 0 ? 'var(--accent-primary, #059669)' : Number(row.netRunRate || 0) < 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)'
                                     }}>
                                       {row.netRunRate != null && row.netRunRate !== '' ? (
                                         Number(row.netRunRate) > 0 ? `+${Number(row.netRunRate).toFixed(3)}` : Number(row.netRunRate) < 0 ? Number(row.netRunRate).toFixed(3) : '0.000'
@@ -951,19 +1586,19 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                                     </td>
                                   ) : (
                                     <>
-                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 700 }}>{row.pointsScored ?? row.pointsFor ?? 0}</td>
-                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>{row.pointsConceded ?? row.pointsAgainst ?? 0}</td>
+                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>{row.pointsScored ?? row.pointsFor ?? 0}</td>
+                                      <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', color: 'var(--text-muted)' }}>{row.pointsConceded ?? row.pointsAgainst ?? 0}</td>
                                       <td style={{
                                         padding: '0.85rem 0.75rem',
                                         textAlign: 'center',
                                         fontWeight: 700,
-                                        color: (row.pointDifference ?? 0) > 0 ? '#34d399' : (row.pointDifference ?? 0) < 0 ? '#f87171' : 'inherit'
+                                        color: (row.pointDifference ?? 0) > 0 ? 'var(--accent-primary, #059669)' : (row.pointDifference ?? 0) < 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)'
                                       }}>
                                         {(row.pointDifference ?? 0) > 0 ? `+${row.pointDifference}` : (row.pointDifference ?? 0) < 0 ? `${row.pointDifference}` : '0'}
                                       </td>
                                     </>
                                   )}
-                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 800, color: '#34d399', fontSize: '1rem' }}>
+                                  <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', fontWeight: 900, color: 'var(--accent-primary, #059669)', fontSize: '1.05rem' }}>
                                     {row.points}
                                   </td>
                                 </tr>
@@ -985,7 +1620,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.3rem 0', color: '#fff' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: 'var(--text-heading)' }}>
                   Group Assignments & Team Squads
                 </h3>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -1017,7 +1652,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
             ) : !groupsData || Object.keys(groupsData.groups || {}).length === 0 ? (
               <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
                 <Shield size={40} color="var(--text-muted)" style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
-                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>No Groups Configured</h3>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: 'var(--text-heading)' }}>No Groups Configured</h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Click &quot;Add Team to Tournament&quot; to begin building your tournament groups.</p>
               </div>
             ) : (
@@ -1026,8 +1661,8 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                   const gTeams = groupsData.groups[groupName];
                   return (
                     <div key={groupName} className="glass-panel" style={{ padding: '1.5rem', borderRadius: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
-                        <h4 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#34d399' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+                        <h4 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--accent-primary, #059669)' }}>
                           {groupName}
                         </h4>
                         <span className="badge badge-info">
@@ -1051,24 +1686,15 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                                   handleOpenTeamRoster(t);
                                 }
                               }}
+                              className="tournament-squad-row"
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 padding: '0.75rem 1rem',
-                                background: 'rgba(255,255,255,0.03)',
                                 borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.05)',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
                               }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1076,7 +1702,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                                   {idx + 1}
                                 </div>
                                 <div>
-                                  <div style={{ fontWeight: 800, color: '#fff' }}>{t.name}</div>
+                                  <div style={{ fontWeight: 800, color: 'var(--text-heading)' }}>{t.name}</div>
                                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t.playerCount || t.members?.length || 12} Squad Members</div>
                                 </div>
                               </div>
@@ -1160,7 +1786,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
               </div>
             </div>
 
-            {loadingTab ? (
+            {loadingTab && teams.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading participating teams…</div>
             ) : teams.length === 0 ? (
               <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
@@ -1176,7 +1802,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '1.25rem' }}>
                 {teams.map((tm) => (
                   <div
                     key={tm.id}
@@ -1189,114 +1815,103 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                         handleOpenTeamRoster(tm);
                       }
                     }}
-                    className="glass-panel"
+                    className="tournament-team-card glass-panel"
                     style={{
                       padding: '1.25rem',
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: '1rem',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      borderRadius: '16px',
                       cursor: 'pointer',
-                      transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                      outline: 'none',
                       position: 'relative',
-                      outline: 'none'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-3px)';
-                      e.currentTarget.style.borderColor = 'var(--accent-primary, #10b981)';
-                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(16, 185, 129, 0.15)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'none';
-                      e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.1))';
-                      e.currentTarget.style.boxShadow = 'none';
+                      gap: '1rem',
+                      transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
                     }}
                     onFocus={(e) => {
                       e.currentTarget.style.borderColor = 'var(--accent-primary, #10b981)';
                       e.currentTarget.style.boxShadow = '0 0 0 2px var(--accent-primary-glow, rgba(16, 185, 129, 0.3))';
                     }}
                     onBlur={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.1))';
-                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = '';
+                      e.currentTarget.style.boxShadow = '';
                     }}
                   >
-                    {/* Team logo or initial */}
-                    {tm.logo ? (
-                      <img
-                        src={tm.logo}
-                        alt={tm.name}
-                        style={{
-                          width: 46,
-                          height: 46,
-                          borderRadius: 12,
-                          objectFit: 'cover',
-                          border: '1px solid rgba(255, 255, 255, 0.15)',
-                          flexShrink: 0
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: 46,
-                          height: 46,
-                          borderRadius: 12,
-                          background: 'var(--accent-primary-glow, rgba(16, 185, 129, 0.2))',
-                          color: 'var(--accent-primary, #10b981)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '1.15rem',
-                          flexShrink: 0,
-                          border: '1px solid rgba(16, 185, 129, 0.3)'
-                        }}
-                      >
-                        {tm.name ? tm.name.charAt(0).toUpperCase() : 'T'}
-                      </div>
-                    )}
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <h4
-                        style={{
-                          fontSize: '1rem',
-                          fontWeight: 700,
-                          margin: '0 0 0.25rem 0',
-                          color: 'var(--text-heading, #ffffff)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {tm.name}
-                      </h4>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', color: 'var(--text-muted, #94a3b8)', flexWrap: 'wrap' }}>
-                        <span>{tm.members?.length || tm.playersCount || 0} Registered Players</span>
-                        {tm.groupName && (
-                          <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
-                            {tm.groupName}
-                          </span>
+                    {/* Header Row: Logo + Team Name + Group Pill + Remove Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
+                        {/* Team logo or initial */}
+                        {tm.logo ? (
+                          <img
+                            src={tm.logo}
+                            alt={tm.name}
+                            style={{
+                              width: 48,
+                              height: 48,
+                              borderRadius: 12,
+                              objectFit: 'cover',
+                              border: '1.5px solid var(--border-color)',
+                              flexShrink: 0,
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)'
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 48,
+                              height: 48,
+                              borderRadius: 12,
+                              background: 'var(--accent-primary-glow, rgba(16, 185, 129, 0.15))',
+                              color: 'var(--accent-primary, #10b981)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '1.15rem',
+                              flexShrink: 0,
+                              border: '1.5px solid rgba(16, 185, 129, 0.3)',
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)'
+                            }}
+                          >
+                            {tm.name ? tm.name.slice(0, 2).toUpperCase() : 'T'}
+                          </div>
                         )}
-                      </div>
-                    </div>
 
-                    {/* Actions: View Squad & Remove */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          fontSize: '0.78rem',
-                          fontWeight: 700,
-                          color: 'var(--accent-primary, #10b981)',
-                          padding: '0.35rem 0.65rem',
-                          borderRadius: '8px',
-                          background: 'rgba(16, 185, 129, 0.08)',
-                          border: '1px solid rgba(16, 185, 129, 0.2)',
-                          flexShrink: 0
-                        }}
-                      >
-                        <span>View Squad</span>
-                        <ChevronRight size={14} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <h4
+                            style={{
+                              fontSize: '1.05rem',
+                              fontWeight: 800,
+                              margin: '0 0 0.25rem 0',
+                              color: 'var(--text-heading)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              lineHeight: 1.25
+                            }}
+                            title={tm.name}
+                          >
+                            {tm.name}
+                          </h4>
+                          {tm.groupName ? (
+                            <span
+                              className="badge badge-accent"
+                              style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                padding: '0.15rem 0.5rem',
+                                borderRadius: '6px',
+                                display: 'inline-block'
+                              }}
+                            >
+                              {tm.groupName}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              Registered Team
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {canManage && (
@@ -1307,28 +1922,82 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                             handlePromptRemoveTeam(tm);
                           }}
                           title="Remove team from tournament"
+                          className="tournament-team-remove-btn"
                           style={{
-                            background: 'rgba(239, 68, 68, 0.1)',
+                            background: 'rgba(239, 68, 68, 0.08)',
                             border: '1px solid rgba(239, 68, 68, 0.25)',
-                            color: '#f87171',
+                            color: '#ef4444',
                             borderRadius: '8px',
                             padding: '0.35rem 0.6rem',
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '0.25rem',
-                            fontSize: '0.78rem',
+                            fontSize: '0.75rem',
                             fontWeight: 700,
                             flexShrink: 0,
                             transition: 'all 0.15s ease'
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.22)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                          }}
                         >
                           <Trash2 size={13} />
                           <span>Remove</span>
                         </button>
                       )}
+                    </div>
+
+                    {/* Middle Row: Stats & Registered Players Strip */}
+                    <div
+                      className="tournament-team-meta-strip"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.55rem 0.85rem',
+                        borderRadius: '10px',
+                        fontSize: '0.82rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--text-secondary)' }}>
+                        <Users size={15} color="var(--accent-primary, #10b981)" />
+                        <span style={{ fontWeight: 600 }}>
+                          {tm.members?.length || tm.playersCount || 0} Registered Players
+                        </span>
+                      </div>
+                      {tm.seed && (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                          Seed #{tm.seed}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Bottom Row: View Squad Full-Width Action */}
+                    <div
+                      className="tournament-team-squad-btn"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        color: 'var(--accent-primary, #10b981)',
+                        padding: '0.55rem 1rem',
+                        borderRadius: '10px',
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        border: '1px solid rgba(16, 185, 129, 0.22)',
+                        transition: 'all 0.2s ease',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      <span>View Squad & Roster</span>
+                      <ChevronRight size={15} />
                     </div>
                   </div>
                 ))}
@@ -1342,7 +2011,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.3rem 0', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: 'var(--text-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Award size={20} color="#f59e0b" /> Tournament Awards &amp; Leaderboards
                 </h3>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -1375,7 +2044,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
             ) : awardsData.length === 0 ? (
               <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
                 <Award size={48} color="#f59e0b" style={{ margin: '0 auto 1rem auto', opacity: 0.6 }} />
-                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>No Awards Computed Yet</h3>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: 'var(--text-heading)' }}>No Awards Computed Yet</h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '440px', margin: '0 auto 1.5rem auto' }}>
                   Awards and leaderboards can be generated automatically once tournament matches have concluded and stats are recorded.
                 </p>
@@ -1397,8 +2066,8 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                     style={{
                       padding: '1.5rem',
                       borderRadius: '16px',
-                      border: '1px solid rgba(245, 158, 11, 0.2)',
-                      background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+                      border: '1.5px solid rgba(245, 158, 11, 0.3)',
+                      background: 'var(--bg-card)',
                       position: 'relative',
                       overflow: 'hidden'
                     }}
@@ -1414,13 +2083,13 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                       )}
                     </div>
 
-                    <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#fbbf24', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+                    <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#d97706', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
                       {award.name}
                     </div>
 
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', marginBottom: '0.25rem' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '0.25rem' }}>
                       {award.recipientType === 'PLAYER' && award.recipientId ? (
-                        <Link href={`/players/${award.recipientId}`} style={{ color: '#fff', textDecoration: 'none' }}>
+                        <Link href={`/players/${award.recipientId}`} style={{ color: 'var(--text-heading)', textDecoration: 'none' }}>
                           {award.recipientName || 'Unassigned'}
                         </Link>
                       ) : (
@@ -1432,15 +2101,15 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                       {award.teamName ? `Team: ${award.teamName}` : (award.recipientType === 'TEAM' ? 'Team Accolade' : 'Individual Accolade')}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Record</span>
-                      <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399', background: 'rgba(16,185,129,0.1)', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-primary, #059669)', background: 'var(--slot-available-bg, rgba(16,185,129,0.1))', border: '1px solid var(--border-glow, rgba(16,185,129,0.3))', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
                         {award.statValue}
                       </span>
                     </div>
 
                     {award.calculationMethod && (
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.5rem', fontStyle: 'italic' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem', fontStyle: 'italic' }}>
                         Method: {award.calculationMethod}
                       </div>
                     )}
@@ -1470,9 +2139,104 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           />
         )}
 
+        {/* ── Live Streaming Access Tab ── */}
+        {activeTab === 'streaming' && (
+          <TournamentStreamingPermissionsManager
+            tournament={tournament}
+            canManage={canManage}
+            matches={fixtures}
+            currentUser={user}
+          />
+        )}
+
         {/* ── Auction Tab ── */}
         {activeTab === 'auction' && (
           <TournamentAuctionTab tournamentId={tournamentId} />
+        )}
+
+        {/* ── Settings & Management Tab ── */}
+        {activeTab === 'settings' && canManage && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="glass-panel" style={{ padding: '1.75rem', borderRadius: '16px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '0 0 1rem 0', color: 'var(--text-heading)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Settings size={20} color="var(--accent-primary, #059669)" /> Tournament Administration & Settings
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 1.25rem 0' }}>
+                Manage tournament configuration, access permissions, official display boards, and administrative safeguards.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ background: 'var(--bg-secondary)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>Tournament ID</span>
+                  <code style={{ fontSize: '0.88rem', color: 'var(--accent-primary, #059669)', wordBreak: 'break-all', fontWeight: 700 }}>{tournamentId}</code>
+                </div>
+                <div style={{ background: 'var(--bg-secondary)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>Your Permission Level</span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 800, color: isSuperAdmin ? '#d97706' : '#0284c7' }}>
+                    {isSuperAdmin ? 'Superadmin (Platform-wide)' : 'Tournament Organizer / Creator'}
+                  </span>
+                </div>
+                <div style={{ background: 'var(--bg-secondary)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>Signage Display Link</span>
+                  <Link href={`/display/tournament/${tournamentId}`} target="_blank" style={{ fontSize: '0.88rem', color: '#0284c7', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontWeight: 700 }}>
+                    Open Public Display <ExternalLink size={14} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            {canDeleteTournament && (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.06)',
+                  border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '16px',
+                  padding: '1.75rem',
+                  boxShadow: '0 10px 30px rgba(239, 68, 68, 0.08)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ flex: '1 1 300px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#ef4444', marginBottom: '0.4rem' }}>
+                      <AlertTriangle size={22} />
+                      <h4 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900 }}>
+                        Danger Zone: Delete Tournament
+                      </h4>
+                    </div>
+                    <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.88rem', color: 'var(--accent-rose, #dc2626)', lineHeight: 1.5, fontWeight: 600 }}>
+                      Permanently delete this tournament and its fixtures, live matches, cricket balls, points tables, and player registrations.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      ✓ <strong>Safe Cascade Guarantee:</strong> Shared clubs, team profiles, and unrelated tournament records will remain intact.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenDeleteModal}
+                    className="btn btn-danger"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      background: '#ef4444',
+                      borderColor: '#dc2626',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      padding: '0.75rem 1.4rem',
+                      borderRadius: '12px',
+                      fontSize: '0.9rem',
+                      boxShadow: '0 4px 15px rgba(239, 68, 68, 0.4)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Trash2 size={16} /> Delete This Tournament
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -1599,13 +2363,13 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                       value={teamDivisionFilter}
                       onChange={(e) => setTeamDivisionFilter(e.target.value)}
                       style={{
-                        padding: '0.45rem 0.6rem',
+                        padding: '0.45rem 2.5rem 0.45rem 0.6rem',
                         borderRadius: '6px',
-                        background: 'var(--bg-modal, #0f172a)',
+                        backgroundColor: 'var(--bg-modal, #0f172a)',
                         border: '1px solid var(--input-border, rgba(255,255,255,0.15))',
                         color: 'var(--text-main, #ffffff)',
                         fontSize: '0.82rem',
-                        maxWidth: '120px'
+                        maxWidth: '140px'
                       }}
                     >
                       <option value="ALL">All Divisions</option>
@@ -1740,9 +2504,9 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                   onChange={(e) => setNewTeamGroup(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-modal, #0f172a)',
+                    backgroundColor: 'var(--bg-modal, #0f172a)',
                     border: '1px solid var(--input-border, rgba(255,255,255,0.15))',
                     color: 'var(--text-main, #ffffff)',
                     fontSize: '0.9rem',
@@ -1984,6 +2748,196 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 }}
               >
                 {removeSubmitting ? 'Removing…' : 'Confirm Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tournament Deletion Safe Confirmation Modal ── */}
+      {showDeleteModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '1.25rem'
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '560px',
+              padding: '2rem',
+              borderRadius: '20px',
+              border: '1.5px solid rgba(239, 68, 68, 0.45)',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(239, 68, 68, 0.2)',
+              background: 'linear-gradient(180deg, #180d0d 0%, #0d0f12 100%)',
+              color: '#ffffff'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#ef4444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <Trash2 size={26} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 0.25rem 0', fontSize: '1.35rem', fontWeight: 900, color: '#ffffff' }}>
+                  Delete Tournament?
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.88rem', color: '#fca5a5' }}>
+                  This will permanently delete <strong style={{ color: '#fff' }}>{tournament?.name}</strong>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deletingTournament}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Impact Details */}
+            {loadingImpact ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8', fontSize: '0.9rem' }}>
+                <RefreshCw size={24} className="spin" style={{ margin: '0 auto 0.75rem auto' }} />
+                Checking dependent tournament records…
+              </div>
+            ) : (
+              <div>
+                <div
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: '12px',
+                    padding: '1rem',
+                    marginBottom: '1.25rem',
+                    fontSize: '0.86rem'
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: '#f87171', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <AlertTriangle size={16} />
+                    Records to be safely cascaded & removed:
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.78rem', display: 'block' }}>Total Matches</span>
+                      <strong style={{ fontSize: '1.05rem', color: '#ffffff' }}>{deleteImpact?.matches?.total ?? 0}</strong>
+                      <span style={{ fontSize: '0.74rem', color: '#fbbf24', marginLeft: '0.4rem' }}>
+                        ({deleteImpact?.matches?.live ?? 0} live, {deleteImpact?.matches?.completed ?? 0} completed)
+                      </span>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.78rem', display: 'block' }}>Registered Teams</span>
+                      <strong style={{ fontSize: '1.05rem', color: '#ffffff' }}>{deleteImpact?.teamsCount ?? teams.length}</strong>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.78rem', display: 'block' }}>Player Registrations</span>
+                      <strong style={{ fontSize: '1.05rem', color: '#ffffff' }}>{deleteImpact?.playerRegistrationsCount ?? 0}</strong>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.78rem', display: 'block' }}>Auction Records</span>
+                      <strong style={{ fontSize: '1.05rem', color: '#ffffff' }}>{deleteImpact?.auctionCount ? `${deleteImpact.auctionCount} auctions` : 'None'}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    padding: '0.85rem',
+                    marginBottom: '1.25rem',
+                    fontSize: '0.82rem',
+                    color: '#cbd5e1',
+                    lineHeight: 1.5
+                  }}
+                >
+                  <strong style={{ color: '#34d399' }}>✓ Safe Deletion Safeguards:</strong>
+                  <ul style={{ margin: '0.35rem 0 0 0', paddingLeft: '1.2rem' }}>
+                    <li>Teams and Player profiles will <strong>NOT</strong> be deleted from the platform.</li>
+                    <li>Shared venue bookings and unrelated tournaments remain untouched.</li>
+                    <li>All tournament-specific matches, cricket balls, and points table rows are deleted safely in a database transaction.</li>
+                  </ul>
+                </div>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, marginBottom: '0.45rem', color: '#e2e8f0' }}>
+                    Please type <strong style={{ color: '#ef4444' }}>DELETE</strong> to confirm permanent deletion:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmationWord}
+                    onChange={(e) => setDeleteConfirmationWord(e.target.value)}
+                    placeholder="Type DELETE"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '10px',
+                      background: 'rgba(0,0,0,0.5)',
+                      border: '1.5px solid rgba(239, 68, 68, 0.5)',
+                      color: '#ffffff',
+                      fontSize: '0.92rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deletingTournament}
+                className="btn btn-outline"
+                style={{ flex: 1, padding: '0.75rem', color: '#cbd5e1', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteTournament}
+                disabled={deletingTournament || loadingImpact || (deleteConfirmationWord.trim().toUpperCase() !== 'DELETE' && deleteConfirmationWord.trim().toLowerCase() !== (tournament?.name || '').trim().toLowerCase())}
+                className="btn btn-danger"
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  background: (deleteConfirmationWord.trim().toUpperCase() === 'DELETE' || deleteConfirmationWord.trim().toLowerCase() === (tournament?.name || '').trim().toLowerCase()) ? '#ef4444' : 'rgba(239, 68, 68, 0.3)',
+                  borderColor: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  cursor: (deleteConfirmationWord.trim().toUpperCase() === 'DELETE' || deleteConfirmationWord.trim().toLowerCase() === (tournament?.name || '').trim().toLowerCase()) ? 'pointer' : 'not-allowed'
+                }}
+              >
+                {deletingTournament ? 'Deleting Tournament…' : 'Confirm Permanent Deletion'}
               </button>
             </div>
           </div>

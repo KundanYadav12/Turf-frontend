@@ -6,7 +6,7 @@ import {
   setTournamentsLoading,
   setTournamentsFeed
 } from '../features/tournament/tournamentSlice';
-import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Tv } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Tv, Eye } from 'lucide-react';
 import CreateTournamentModal from '../components/tournament/CreateTournamentModal';
 
 const TournamentsPage = () => {
@@ -256,6 +256,25 @@ const TournamentsPage = () => {
                     </span>
                   )}
                 </div>
+
+                {/* View Count Badge */}
+                <div style={{ position: 'absolute', top: 10, right: 10 }}>
+                  <span style={{
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    background: 'rgba(0,0,0,0.65)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#e2e8f0',
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <Eye size={11} color="#34d399" />
+                    {(t.totalViews || t.total_views || 0).toLocaleString()}
+                  </span>
+                </div>
               </div>
 
               {/* Card Body */}
@@ -276,6 +295,10 @@ const TournamentsPage = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Users size={14} color="var(--accent-amber, #f59e0b)" />
                     <span>{t.registeredTeams} / {t.totalTeams} Teams Registered ({t.format})</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Eye size={14} color="#10b981" />
+                    <span>{(t.totalViews || t.total_views || 0).toLocaleString()} views</span>
                   </div>
                 </div>
 

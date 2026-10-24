@@ -294,21 +294,7 @@ export function getCourtState(match) {
   const summaryRaw = (match?.score?.summary || match?.live_score_summary || match?.scoreSummary || '').trim();
   const subtextRaw = (match?.score?.subtext || match?.live_subtext || match?.liveSubtext || '').trim();
 
-  // 3. Team identity
-  const teamA = serveState.teamSides.teamA === 'left' ? serveState.serverTeam : serveState.receiverTeam;
-  const teamB = serveState.teamSides.teamB === 'right' ? serveState.receiverTeam : serveState.serverTeam;
-  const actualTeamA = match?.teamA || {
-    id: match?.team_a_id || 'A',
-    name: match?.team_a_name || 'Team A',
-    logo: match?.team_a_logo || null
-  };
-  const actualTeamB = match?.teamB || {
-    id: match?.team_b_id || 'B',
-    name: match?.team_b_name || 'Team B',
-    logo: match?.team_b_logo || null
-  };
-
-  // 4. Scores and Games
+  // 3. Scores and Games
   const scoreA = serveState.scoreA;
   const scoreB = serveState.scoreB;
   const currentGame = serveState.currentGame;
@@ -328,15 +314,54 @@ export function getCourtState(match) {
     gamesWonText = `GAME ${currentGame}`;
   }
 
-  // 5. Authoritative Serving Team & Sides from serveState
+  // 4. Team Identity & Player Lineup Extraction
+  const lineupRawA = match?.lineup?.teamA || state?.lineup?.teamA || match?.lineupA || [];
+  const lineupRawB = match?.lineup?.teamB || state?.lineup?.teamB || match?.lineupB || [];
+  const playersA = Array.isArray(lineupRawA)
+    ? lineupRawA.map(p => (typeof p === 'string' ? p : (p?.name || p?.playerName || ''))).filter(Boolean)
+    : [];
+  const playersB = Array.isArray(lineupRawB)
+    ? lineupRawB.map(p => (typeof p === 'string' ? p : (p?.name || p?.playerName || ''))).filter(Boolean)
+    : [];
+
+  const teamA = {
+    id: match?.teamA?.id || match?.team_a_id || 'A',
+    name: match?.teamA?.name || match?.team_a_name || 'Team A',
+    logo: match?.teamA?.logo || match?.team_a_logo || null,
+    players: playersA,
+    score: scoreA,
+    isServing: serveState.isTeamAServing,
+    side: (serveState.teamSides.teamA || 'left').toUpperCase()
+  };
+
+  const teamB = {
+    id: match?.teamB?.id || match?.team_b_id || 'B',
+    name: match?.teamB?.name || match?.team_b_name || 'Team B',
+    logo: match?.teamB?.logo || match?.team_b_logo || null,
+    players: playersB,
+    score: scoreB,
+    isServing: !serveState.isTeamAServing,
+    side: (serveState.teamSides.teamB || 'right').toUpperCase()
+  };
+
+  // 5. Left and Right Teams (Sides on Screen)
+  // A team's name, players, and score stay bound together as one object!
+  const leftTeam = teamA.side === 'LEFT' ? teamA : teamB;
+  const rightTeam = teamA.side === 'LEFT' ? teamB : teamA;
+  const leftScore = leftTeam.score;
+  const rightScore = rightTeam.score;
+  const leftIsServing = serveState.serverSide === 'left';
+  const rightIsServing = serveState.serverSide === 'right';
+
+  // 6. Authoritative Serving Team & Sides from serveState
   const isTeamAServing = serveState.isTeamAServing;
   const servingTeam = isTeamAServing ? 'teamA' : 'teamB';
   const servingSide = isTeamAServing ? 'team_a' : 'team_b';
   const serverBox = serveState.serverCourt;
   const receiverBox = serveState.receiverCourt;
   const teamSides = {
-    teamA: serveState.teamSides.teamA.toUpperCase(),
-    teamB: serveState.teamSides.teamB.toUpperCase()
+    teamA: teamA.side,
+    teamB: teamB.side
   };
   const servingTeamSide = serveState.serverSide.toUpperCase();
   const receivingTeamSide = serveState.receiverSide.toUpperCase();
@@ -381,12 +406,16 @@ export function getCourtState(match) {
   };
 
   // 11. Player Roster & Doubles Partner Positions
+  // 11. Player Roster & Doubles Partner Positions
   const players = [];
+  const serverTeam = isTeamAServing ? teamA : teamB;
+  const receiverTeam = isTeamAServing ? teamB : teamA;
+
   if (isSingles) {
     players.push({
       id: `${servingTeam}_SERVER`,
       team: servingTeam,
-      name: isTeamAServing ? teamA.name : teamB.name,
+      name: serverTeam.players[0] || serverTeam.name,
       x: serverCoords.x,
       y: serverCoords.y,
       isServer: true,
@@ -397,7 +426,7 @@ export function getCourtState(match) {
     players.push({
       id: `${isTeamAServing ? 'teamB' : 'teamA'}_RECEIVER`,
       team: isTeamAServing ? 'teamB' : 'teamA',
-      name: isTeamAServing ? teamB.name : teamA.name,
+      name: receiverTeam.players[0] || receiverTeam.name,
       x: receiverCoords.x,
       y: receiverCoords.y,
       isServer: false,
@@ -407,15 +436,16 @@ export function getCourtState(match) {
     });
   } else {
     // Doubles: 4 Players (2 per side)
-    // Left side:
-    const leftIsServing = servingTeamSide === 'LEFT';
+    // Left side players:
     const leftServerBox = leftIsServing ? serverBox : receiverBox;
     const leftPartnerBox = leftServerBox === 'RIGHT' ? 'LEFT' : 'RIGHT';
+    const leftP1Name = leftTeam.players[0] || (leftTeam.players.length === 0 ? leftTeam.name : 'Player 1');
+    const leftP2Name = leftTeam.players[1] || (leftTeam.players.length === 0 ? 'Lineup not set' : 'Player 2');
 
     players.push({
-      id: leftIsServing ? `${servingTeam}_P1` : `${isTeamAServing ? 'teamB' : 'teamA'}_P1`,
-      team: leftIsServing ? servingTeam : (isTeamAServing ? 'teamB' : 'teamA'),
-      name: leftIsServing ? (isTeamAServing ? teamA.name : teamB.name) : (isTeamAServing ? teamB.name : teamA.name),
+      id: `LEFT_P1_${leftTeam.id}`,
+      team: leftTeam.id,
+      name: leftP1Name,
       x: 75,
       y: leftServerBox === 'RIGHT' ? 285 : 115,
       isServer: leftIsServing,
@@ -424,9 +454,9 @@ export function getCourtState(match) {
       side: 'LEFT'
     });
     players.push({
-      id: leftIsServing ? `${servingTeam}_P2` : `${isTeamAServing ? 'teamB' : 'teamA'}_P2`,
-      team: leftIsServing ? servingTeam : (isTeamAServing ? 'teamB' : 'teamA'),
-      name: 'Partner',
+      id: `LEFT_P2_${leftTeam.id}`,
+      team: leftTeam.id,
+      name: leftP2Name,
       x: 75,
       y: leftPartnerBox === 'RIGHT' ? 285 : 115,
       isServer: false,
@@ -435,15 +465,16 @@ export function getCourtState(match) {
       side: 'LEFT'
     });
 
-    // Right side:
-    const rightIsServing = servingTeamSide === 'RIGHT';
+    // Right side players:
     const rightServerBox = rightIsServing ? serverBox : receiverBox;
     const rightPartnerBox = rightServerBox === 'RIGHT' ? 'LEFT' : 'RIGHT';
+    const rightP1Name = rightTeam.players[0] || (rightTeam.players.length === 0 ? rightTeam.name : 'Player 1');
+    const rightP2Name = rightTeam.players[1] || (rightTeam.players.length === 0 ? 'Lineup not set' : 'Player 2');
 
     players.push({
-      id: rightIsServing ? `${servingTeam}_P1` : `${isTeamAServing ? 'teamB' : 'teamA'}_P1`,
-      team: rightIsServing ? servingTeam : (isTeamAServing ? 'teamB' : 'teamA'),
-      name: rightIsServing ? (isTeamAServing ? teamA.name : teamB.name) : (isTeamAServing ? teamB.name : teamA.name),
+      id: `RIGHT_P1_${rightTeam.id}`,
+      team: rightTeam.id,
+      name: rightP1Name,
       x: 725,
       y: rightServerBox === 'RIGHT' ? 285 : 115,
       isServer: rightIsServing,
@@ -452,9 +483,9 @@ export function getCourtState(match) {
       side: 'RIGHT'
     });
     players.push({
-      id: rightIsServing ? `${servingTeam}_P2` : `${isTeamAServing ? 'teamB' : 'teamA'}_P2`,
-      team: rightIsServing ? servingTeam : (isTeamAServing ? 'teamB' : 'teamA'),
-      name: 'Partner',
+      id: `RIGHT_P2_${rightTeam.id}`,
+      team: rightTeam.id,
+      name: rightP2Name,
       x: 725,
       y: rightPartnerBox === 'RIGHT' ? 285 : 115,
       isServer: false,
@@ -485,8 +516,18 @@ export function getCourtState(match) {
   return {
     sport,
     format,
+    isSingles,
     teamA,
     teamB,
+    leftTeam,
+    rightTeam,
+    leftScore,
+    rightScore,
+    leftIsServing,
+    rightIsServing,
+    server: players.find(p => p.isServer) || null,
+    receiver: players.find(p => p.isReceiver) || null,
+    serverSide: serveState.serverSide,
     scoreA,
     scoreB,
     mainScoreText,

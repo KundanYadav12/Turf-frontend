@@ -1,15 +1,18 @@
 import API from './api';
 
-export const getActiveSignageAdsApi = async (tournamentId = null, venueId = null) => {
+export const getActiveSignageAdsApi = async (tournamentId = null, venueId = null, device = null) => {
   let tId = tournamentId;
   let vId = venueId;
+  let dev = device;
   if (tournamentId && typeof tournamentId === 'object') {
     tId = tournamentId.tournamentId;
     vId = tournamentId.venueId;
+    dev = tournamentId.device;
   }
   const params = new URLSearchParams();
   if (tId) params.append('tournamentId', tId);
   if (vId) params.append('venueId', vId);
+  if (dev) params.append('device', dev);
   const qs = params.toString();
   const url = qs ? `/advertisements/active?${qs}` : '/advertisements/active';
   const response = await API.get(url);

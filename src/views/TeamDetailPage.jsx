@@ -1053,7 +1053,7 @@ export default function TeamDetailPage({ teamId }) {
                 <select
                   value={newPlayerRole}
                   onChange={(e) => setNewPlayerRole(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.85rem' }}
+                  style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 0.75rem', borderRadius: '8px', backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.85rem' }}
                 >
                   <option value="PLAYER">Player</option>
                   <option value="CAPTAIN">Captain</option>

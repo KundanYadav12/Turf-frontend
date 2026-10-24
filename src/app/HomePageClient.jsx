@@ -66,7 +66,7 @@ export default function HomePageClient({ initialVenues = [], initialSports = [] 
                 <select
                   value={selectedCity || 'Mumbai'}
                   onChange={(e) => dispatch(setSelectedCity(e.target.value))}
-                  style={{ border: 'none', background: 'transparent', padding: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', outline: 'none', cursor: 'pointer', width: '100%' }}
+                  style={{ border: 'none', backgroundColor: 'transparent', padding: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', outline: 'none', cursor: 'pointer', width: '100%' }}
                 >
                   <option value="Mumbai" style={optStyle}>Mumbai</option>
                   <option value="Bengaluru" style={optStyle}>Bengaluru</option>
@@ -80,7 +80,7 @@ export default function HomePageClient({ initialVenues = [], initialSports = [] 
               <select
                 value={selectedSport || ''}
                 onChange={(e) => dispatch(setSelectedSport(e.target.value))}
-                style={{ border: 'none', background: 'transparent', padding: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', outline: 'none', cursor: 'pointer', width: '100%' }}
+                style={{ border: 'none', backgroundColor: 'transparent', padding: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', outline: 'none', cursor: 'pointer', width: '100%' }}
               >
                 <option value="" style={optStyle}>All Sports</option>
                 <option value="cricket" style={optStyle}>Cricket</option>

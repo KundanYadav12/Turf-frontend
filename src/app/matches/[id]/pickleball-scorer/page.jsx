@@ -1,5 +1,5 @@
-import React, { Suspense } from 'react';
-import PickleballScorerPage from '../../../../views/PickleballScorerPage';
+import React from 'react';
+import PickleballScorerClientWrapper from './PickleballScorerClientWrapper';
 
 export const metadata = {
   title: 'Official Pickleball Scorer Console | TurfSpot',
@@ -10,10 +10,7 @@ export const metadata = {
   }
 };
 
-export default function PickleballScorerRoute() {
-  return (
-    <Suspense fallback={<div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading Pickleball Scorer Console…</div>}>
-      <PickleballScorerPage />
-    </Suspense>
-  );
+export default async function PickleballScorerRoute({ params }) {
+  const resolvedParams = params ? await params : {};
+  return <PickleballScorerClientWrapper matchId={resolvedParams?.id} />;
 }

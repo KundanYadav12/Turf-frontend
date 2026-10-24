@@ -293,10 +293,10 @@ const TeamsPage = () => {
             value={sportFilter}
             onChange={(e) => setSportFilter(e.target.value)}
             style={{
-              background: 'var(--bg-input, #ffffff)',
+              backgroundColor: 'var(--bg-input, #ffffff)',
               border: '1px solid var(--border-color, rgba(0,0,0,0.12))',
               color: 'var(--text-primary, #0f172a)',
-              padding: '0.45rem 0.85rem',
+              padding: '0.45rem 2.5rem 0.45rem 0.85rem',
               borderRadius: '8px',
               fontSize: '0.85rem',
               outline: 'none',
@@ -614,7 +614,7 @@ const TeamsPage = () => {
                   <select
                     value={teamSportId}
                     onChange={(e) => setTeamSportId(parseInt(e.target.value, 10))}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 0.85rem', borderRadius: 8, backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   >
                     {SPORTS_OPTIONS.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
@@ -629,7 +629,7 @@ const TeamsPage = () => {
                   <select
                     value={teamDivision}
                     onChange={(e) => setTeamDivision(e.target.value)}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 0.85rem', borderRadius: 8, backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }}
                   >
                     <option value="Open">Open Category</option>
                     <option value="Corporate">Corporate Cup</option>

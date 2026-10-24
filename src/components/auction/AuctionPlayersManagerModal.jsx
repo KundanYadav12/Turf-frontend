@@ -226,11 +226,11 @@ const AuctionPlayersManagerModal = ({ isOpen, onClose, auctionId, categories = [
                   onChange={(e) => setNewPlayer({ ...newPlayer, categoryId: e.target.value })}
                   style={{
                     width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                    backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                     border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                     borderRadius: '6px',
                     color: '#fff',
-                    padding: '0.55rem 0.75rem',
+                    padding: '0.55rem 2.5rem 0.55rem 0.75rem',
                     fontSize: '0.85rem'
                   }}
                 >
@@ -251,11 +251,11 @@ const AuctionPlayersManagerModal = ({ isOpen, onClose, auctionId, categories = [
                   onChange={(e) => setNewPlayer({ ...newPlayer, role: e.target.value })}
                   style={{
                     width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                    backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                     border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                     borderRadius: '6px',
                     color: '#fff',
-                    padding: '0.55rem 0.75rem',
+                    padding: '0.55rem 2.5rem 0.55rem 0.75rem',
                     fontSize: '0.85rem'
                   }}
                 >
@@ -275,11 +275,11 @@ const AuctionPlayersManagerModal = ({ isOpen, onClose, auctionId, categories = [
                   onChange={(e) => setNewPlayer({ ...newPlayer, battingStyle: e.target.value })}
                   style={{
                     width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                    backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                     border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                     borderRadius: '6px',
                     color: '#fff',
-                    padding: '0.55rem 0.75rem',
+                    padding: '0.55rem 2.5rem 0.55rem 0.75rem',
                     fontSize: '0.85rem'
                   }}
                 >
@@ -297,11 +297,11 @@ const AuctionPlayersManagerModal = ({ isOpen, onClose, auctionId, categories = [
                   onChange={(e) => setNewPlayer({ ...newPlayer, bowlingStyle: e.target.value })}
                   style={{
                     width: '100%',
-                    background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                    backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                     border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                     borderRadius: '6px',
                     color: '#fff',
-                    padding: '0.55rem 0.75rem',
+                    padding: '0.55rem 2.5rem 0.55rem 0.75rem',
                     fontSize: '0.85rem'
                   }}
                 >
@@ -389,11 +389,11 @@ const AuctionPlayersManagerModal = ({ isOpen, onClose, auctionId, categories = [
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               style={{
-                background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                 border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                 borderRadius: '6px',
                 color: '#fff',
-                padding: '0.45rem 0.75rem',
+                padding: '0.45rem 2.5rem 0.45rem 0.75rem',
                 fontSize: '0.82rem'
               }}
             >

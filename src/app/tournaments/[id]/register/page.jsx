@@ -644,10 +644,10 @@ export default function TournamentRegisterPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, playingHand: e.target.value }))}
                   style={{
                     width: '100%',
-                    padding: '0.6rem 0.75rem',
+                    padding: '0.6rem 2.5rem 0.6rem 0.75rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-color)',
-                    background: 'var(--bg-card, #111)',
+                    backgroundColor: 'var(--bg-card, #111)',
                     color: 'var(--text-heading)',
                     fontSize: '0.88rem'
                   }}
@@ -743,10 +743,10 @@ export default function TournamentRegisterPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, preferredTeamId: e.target.value }))}
                   style={{
                     width: '100%',
-                    padding: '0.6rem 0.75rem',
+                    padding: '0.6rem 2.5rem 0.6rem 0.75rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-color)',
-                    background: 'var(--bg-card, #111)',
+                    backgroundColor: 'var(--bg-card, #111)',
                     color: 'var(--text-heading)',
                     fontSize: '0.88rem'
                   }}
@@ -770,10 +770,10 @@ export default function TournamentRegisterPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, jerseySize: e.target.value }))}
                   style={{
                     width: '100%',
-                    padding: '0.6rem 0.75rem',
+                    padding: '0.6rem 2.5rem 0.6rem 0.75rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-color)',
-                    background: 'var(--bg-card, #111)',
+                    backgroundColor: 'var(--bg-card, #111)',
                     color: 'var(--text-heading)',
                     fontSize: '0.88rem'
                   }}
@@ -890,10 +890,10 @@ export default function TournamentRegisterPage() {
                         }))}
                         style={{
                           width: '100%',
-                          padding: '0.6rem 0.75rem',
+                          padding: '0.6rem 2.5rem 0.6rem 0.75rem',
                           borderRadius: '8px',
                           border: '1px solid var(--border-color)',
-                          background: 'var(--bg-card, #111)',
+                          backgroundColor: 'var(--bg-card, #111)',
                           color: 'var(--text-heading)',
                           fontSize: '0.88rem'
                         }}

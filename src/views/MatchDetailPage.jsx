@@ -1,16 +1,25 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from '../lib/routerCompat';
+import { useSelector } from 'react-redux';
 import axios from 'axios';
 import { useMatchLive } from '../hooks/useMatchLive';
-import { Radio, ArrowLeft, Send, Trophy, MapPin, Calendar, Clock, ExternalLink, Zap } from 'lucide-react';
+import {
+  Radio, ArrowLeft, Send, Trophy, MapPin, Calendar, Clock,
+  ExternalLink, Zap, Video, Tv, Share2, Check, Eye, EyeOff
+} from 'lucide-react';
 import ScoreCelebration from '../components/scorer/ScoreCelebration';
 import CourtView, { getServeState, parseRacquetScoreDetails } from '../components/court/CourtView';
+import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
+import LiveStreamManagerModal from '../components/streaming/LiveStreamManagerModal';
+import { socket } from '../services/socket';
 
 const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
   const routeParams = useParams();
   const matchIdFromUrl = typeof window !== 'undefined' ? window.location.pathname.match(/\/matches\/([^/]+)/)?.[1] : null;
   const id = propsMatchId || routeParams?.id || matchIdFromUrl;
+
+  const { user, token } = useSelector((state) => state.auth || {});
 
   const [match, setMatch] = useState(initialMatch);
   const [events, setEvents] = useState([]);
@@ -19,6 +28,13 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [celebration, setCelebration] = useState(null);
   const [ads, setAds] = useState({ topAd: null, bottomAd: null });
+
+  // Live Stream state
+  const [streamData, setStreamData] = useState(null);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [showStreamModal, setShowStreamModal] = useState(false);
+  const [showLivePlayer, setShowLivePlayer] = useState(true);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Scorer simulation & commentary inputs
   const [simText, setSimText] = useState('');
@@ -33,8 +49,8 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
   // 1. Fetch initial match details
   useEffect(() => {
     let isMounted = true;
-    const fetchMatch = async () => {
-      setLoading(true);
+    const fetchMatch = async (isBackground = false) => {
+      if (!isBackground) setLoading(true);
       try {
         const res = await axios.get(`/api/matches/${id}`);
         if (res.data.success && isMounted) {
@@ -43,10 +59,10 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
       } catch (err) {
         console.error('Failed to load match:', err);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted && !isBackground) setLoading(false);
       }
 
-      // Fetch ads
+      // Fetch ads in background
       try {
         const adsRes = await axios.get(`/api/matches/${id}/ads`);
         if (adsRes.data.success && isMounted) {
@@ -55,7 +71,142 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
       } catch (e) {}
     };
     fetchMatch();
-    return () => { isMounted = false; };
+  }, [id]);
+
+  // Fetch match live stream configuration & status
+  const fetchStreamData = useCallback(async () => {
+    if (!id) return;
+    try {
+      setStreamLoading(true);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`/api/matches/${id}/stream`, { headers });
+      if (res.data?.success) {
+        const raw = res.data.data;
+        const streamInfo = {
+          ...(raw?.stream || {}),
+          canManage: Boolean(raw?.canManage),
+          exists: raw?.exists,
+          stream: raw?.stream,
+          match: raw?.match
+        };
+        setStreamData(streamInfo);
+      }
+    } catch (err) {
+      // No active stream configured yet
+    } finally {
+      setStreamLoading(false);
+    }
+  }, [id, token]);
+
+  useEffect(() => {
+    fetchStreamData();
+  }, [fetchStreamData]);
+
+  // Real-time Match Score & Stream status updates via Socket.IO
+  useEffect(() => {
+    if (!id) return;
+
+    // Join match room
+    socket.emit('join:match', { matchId: id });
+
+    const onStreamStatus = (payload) => {
+      const data = payload?.stream || payload;
+      if (data && (data.matchId === id || data.matchUuid === id || data.id === id || !data.matchId)) {
+        setStreamData((prev) => ({
+          ...(prev || {}),
+          ...data,
+          status: data.status,
+          streamingMethod: data.streamingMethod || prev?.streamingMethod,
+          youtubeUrl: data.youtubeUrl || prev?.youtubeUrl,
+          hlsPlaybackUrl: data.hlsPlaybackUrl || prev?.hlsPlaybackUrl
+        }));
+      }
+    };
+
+    const onStreamEnded = (payload) => {
+      const data = payload?.stream || payload;
+      if (data && (data.matchId === id || data.matchUuid === id || data.id === id || !data.matchId)) {
+        setStreamData((prev) => ({
+          ...(prev || {}),
+          status: 'ENDED',
+          isLive: false
+        }));
+      }
+    };
+
+    // Live score update handler for all sports (Cricket, Pickleball, Football, Badminton)
+    const onScoreUpdate = (payload) => {
+      if (!payload) return;
+      const targetId = payload.matchId || payload.matchUuid || payload.id;
+      if (targetId && String(targetId) !== String(id)) return;
+
+      setMatch((prev) => {
+        if (!prev) return prev;
+        const newSummary = payload.scoreSummary || payload.liveScoreSummary || payload.summary || prev.score?.summary;
+        const newSubtext = payload.subtext || payload.liveSubtext || prev.score?.subtext;
+        const newStatus = payload.status || prev.status;
+        const newDetails = payload.state || payload.details || prev.score?.details;
+
+        return {
+          ...prev,
+          status: newStatus,
+          score: {
+            ...prev.score,
+            summary: newSummary,
+            subtext: newSubtext,
+            details: newDetails
+          },
+          currentInnings: payload.state?.currentInnings || prev.currentInnings,
+          overs: payload.state?.overs ?? prev.overs,
+          wickets: payload.state?.wickets ?? prev.wickets,
+          scoreA: payload.teamAScore ?? payload.scoreA ?? prev.scoreA,
+          scoreB: payload.teamBScore ?? payload.scoreB ?? prev.scoreB,
+          winnerTeamId: payload.winnerTeamId || prev.winnerTeamId,
+          resultSummary: payload.resultSummary || prev.resultSummary
+        };
+      });
+
+      // Prepend commentary item if ball commentary or notes exist
+      if (payload.commentary || payload.notes || payload.type) {
+        setEvents((prev) => [
+          {
+            id: payload.ballId || payload.eventId || Date.now(),
+            commentary: payload.commentary || payload.notes || `${payload.type || 'Point'} scored`,
+            runs: payload.runs ?? 0,
+            isWicket: Boolean(payload.isWicket),
+            created_at: new Date().toISOString()
+          },
+          ...prev.slice(0, 29)
+        ]);
+      }
+    };
+
+    socket.on('stream:status', onStreamStatus);
+    socket.on('stream:status_changed', onStreamStatus);
+    socket.on('stream:ended', onStreamEnded);
+    socket.on('match:ballEvent', onScoreUpdate);
+    socket.on('score:updated', onScoreUpdate);
+    socket.on('match:pointScored', onScoreUpdate);
+    socket.on('match:pickleballScore', onScoreUpdate);
+    socket.on('match:badmintonEvent', onScoreUpdate);
+    socket.on('match:footballEvent', onScoreUpdate);
+    socket.on('match:undone', onScoreUpdate);
+    socket.on('tournament:matchUpdated', onScoreUpdate);
+
+    return () => {
+      socket.emit('leave:match', { matchId: id });
+      socket.off('stream:status', onStreamStatus);
+      socket.off('stream:status_changed', onStreamStatus);
+      socket.off('stream:ended', onStreamEnded);
+      socket.off('match:ballEvent', onScoreUpdate);
+      socket.off('score:updated', onScoreUpdate);
+      socket.off('match:pointScored', onScoreUpdate);
+      socket.off('match:pickleballScore', onScoreUpdate);
+      socket.off('match:badmintonEvent', onScoreUpdate);
+      socket.off('match:footballEvent', onScoreUpdate);
+      socket.off('match:undone', onScoreUpdate);
+      socket.off('tournament:matchUpdated', onScoreUpdate);
+    };
   }, [id]);
 
   // 2. Fetch paginated commentary events
@@ -260,7 +411,7 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
         </div>
       )}
 
-      {/* Back link & Scorer Launcher */}
+      {/* Back link & Actions Toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <Link
           to={`/tournaments/${match.tournament?.id}`}
@@ -276,28 +427,199 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
           <ArrowLeft size={16} /> Back to {match.tournament?.name || 'Tournament'}
         </Link>
 
-        <Link
-          to={`/matches/${match.uuid || id}/scorer`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            background: 'var(--accent-primary, #10b981)',
-            color: '#022c22',
-            fontWeight: 800,
-            padding: '0.5rem 1.1rem',
-            borderRadius: 10,
-            textDecoration: 'none',
-            fontSize: '0.85rem',
-            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
-          }}
-        >
-          {match.sport?.slug === 'football' ? '⚽ Open Football Scorer' :
-           match.sport?.slug === 'badminton' ? '🏸 Open Badminton Scorer' :
-           match.sport?.slug === 'pickleball' ? '⚡ Open Pickleball Scorer' :
-           '🏏 Open Official Scorer'} <ExternalLink size={14} />
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {/* Smart TV Display Link */}
+          <Link
+            to={`/tv/${match.uuid || id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: 'var(--text-secondary, #cbd5e1)',
+              border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
+              fontWeight: 600,
+              padding: '0.48rem 0.85rem',
+              borderRadius: 10,
+              textDecoration: 'none',
+              fontSize: '0.82rem'
+            }}
+          >
+            <Tv size={14} /> Smart TV
+          </Link>
+
+          {/* Watch Stream Button (if stream is live) */}
+          {streamData?.status === 'LIVE' && (
+            <Link
+              to={`/matches/${match.uuid || id}/watch`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                fontWeight: 700,
+                padding: '0.48rem 0.9rem',
+                borderRadius: 10,
+                textDecoration: 'none',
+                fontSize: '0.82rem'
+              }}
+            >
+              <Radio size={14} className="animate-pulse" /> 🔴 Watch Stream
+            </Link>
+          )}
+
+          {/* Go Live / Stream Settings Button (Superadmin, Creator, or Authorized Delegated Streamer) */}
+          {Boolean(streamData?.canManage) && (
+            <button
+              type="button"
+              onClick={() => setShowStreamModal(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: streamData?.status === 'LIVE'
+                  ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                  : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 700,
+                padding: '0.5rem 1rem',
+                borderRadius: 10,
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                boxShadow: streamData?.status === 'LIVE' ? '0 4px 14px rgba(239, 68, 68, 0.35)' : '0 4px 14px rgba(99, 102, 241, 0.3)'
+              }}
+            >
+              <Video size={15} />
+              <span>{streamData?.status === 'LIVE' ? '🔴 Live Stream Controls' : '🎥 Go Live'}</span>
+            </button>
+          )}
+
+          {/* Official Scorer Console Link */}
+          <Link
+            to={`/matches/${match.uuid || id}/scorer`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'var(--accent-primary, #10b981)',
+              color: '#022c22',
+              fontWeight: 800,
+              padding: '0.5rem 1.1rem',
+              borderRadius: 10,
+              textDecoration: 'none',
+              fontSize: '0.85rem',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
+            }}
+          >
+            {match.sport?.slug === 'football' ? '⚽ Open Football Scorer' :
+             match.sport?.slug === 'badminton' ? '🏸 Open Badminton Scorer' :
+             match.sport?.slug === 'pickleball' ? '⚡ Open Pickleball Scorer' :
+             '🏏 Open Official Scorer'} <ExternalLink size={14} />
+          </Link>
+        </div>
       </div>
+
+      {/* Live Stream Broadcasting / Viewing Banner & Player */}
+      {(() => {
+        const activeStream = streamData?.stream || streamData;
+        const isLive = activeStream && (activeStream.status === 'LIVE' || activeStream.status === 'PREVIEW' || activeStream.isLive || (activeStream.streamingMethod === 'YOUTUBE' && activeStream.youtubeUrl));
+        if (!isLive) return null;
+
+        return (
+          <div style={{
+            background: 'var(--bg-card-solid, #1e293b)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            borderRadius: 'var(--radius-md, 12px)',
+            padding: '1rem',
+            marginBottom: '1.25rem',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.35)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: activeStream.status === 'LIVE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                  color: activeStream.status === 'LIVE' ? '#ef4444' : '#f59e0b',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800
+                }}>
+                  <Radio size={14} className="animate-pulse" />
+                  <span>{activeStream.status === 'LIVE' ? 'MATCH BROADCAST IS LIVE' : 'STREAM PREVIEW'}</span>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>
+                  {activeStream.streamingMethod === 'MOBILE_CAMERA' ? '📱 Mobile Camera' :
+                   activeStream.streamingMethod === 'EXTERNAL_RTMP' ? '🎥 OBS / Professional Ingest' :
+                   '🔴 YouTube Live'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLivePlayer(!showLivePlayer)}
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-secondary, #cbd5e1)',
+                    borderRadius: 8,
+                    padding: '4px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  {showLivePlayer ? <EyeOff size={13} /> : <Eye size={13} />}
+                  <span>{showLivePlayer ? 'Hide Player' : 'Show Player'}</span>
+                </button>
+
+                <Link
+                  to={`/matches/${match.uuid || id}/watch`}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#ef4444',
+                    borderRadius: 8,
+                    padding: '4px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  <span>Full Watch Page</span>
+                  <ExternalLink size={12} />
+                </Link>
+              </div>
+            </div>
+
+            {showLivePlayer && (
+              <div style={{ maxWidth: 880, margin: '0 auto' }}>
+                <LiveStreamPlayer
+                  matchId={match.uuid || id}
+                  streamData={activeStream}
+                  match={match}
+                  showOverlay={true}
+                  autoPlay={false}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Hero Match Scoreboard Header */}
       <div className="match-detail-hero" style={{ padding: 'clamp(1.25rem, 2.5vw, 2rem)' }}>
@@ -621,6 +943,24 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
           </div>
         )}
       </div>
+
+      {/* Live Match Streaming Broadcaster Control Modal */}
+      {showStreamModal && (
+        <LiveStreamManagerModal
+          matchId={match.uuid || id}
+          match={match}
+          matchData={match}
+          isOpen={showStreamModal}
+          onClose={() => {
+            setShowStreamModal(false);
+            fetchStreamData();
+          }}
+          onStreamStatusChange={(updated) => {
+            const streamInfo = updated?.stream || updated;
+            setStreamData(streamInfo);
+          }}
+        />
+      )}
     </div>
   );
 };

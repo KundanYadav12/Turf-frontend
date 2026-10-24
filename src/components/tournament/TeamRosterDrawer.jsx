@@ -476,13 +476,13 @@ export default function TeamRosterDrawer({
                   <Users size={13} color="var(--accent-primary, #10b981)" /> {totalCount} Squad {totalCount === 1 ? 'Player' : 'Players'}
                 </span>
                 {captainName && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#fbbf24' }}>
-                    <Crown size={12} /> C: <strong style={{ color: '#ffffff' }}>{captainName}</strong>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#d97706', fontWeight: 600 }}>
+                    <Crown size={12} /> C: <strong style={{ color: 'var(--text-heading)' }}>{captainName}</strong>
                   </span>
                 )}
                 {viceCaptainName && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#38bdf8' }}>
-                    <Star size={12} /> VC: <strong style={{ color: '#ffffff' }}>{viceCaptainName}</strong>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#0284c7', fontWeight: 600 }}>
+                    <Star size={12} /> VC: <strong style={{ color: 'var(--text-heading)' }}>{viceCaptainName}</strong>
                   </span>
                 )}
               </div>
@@ -750,9 +750,9 @@ export default function TeamRosterDrawer({
                     onChange={(e) => setNewPlayerRole(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.5rem 0.65rem',
+                      padding: '0.5rem 2.5rem 0.5rem 0.65rem',
                       borderRadius: '6px',
-                      background: 'var(--bg-input)',
+                      backgroundColor: 'var(--bg-input)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-main)',
                       fontSize: '0.85rem'
@@ -781,9 +781,9 @@ export default function TeamRosterDrawer({
                     onChange={(e) => setNewPlayerLeadership(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.5rem 0.65rem',
+                      padding: '0.5rem 2.5rem 0.5rem 0.65rem',
                       borderRadius: '6px',
-                      background: 'var(--bg-input)',
+                      backgroundColor: 'var(--bg-input)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-main)',
                       fontSize: '0.85rem'
@@ -808,9 +808,9 @@ export default function TeamRosterDrawer({
                       onChange={(e) => setNewPlayerBattingStyle(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '0.45rem 0.6rem',
+                        padding: '0.45rem 2.5rem 0.45rem 0.6rem',
                         borderRadius: '6px',
-                        background: 'var(--bg-input)',
+                        backgroundColor: 'var(--bg-input)',
                         border: '1px solid var(--border-color)',
                         color: 'var(--text-main)',
                         fontSize: '0.8rem'
@@ -831,9 +831,9 @@ export default function TeamRosterDrawer({
                       onChange={(e) => setNewPlayerBowlingStyle(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '0.45rem 0.6rem',
+                        padding: '0.45rem 2.5rem 0.45rem 0.6rem',
                         borderRadius: '6px',
-                        background: 'var(--bg-input)',
+                        backgroundColor: 'var(--bg-input)',
                         border: '1px solid var(--border-color)',
                         color: 'var(--text-main)',
                         fontSize: '0.8rem'

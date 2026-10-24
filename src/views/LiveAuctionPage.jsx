@@ -728,11 +728,11 @@ const LiveAuctionPage = () => {
                       value={operatorBidTeamId}
                       onChange={(e) => setOperatorBidTeamId(e.target.value)}
                       style={{
-                        background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                        backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                         border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                         borderRadius: '8px',
                         color: '#fff',
-                        padding: '0.65rem 0.85rem',
+                        padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                         fontSize: '0.9rem'
                       }}
                     >

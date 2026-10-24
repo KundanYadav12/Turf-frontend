@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Trophy, Palette, RotateCcw, Check, Sparkles, Undo2 } from 'lucide-react';
 import { getServeState, getCourtState, parseRacquetScoreDetails, getCourtContrastColor } from './courtUtils';
+import { useBallAnimation, BALL_MOTION } from './useBallAnimation';
 
-export { getServeState, getCourtState, parseRacquetScoreDetails, getCourtContrastColor };
+export { getServeState, getCourtState, parseRacquetScoreDetails, getCourtContrastColor, useBallAnimation, BALL_MOTION };
 
 /**
  * Cinematic, Rule-Accurate Vector Court Visualization with 60fps Motion Choreography.
@@ -31,11 +32,13 @@ export default function CourtView({
   teamB = DEFAULT_TEAM_B,
   lineup = null,
   scoreSummary = null,
+  scores = null,
   servingSide: propServingSide = null,
   serverCourt: propServerCourt = null,
   serverNumber: propServerNumber = 1,
   courtColor: initialCourtColor = '#0d5c3a',
   courtAds = DEFAULT_ADS,
+  courtMiddleAds = DEFAULT_ADS,
   onColorChange = null,
   canEditColor = false,
   status = 'LIVE',
@@ -47,8 +50,12 @@ export default function CourtView({
   orientation = 'landscape',
   showScoreReadout = false,
   showTeamLabels = false,
+  variant = 'default',
+  showScoreOnCourt = false,
   lastEventType = null,
   eventSeq = null,
+  pointEvent = null,
+  rallyMode = false,
   ambientRally = true,
   className = '',
   style = {}
@@ -64,10 +71,13 @@ export default function CourtView({
         matchFormat: match.matchFormat || format,
         courtColor: match.courtColor || initialCourtColor,
         courtAds: match.courtAds || courtAds,
+        courtMiddleAds: (courtMiddleAds && courtMiddleAds.length > 0) ? courtMiddleAds : (match.courtMiddleAds || courtMiddleAds),
         _lastEventType: lastEventType || match._lastEventType,
-        _eventSeq: eventSeq || match._eventSeq
+        _eventSeq: eventSeq || match._eventSeq,
+        _pointEvent: pointEvent || match._pointEvent
       };
     }
+    const computedScoreSummary = scoreSummary || (teamA?.score !== undefined ? `${teamA.score} - ${teamB?.score || 0}` : null);
     return {
       serveState: propServeState,
       sportSlug: sport,
@@ -75,7 +85,8 @@ export default function CourtView({
       teamA,
       teamB,
       lineup,
-      live_score_summary: scoreSummary,
+      live_score_summary: computedScoreSummary,
+      scores: scores || { teamA: teamA?.score || 0, teamB: teamB?.score || 0 },
       servingSide: propServingSide,
       sport_state: {
         serverCourt: propServerCourt,
@@ -87,16 +98,18 @@ export default function CourtView({
       winnerTeamId: winner ? (winner === 'team_a' ? teamA?.id : teamB?.id) : null,
       courtColor: initialCourtColor,
       courtAds,
+      courtMiddleAds,
       _lastEventType: lastEventType,
-      _eventSeq: eventSeq
+      _eventSeq: eventSeq,
+      _pointEvent: pointEvent
     };
   }, [
     match, propServeState, sport, format,
     teamA?.id, teamA?.name, teamA?.score,
     teamB?.id, teamB?.name, teamB?.score,
-    lineup, scoreSummary,
+    lineup, scoreSummary, scores,
     propServingSide, propServerCourt, propServerNumber,
-    initialCourtColor, courtAds?.length, lastEventType, eventSeq,
+    initialCourtColor, courtAds?.length, courtMiddleAds?.length, lastEventType, eventSeq, pointEvent,
     status, winner, isGamePoint, isMatchPoint
   ]);
 
@@ -152,6 +165,23 @@ export default function CourtView({
     return () => clearInterval(interval);
   }, [courtAds?.length, isTabVisible]);
 
+  // Middle strip ad rotation (flanking center net)
+  const resolvedMiddleAds = useMemo(() => {
+    return (unifiedMatch?.courtMiddleAds || []).filter(Boolean);
+  }, [unifiedMatch?.courtMiddleAds]);
+
+  const [activeMiddleAdIndex, setActiveMiddleAdIndex] = useState(0);
+
+  useEffect(() => {
+    if (!resolvedMiddleAds || resolvedMiddleAds.length <= 1) return;
+    const interval = setInterval(() => {
+      if (isTabVisible) {
+        setActiveMiddleAdIndex((prev) => (prev + 1) % resolvedMiddleAds.length);
+      }
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [resolvedMiddleAds?.length, isTabVisible]);
+
   // ── 3. CHOREOGRAPHY CONTROLLER STATE ──
   const [ballState, setBallState] = useState(() => ({
     x: courtState.defaultBallCoords.x,
@@ -182,13 +212,10 @@ export default function CourtView({
   const [undoActive, setUndoActive] = useState(false);
   const [celebrationActive, setCelebrationActive] = useState(false);
 
-  // References for monotonic queue and timing
+  const courtCanvasRef = useRef(null);
   const prevCourtRef = useRef(courtState);
   const isInitialMount = useRef(true);
   const choreographyTimerRef = useRef(null);
-  const ambientTimerRef = useRef(null);
-  const lastEventTimestampRef = useRef(Date.now());
-  const isChoreographingRef = useRef(false);
 
   // Helper to trigger impact ripple
   const triggerRipple = useCallback((x, y) => {
@@ -209,9 +236,36 @@ export default function CourtView({
     }, 280);
   }, []);
 
+  // Shared 60fps translate3d ball and shuttle animation hook
+  const {
+    ballRef,
+    shadowRef,
+    motionConfig,
+    isAnimating: isBallAnimating,
+    playPointRally,
+    playUndoSnap
+  } = useBallAnimation({
+    serveState: courtState.serveState,
+    sport: unifiedMatch.sportSlug || sport,
+    containerRef: courtCanvasRef,
+    pointEvent: pointEvent || unifiedMatch._pointEvent,
+    lastEventType: lastEventType || unifiedMatch._lastEventType,
+    eventSeq: eventSeq || unifiedMatch._eventSeq,
+    matchId: unifiedMatch.id || unifiedMatch.uuid || match?.id || match?.uuid,
+    rallyMode,
+    ambientRally: ambientRally && courtState.status === 'LIVE' && !courtState.isMatchWon,
+    reducedMotion: prefersReducedMotion,
+    onShotLand: useCallback((coords) => {
+      const slot = coords.x < 50
+        ? (coords.y < 50 ? 'LEFT_TOP' : 'LEFT_BOTTOM')
+        : (coords.y < 50 ? 'RIGHT_TOP' : 'RIGHT_BOTTOM');
+      triggerSwing(slot, coords.x < 50 ? 35 : -35);
+      triggerRipple((coords.x / 100) * 800, (coords.y / 100) * 400);
+    }, [triggerSwing, triggerRipple])
+  });
+
   // ── 4. EVENT-TO-CHOREOGRAPHY PIPELINE ──
   useEffect(() => {
-    // Initial mount: authoritative ballState already initialized in useState
     if (isInitialMount.current) {
       isInitialMount.current = false;
       prevCourtRef.current = courtState;
@@ -227,14 +281,10 @@ export default function CourtView({
       (courtState.eventSeq && prev.eventSeq && courtState.eventSeq < prev.eventSeq)
     );
 
-    // Cancel active timers
     if (choreographyTimerRef.current) clearTimeout(choreographyTimerRef.current);
-    if (ambientTimerRef.current) clearTimeout(ambientTimerRef.current);
-    lastEventTimestampRef.current = Date.now();
 
     // ── SCENARIO A: AUTHORITATIVE UNDO ──
     if (isUndo) {
-      isChoreographingRef.current = false;
       setUndoActive(true);
       setScoringGlow(null);
       setScorePop(false);
@@ -242,14 +292,7 @@ export default function CourtView({
       setCelebrationActive(false);
       setImpactRipple(null);
 
-      // Smooth reverse glide of ball to the restored server's racket
-      setBallState({
-        x: courtState.defaultBallCoords.x,
-        y: courtState.defaultBallCoords.y,
-        elevation: 0,
-        rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-        trail: []
-      });
+      playUndoSnap(courtState.serveState?.servingBoxName || 'bottom-left');
 
       choreographyTimerRef.current = setTimeout(() => {
         setUndoActive(false);
@@ -261,244 +304,47 @@ export default function CourtView({
 
     // ── SCENARIO B: FORWARD POINT CHOREOGRAPHY ──
     if (isScoreChanged) {
-      isChoreographingRef.current = true;
       const scoringTeam = courtState.scoreA > prev.scoreA ? 'teamA' : 'teamB';
-      const isTeamALeading = courtState.scoreA > courtState.scoreB;
       const isWinner = courtState.isMatchWon || courtState.winner;
 
-      if (prefersReducedMotion) {
-        // Reduced motion: instant snap without heavy transitions
-        setBallState({
-          x: courtState.defaultBallCoords.x,
-          y: courtState.defaultBallCoords.y,
-          elevation: 0,
-          rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-          trail: []
-        });
-        setScoringGlow(scoringTeam);
-        setScorePop(true);
-        setTimeout(() => {
-          setScoringGlow(null);
-          setScorePop(false);
-        }, 600);
-        prevCourtRef.current = courtState;
-        return;
-      }
-
-      // Calculate Deterministic Rally Waypoints
-      // Start at previous server
+      // Calculate from and to service boxes from previous state
       const prevServerSide = prev.teamSides?.[prev.servingTeam] || 'LEFT';
       const prevServerBox = prev.serverBox || 'RIGHT';
-      const startX = prevServerSide === 'LEFT' ? 101 : 699;
-      const startY = prevServerBox === 'RIGHT' ? 285 : 115;
-      const startSlot = `${prevServerSide}_${prevServerBox}`;
+      const fromBoxName = prev.serveState?.servingBoxName || (prevServerSide === 'LEFT' ? (prevServerBox === 'RIGHT' ? 'bottom-left' : 'top-left') : (prevServerBox === 'RIGHT' ? 'top-right' : 'bottom-right'));
+      const toBoxName = prev.serveState?.targetBoxName || (fromBoxName === 'bottom-left' ? 'top-right' : fromBoxName === 'top-left' ? 'bottom-right' : fromBoxName === 'top-right' ? 'bottom-left' : 'top-left');
+      const newServingBoxName = courtState.serveState?.servingBoxName || 'bottom-left';
 
-      // Target diagonal receiver
-      const prevReceiverSide = prevServerSide === 'LEFT' ? 'RIGHT' : 'LEFT';
-      const prevReceiverBox = prev.receiverBox || 'RIGHT';
-      const recX = prevReceiverSide === 'LEFT' ? 120 : 680;
-      const recY = prevReceiverBox === 'RIGHT' ? 285 : 115;
-      const recSlot = `${prevReceiverSide}_${prevReceiverBox}`;
+      // Play continuous 60fps rally flight if not already triggered by socket pointEvent
+      if (!isBallAnimating) {
+        playPointRally(fromBoxName, toBoxName, newServingBoxName);
+      }
 
-      // Final landing spot in losing side's court
-      const losingSide = scoringTeam === 'teamA' ? courtState.teamSides.teamB : courtState.teamSides.teamA;
-      const landX = losingSide === 'LEFT' ? 180 : 620;
-      const landY = (courtState.scoreA + courtState.scoreB) % 2 === 0 ? 270 : 130;
+      // Celebrations and cues
+      setScoringGlow(scoringTeam);
+      setScorePop(true);
+      setFloatingPlusOne({
+        side: scoringTeam,
+        x: scoringTeam === 'teamA' ? 200 : 600,
+        y: 80,
+        text: `+1 ${courtState[scoringTeam].name}`
+      });
 
-      // Deterministic exchange count (2 to 4 shots) based on score seed
-      const seed = courtState.scoreA * 7 + courtState.scoreB * 13;
-      const exchanges = (seed % 3) + 2;
+      if (isWinner) {
+        setCelebrationActive(true);
+      }
 
-      // Timeline Sequence:
-      // Phase 1 (0ms): Serve swing
-      triggerSwing(startSlot, prevServerSide === 'LEFT' ? 38 : -38);
-
-      // Phase 1.5 (100ms - 550ms): Flight to receiver
-      setTimeout(() => {
-        setBallState({
-          x: recX,
-          y: recY,
-          elevation: 35,
-          rotation: prevServerSide === 'LEFT' ? 40 : -140,
-          trail: [{ x: startX, y: startY }]
-        });
-      }, 100);
-
-      // Phase 2 (600ms): Receiver return
-      setTimeout(() => {
-        triggerSwing(recSlot, prevReceiverSide === 'LEFT' ? 38 : -38);
-        triggerRipple(recX, recY);
-
-        if (exchanges === 2) {
-          // Direct shot to winning point landing
-          setBallState({
-            x: landX,
-            y: landY,
-            elevation: 20,
-            rotation: prevReceiverSide === 'LEFT' ? 40 : -140,
-            trail: [{ x: recX, y: recY }]
-          });
-        } else {
-          // Additional mid-rally exchange across net
-          const midX = prevServerSide === 'LEFT' ? 200 : 600;
-          const midY = 200;
-          setBallState({
-            x: midX,
-            y: midY,
-            elevation: 40,
-            rotation: prevReceiverSide === 'LEFT' ? 40 : -140,
-            trail: [{ x: recX, y: recY }]
-          });
-        }
-      }, 620);
-
-      // Phase 3 (1250ms): Final Winner / Fault Landing
-      setTimeout(() => {
-        setBallState({
-          x: landX,
-          y: landY,
-          elevation: 0,
-          rotation: losingSide === 'LEFT' ? -150 : 30,
-          trail: []
-        });
-        triggerRipple(landX, landY);
-
-        // Point scored celebrations
-        setScoringGlow(scoringTeam);
-        setScorePop(true);
-        setFloatingPlusOne({
-          side: scoringTeam,
-          x: scoringTeam === 'teamA' ? 200 : 600,
-          y: 80,
-          text: `+1 ${courtState[scoringTeam].name}`
-        });
-
-        if (isWinner) {
-          setCelebrationActive(true);
-        }
-      }, 1250);
-
-      // Phase 4 (1950ms): Settle & Serve Handover
       choreographyTimerRef.current = setTimeout(() => {
         setScorePop(false);
         setFloatingPlusOne(null);
         setScoringGlow(null);
-        isChoreographingRef.current = false;
-
-        // Reset ball to the new authoritative server's racket
-        setBallState({
-          x: courtState.defaultBallCoords.x,
-          y: courtState.defaultBallCoords.y,
-          elevation: 0,
-          rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-          trail: []
-        });
-      }, 2050);
+      }, 1600);
 
       prevCourtRef.current = courtState;
       return;
     }
 
-    // ── SCENARIO C: SERVER / END CHANGE WITHOUT SCORE ──
-    const prevServingSide = prev.teamSides?.[prev.servingTeam];
-    const currServingSide = courtState.teamSides?.[courtState.servingTeam];
-    const prevCoords = prev.defaultBallCoords;
-    const currCoords = courtState.defaultBallCoords;
-
-    const isPositionChanged = (
-      prev.servingTeam !== courtState.servingTeam ||
-      prev.serverBox !== courtState.serverBox ||
-      prevServingSide !== currServingSide ||
-      prevCoords?.x !== currCoords?.x ||
-      prevCoords?.y !== currCoords?.y
-    );
-
     prevCourtRef.current = courtState;
-
-    if (!isPositionChanged) {
-      return;
-    }
-
-    const targetRotation = currServingSide === 'LEFT' ? 35 : -145;
-    setBallState(curr => {
-      if (
-        curr.x === currCoords.x &&
-        curr.y === currCoords.y &&
-        curr.elevation === 0 &&
-        curr.rotation === targetRotation &&
-        (!curr.trail || curr.trail.length === 0)
-      ) {
-        return curr;
-      }
-      return {
-        x: currCoords.x,
-        y: currCoords.y,
-        elevation: 0,
-        rotation: targetRotation,
-        trail: []
-      };
-    });
-
-    return () => {
-      if (choreographyTimerRef.current) clearTimeout(choreographyTimerRef.current);
-      if (ambientTimerRef.current) clearTimeout(ambientTimerRef.current);
-    };
-  }, [courtState, unifiedMatch._lastEventType, prefersReducedMotion, triggerRipple, triggerSwing]);
-
-  // ── 5. AMBIENT IDLE RALLY LOOP ──
-  // Decorative, slow background motion between points. Stops immediately on real live events.
-  const ballCoordsRef = useRef(ballState);
-  ballCoordsRef.current = ballState;
-
-  useEffect(() => {
-    if (!ambientRally || !isTabVisible || courtState.status !== 'LIVE' || courtState.isMatchWon) {
-      return;
-    }
-
-    const ambientInterval = setInterval(() => {
-      const timeSinceLastEvent = Date.now() - lastEventTimestampRef.current;
-      if (timeSinceLastEvent > 4500 && !isChoreographingRef.current && !undoActive) {
-        // Play a gentle, slow decorative pass across the net
-        const currentSide = (ballCoordsRef.current?.x || 0) < 400 ? 'LEFT' : 'RIGHT';
-        const targetX = currentSide === 'LEFT' ? 680 : 120;
-        const targetY = (Date.now() % 2 === 0) ? 275 : 125;
-
-        setBallState(prev => ({
-          ...prev,
-          x: targetX,
-          y: targetY,
-          elevation: 25,
-          rotation: currentSide === 'LEFT' ? 40 : -140
-        }));
-
-        // Settle back to server after 2 seconds
-        setTimeout(() => {
-          if (!isChoreographingRef.current && !undoActive) {
-            setBallState({
-              x: courtState.defaultBallCoords.x,
-              y: courtState.defaultBallCoords.y,
-              elevation: 0,
-              rotation: courtState.teamSides[courtState.servingTeam] === 'LEFT' ? 35 : -145,
-              trail: []
-            });
-          }
-        }, 2100);
-      }
-    }, 5000);
-
-    return () => {
-      clearInterval(ambientInterval);
-    };
-  }, [
-    ambientRally,
-    isTabVisible,
-    courtState.status,
-    courtState.isMatchWon,
-    courtState.defaultBallCoords?.x,
-    courtState.defaultBallCoords?.y,
-    courtState.servingTeam,
-    undoActive
-  ]);
+  }, [courtState, unifiedMatch._lastEventType, playPointRally, playUndoSnap, isBallAnimating]);
 
   // Visual Tokens & Contrast
   const contrastLinesColor = useMemo(() => getCourtContrastColor(courtColor), [courtColor]);
@@ -605,46 +451,103 @@ export default function CourtView({
         <div style={{
           width: '100%',
           display: 'flex',
-          justifyContent: 'flex-end',
+          justifyContent: 'center',
           alignItems: 'center',
           gap: '0.5rem',
-          marginBottom: '0.4rem'
+          marginBottom: '0.65rem',
+          position: 'relative'
         }}>
           <button
             type="button"
             onClick={() => setShowColorPicker(!showColorPicker)}
+            className="court-color-toggle-btn"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '5px',
-              padding: '4px 10px',
-              borderRadius: '8px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#f8fafc',
-              fontSize: '0.75rem',
+              gap: '6px',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              fontSize: '0.78rem',
               fontWeight: 700,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
             }}
           >
-            <Palette size={13} color={courtColor} />
+            <Palette size={14} color={courtColor} />
             <span>Court Color</span>
           </button>
+
+          {showColorPicker && (
+            <div
+              className="scorer-panel"
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                marginTop: '6px',
+                zIndex: 30,
+                padding: '8px 12px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+                maxWidth: 'min(90vw, 320px)',
+                gap: '8px',
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.2)'
+              }}
+            >
+              {[
+                { name: 'Emerald Green', hex: '#0d5c3a' },
+                { name: 'US Open Blue', hex: '#1e40af' },
+                { name: 'Pacific Cyan', hex: '#0284c7' },
+                { name: 'Roland Clay', hex: '#c2410c' },
+                { name: 'Indigo Night', hex: '#4f46e5' },
+                { name: 'Vivid Mint', hex: '#059669' }
+              ].map((swatch) => (
+                <button
+                  key={swatch.hex}
+                  type="button"
+                  title={swatch.name}
+                  onClick={() => {
+                    setCourtColor(swatch.hex);
+                    setCustomHex(swatch.hex);
+                    if (onColorChange) onColorChange(swatch.hex);
+                    setShowColorPicker(false);
+                  }}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    backgroundColor: swatch.hex,
+                    border: courtColor === swatch.hex ? '2.5px solid #ffffff' : '1.5px solid rgba(0,0,0,0.15)',
+                    boxShadow: courtColor === swatch.hex ? '0 0 0 2px #10b981' : '0 2px 5px rgba(0,0,0,0.1)',
+                    cursor: 'pointer',
+                    transition: 'transform 0.15s ease'
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* Court Canvas Area with 800:400 (2:1) aspect ratio */}
-      <div style={{
-        position: 'relative',
-        width: '100%',
-        maxWidth: '800px',
-        aspectRatio: '2 / 1',
-        borderRadius: '16px',
-        overflow: 'hidden',
-        background: `radial-gradient(circle at 50% 50%, ${courtColor}ee 0%, ${courtColor} 100%)`,
-        boxShadow: 'inset 0 0 50px rgba(0,0,0,0.5), 0 12px 30px rgba(0,0,0,0.35)',
-        border: '3px solid rgba(255,255,255,0.12)'
-      }}>
+      <div
+        ref={courtCanvasRef}
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: '800px',
+          aspectRatio: '2 / 1',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          background: `radial-gradient(circle at 50% 50%, ${courtColor}ee 0%, ${courtColor} 100%)`,
+          boxShadow: 'inset 0 0 50px rgba(0,0,0,0.5), 0 12px 30px rgba(0,0,0,0.35)',
+          border: '3px solid rgba(255,255,255,0.12)'
+        }}
+      >
 
         {/* Sponsor Decals under court lines */}
         {activeAd && (
@@ -729,8 +632,8 @@ export default function CourtView({
           </div>
         )}
 
-        {/* Undo Cue */}
-        {undoActive && (
+        {/* Undo Cue (Scorer only, never shown to viewers) */}
+        {undoActive && variant !== 'viewer' && (
           <div style={{
             position: 'absolute',
             top: '50%',
@@ -1014,54 +917,620 @@ export default function CourtView({
             )}
           </g>
 
-          {/* ── PARABOLIC SURFACE SHADOW ── */}
-          <ellipse
-            cx={ballState.x}
-            cy={ballState.y + 12 + ballState.elevation * 0.4}
-            rx={Math.max(4, 12 - ballState.elevation * 0.15)}
-            ry={Math.max(2, 6 - ballState.elevation * 0.08)}
-            fill="rgba(0, 0, 0, 0.35)"
-            filter="url(#ballShadowFilter)"
+        </svg>
+
+        {/* ── 60FPS HARDWARE-ACCELERATED BALL & SHADOW LAYER (translate3d) ── */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 10,
+            overflow: 'visible'
+          }}
+        >
+          {/* Dynamic Ground Elevation Shadow */}
+          <div
+            ref={shadowRef}
             style={{
-              transition: undoActive
-                ? 'all 0.35s ease'
-                : 'all 0.52s cubic-bezier(0.25, 1, 0.5, 1)'
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '26px',
+              height: '12px',
+              marginLeft: '-13px',
+              marginTop: '-6px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(0, 0, 0, 0.45)',
+              filter: 'blur(3px)',
+              willChange: 'transform, opacity'
             }}
           />
 
-          {/* ── SHUTTLECOCK / WIFFLE BALL IN FLIGHT ── */}
-          <g
-            transform={`translate(${ballState.x}, ${ballState.y - ballState.elevation * 0.7})`}
+          {/* Flying Ball / Shuttlecock with 3D transform */}
+          <div
+            ref={ballRef}
             style={{
-              transition: undoActive
-                ? 'transform 0.35s ease-out'
-                : 'transform 0.52s cubic-bezier(0.25, 1, 0.5, 1)'
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '28px',
+              height: '28px',
+              marginLeft: '-14px',
+              marginTop: '-14px',
+              willChange: 'transform',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
             {courtState.sport === 'badminton' ? (
-              /* Vector Badminton Shuttlecock */
-              <g transform={`rotate(${ballState.rotation}) scale(${1 + ballState.elevation * 0.008})`}>
-                <circle cx="0" cy="0" r="14" fill="rgba(34, 211, 238, 0.35)" />
-                <polygon points="0,0 -8,-16 8,-16" fill="rgba(255,255,255,0.95)" stroke="#cbd5e1" strokeWidth="0.8" />
-                <line x1="-4" y1="-16" x2="-1" y2="0" stroke="#94a3b8" strokeWidth="0.7" />
-                <line x1="0" y1="-16" x2="0" y2="0" stroke="#94a3b8" strokeWidth="0.7" />
-                <line x1="4" y1="-16" x2="1" y2="0" stroke="#94a3b8" strokeWidth="0.7" />
-                <circle cx="0" cy="2" r="4.5" fill="#f8fafc" stroke="#64748b" strokeWidth="1" />
-                <ellipse cx="0" cy="3" rx="4" ry="2.5" fill="#e2e8f0" />
-              </g>
+              <svg width="28" height="28" viewBox="0 0 28 28">
+                <circle cx="14" cy="14" r="13" fill="rgba(34, 211, 238, 0.3)" />
+                <polygon points="14,4 7,20 21,20" fill="rgba(255,255,255,0.95)" stroke="#cbd5e1" strokeWidth="0.8" />
+                <line x1="10" y1="20" x2="13" y2="4" stroke="#94a3b8" strokeWidth="0.7" />
+                <line x1="14" y1="20" x2="14" y2="4" stroke="#94a3b8" strokeWidth="0.7" />
+                <line x1="18" y1="20" x2="15" y2="4" stroke="#94a3b8" strokeWidth="0.7" />
+                <circle cx="14" cy="6" r="4.5" fill="#f8fafc" stroke="#64748b" strokeWidth="1" />
+                <ellipse cx="14" cy="7" rx="4" ry="2.5" fill="#e2e8f0" />
+              </svg>
+            ) : courtState.sport === 'tennis' ? (
+              <svg width="26" height="26" viewBox="0 0 26 26">
+                <circle cx="13" cy="13" r="12" fill="#84cc16" stroke="#4d7c0f" strokeWidth="1.2" />
+                <path d="M 4 8 C 10 10, 10 16, 4 18" fill="none" stroke="#ffffff" strokeWidth="1.4" opacity="0.9" />
+                <path d="M 22 8 C 16 10, 16 16, 22 18" fill="none" stroke="#ffffff" strokeWidth="1.4" opacity="0.9" />
+              </svg>
+            ) : courtState.sport === 'tabletennis' ? (
+              <svg width="22" height="22" viewBox="0 0 22 22">
+                <circle cx="11" cy="11" r="10" fill="#f97316" stroke="#c2410c" strokeWidth="1.2" />
+                <circle cx="8" cy="8" r="3" fill="rgba(255,255,255,0.4)" />
+              </svg>
             ) : (
               /* Vector Pickleball Wiffle Ball */
-              <g transform={`scale(${1 + ballState.elevation * 0.008})`}>
-                <circle cx="0" cy="0" r="15" fill="rgba(250, 204, 21, 0.4)" />
-                <circle cx="0" cy="0" r="11" fill="#facc15" stroke="#ca8a04" strokeWidth="1.5" />
-                <circle cx="-3" cy="-3" r="1.6" fill="#854d0e" />
-                <circle cx="3" cy="-3" r="1.6" fill="#854d0e" />
-                <circle cx="-3" cy="3" r="1.6" fill="#854d0e" />
-                <circle cx="3" cy="3" r="1.6" fill="#854d0e" />
-              </g>
+              <svg width="26" height="26" viewBox="0 0 26 26">
+                <circle cx="13" cy="13" r="13" fill="rgba(250, 204, 21, 0.35)" />
+                <circle cx="13" cy="13" r="10.5" fill="#facc15" stroke="#ca8a04" strokeWidth="1.5" />
+                <circle cx="9.5" cy="9.5" r="1.6" fill="#854d0e" />
+                <circle cx="16.5" cy="9.5" r="1.6" fill="#854d0e" />
+                <circle cx="9.5" cy="16.5" r="1.6" fill="#854d0e" />
+                <circle cx="16.5" cy="16.5" r="1.6" fill="#854d0e" />
+                <circle cx="13" cy="13" r="1.6" fill="#854d0e" />
+              </svg>
             )}
-          </g>
-        </svg>
+          </div>
+        </div>
+
+        {/* ── COURT MIDDLE STRIP ADVERTISEMENTS (Zones beside the center net) ── */}
+        {resolvedMiddleAds.length > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              zIndex: 4,
+              overflow: 'hidden'
+            }}
+          >
+            {/* Left Middle Strip (x=312 to 392, between non-volley line and net) */}
+            <div
+              style={{
+                position: 'absolute',
+                left: '39.2%',
+                top: '16%',
+                width: '9.8%',
+                height: '68%',
+                pointerEvents: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxSizing: 'border-box'
+              }}
+            >
+              {(() => {
+                const ad = resolvedMiddleAds[activeMiddleAdIndex % resolvedMiddleAds.length];
+                if (!ad) return null;
+                const card = (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(15, 23, 42, 0.76)',
+                      backdropFilter: 'blur(5px)',
+                      WebkitBackdropFilter: 'blur(5px)',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                      borderRadius: '8px',
+                      padding: 'clamp(2px, 0.5vw, 5px)',
+                      boxSizing: 'border-box',
+                      overflow: 'hidden',
+                      textAlign: 'center',
+                      boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                      transition: 'opacity 0.4s ease'
+                    }}
+                  >
+                    {(ad.imageUrl || ad.image_url) && (
+                      <img
+                        src={ad.imageUrl || ad.image_url}
+                        alt={ad.title || 'Sponsor'}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '62%',
+                          objectFit: ad.imageFit || 'cover',
+                          borderRadius: '4px',
+                          marginBottom: '3px',
+                          display: 'block'
+                        }}
+                        loading="eager"
+                      />
+                    )}
+                    <div style={{
+                      fontSize: 'clamp(0.48rem, 1vw, 0.65rem)',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      lineHeight: 1.15,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      width: '100%',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)'
+                    }}>
+                      {ad.title}
+                    </div>
+                    {ad.description && (
+                      <div style={{
+                        fontSize: 'clamp(0.4rem, 0.85vw, 0.54rem)',
+                        color: '#94a3b8',
+                        lineHeight: 1.1,
+                        marginTop: '2px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%'
+                      }}>
+                        {ad.description}
+                      </div>
+                    )}
+                  </div>
+                );
+                const linkTarget = ad.linkUrl || ad.link_url || ad.clickUrl || ad.click_url;
+                return linkTarget ? (
+                  <a href={linkTarget} target="_blank" rel="noopener noreferrer" style={{ width: '100%', height: '100%', textDecoration: 'none', display: 'block' }}>
+                    {card}
+                  </a>
+                ) : card;
+              })()}
+            </div>
+
+            {/* Right Middle Strip (x=408 to 488, between net and non-volley line) */}
+            <div
+              style={{
+                position: 'absolute',
+                left: '51.0%',
+                top: '16%',
+                width: '9.8%',
+                height: '68%',
+                pointerEvents: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxSizing: 'border-box'
+              }}
+            >
+              {(() => {
+                const ad = resolvedMiddleAds.length > 1
+                  ? resolvedMiddleAds[(activeMiddleAdIndex + 1) % resolvedMiddleAds.length]
+                  : resolvedMiddleAds[0];
+                if (!ad) return null;
+                const card = (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(15, 23, 42, 0.76)',
+                      backdropFilter: 'blur(5px)',
+                      WebkitBackdropFilter: 'blur(5px)',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                      borderRadius: '8px',
+                      padding: 'clamp(2px, 0.5vw, 5px)',
+                      boxSizing: 'border-box',
+                      overflow: 'hidden',
+                      textAlign: 'center',
+                      boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                      transition: 'opacity 0.4s ease'
+                    }}
+                  >
+                    {(ad.imageUrl || ad.image_url) && (
+                      <img
+                        src={ad.imageUrl || ad.image_url}
+                        alt={ad.title || 'Sponsor'}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '62%',
+                          objectFit: ad.imageFit || 'cover',
+                          borderRadius: '4px',
+                          marginBottom: '3px',
+                          display: 'block'
+                        }}
+                        loading="eager"
+                      />
+                    )}
+                    <div style={{
+                      fontSize: 'clamp(0.48rem, 1vw, 0.65rem)',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      lineHeight: 1.15,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      width: '100%',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)'
+                    }}>
+                      {ad.title}
+                    </div>
+                    {ad.description && (
+                      <div style={{
+                        fontSize: 'clamp(0.4rem, 0.85vw, 0.54rem)',
+                        color: '#94a3b8',
+                        lineHeight: 1.1,
+                        marginTop: '2px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%'
+                      }}>
+                        {ad.description}
+                      </div>
+                    )}
+                  </div>
+                );
+                const linkTarget = ad.linkUrl || ad.link_url || ad.clickUrl || ad.click_url;
+                return linkTarget ? (
+                  <a href={linkTarget} target="_blank" rel="noopener noreferrer" style={{ width: '100%', height: '100%', textDecoration: 'none', display: 'block' }}>
+                    {card}
+                  </a>
+                ) : card;
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* ── ON-COURT SCORE & TEAM DISPLAY (Viewer mode & Court Sports) ── */}
+        {(variant === 'viewer' || showScoreOnCourt) && (() => {
+          const leftTeam = courtState.leftTeam || (courtState.teamSides.teamA === 'LEFT' ? courtState.teamA : courtState.teamB);
+          const rightTeam = courtState.rightTeam || (courtState.teamSides.teamA === 'LEFT' ? courtState.teamB : courtState.teamA);
+
+          const leftTeamName = leftTeam?.name || 'Team A';
+          const rightTeamName = rightTeam?.name || 'Team B';
+
+          const leftScore = leftTeam?.score !== undefined ? leftTeam.score : (courtState.leftScore ?? 0);
+          const rightScore = rightTeam?.score !== undefined ? rightTeam.score : (courtState.rightScore ?? 0);
+
+          const leftIsServing = courtState.leftIsServing !== undefined ? courtState.leftIsServing : (courtState.servingTeamSide === 'LEFT');
+          const rightIsServing = !leftIsServing;
+
+          const isPb = courtState.sport === 'pickleball';
+          const pbServerNum = courtState.serverNumber || 1;
+
+          // Game History formatted cleanly (e.g. "G1 21-18", "G2 21-19")
+          let gameHistoryText = '';
+          const gScores = unifiedMatch.sport_state?.gameScores || unifiedMatch.score?.details?.gameScores;
+          if (Array.isArray(gScores) && gScores.length > 0) {
+            const curIdx = Math.max(0, (courtState.currentGame || 1) - 1);
+            const prevGames = gScores.filter((g, i) => i < curIdx && (g.winner || g.teamA > 0 || g.teamB > 0));
+            if (prevGames.length > 0) {
+              gameHistoryText = prevGames.map((g, i) => `G${g.game || i + 1} ${g.teamA}-${g.teamB}`).join(', ');
+            }
+          }
+
+          const renderLineup = (team) => {
+            const players = team?.players || [];
+            if (!players || players.length === 0) {
+              return (
+                <span style={{ fontSize: 'clamp(0.55rem, 1.1vw, 0.72rem)', color: '#94a3b8', fontStyle: 'italic', fontWeight: 500 }}>
+                  Lineup not set
+                </span>
+              );
+            }
+            if (courtState.isSingles || players.length === 1) {
+              return (
+                <span style={{ fontSize: 'clamp(0.58rem, 1.2vw, 0.76rem)', color: '#e2e8f0', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 'clamp(85px, 20vw, 150px)' }}>
+                  {players[0]}
+                </span>
+              );
+            }
+            return (
+              <span style={{ fontSize: 'clamp(0.58rem, 1.2vw, 0.76rem)', color: '#e2e8f0', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 'clamp(85px, 20vw, 150px)' }}>
+                {players[0]} &amp; {players[1]}
+              </span>
+            );
+          };
+
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 6,
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                padding: 'clamp(6px, 1.8vw, 16px)',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* Center Top Game / Set Info Pill */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'clamp(6px, 1.6vw, 12px)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'rgba(15, 23, 42, 0.85)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(255, 255, 255, 0.16)',
+                  borderRadius: '20px',
+                  padding: 'clamp(2px, 0.5vw, 4px) clamp(8px, 1.8vw, 14px)',
+                  fontSize: 'clamp(0.6rem, 1.3vw, 0.78rem)',
+                  fontWeight: 800,
+                  color: '#f8fafc',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)',
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                <span>GAME {courtState.currentGame || 1}</span>
+                {gameHistoryText && (
+                  <span style={{ opacity: 0.85, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '6px', fontSize: '0.7rem', color: '#cbd5e1' }}>
+                    {gameHistoryText}
+                  </span>
+                )}
+              </div>
+
+              {/* Left Court Half Overlay */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  position: 'relative',
+                  padding: 'clamp(4px, 1.2vw, 10px)',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {/* Top: Team Name Pill, SERVE/RECEIVE Badge & Players */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px',
+                    maxWidth: '94%',
+                    background: 'rgba(15, 23, 42, 0.76)',
+                    backdropFilter: 'blur(6px)',
+                    WebkitBackdropFilter: 'blur(6px)',
+                    border: `1px solid ${leftIsServing ? 'rgba(16, 185, 129, 0.45)' : 'rgba(255, 255, 255, 0.12)'}`,
+                    padding: 'clamp(3px, 0.8vw, 5px) clamp(8px, 1.4vw, 12px)',
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
+                    alignSelf: 'center',
+                    marginTop: 'clamp(18px, 3.5vw, 24px)',
+                    textAlign: 'center'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(4px, 1vw, 8px)' }}>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 'clamp(0.68rem, 1.8vw, 0.95rem)',
+                        color: '#ffffff',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 'clamp(70px, 18vw, 130px)',
+                        textShadow: '0 1px 3px rgba(0,0,0,0.8)'
+                      }}
+                      title={leftTeamName}
+                    >
+                      {leftTeamName}
+                    </span>
+                    {leftIsServing ? (
+                      <span
+                        style={{
+                          background: '#10b981',
+                          color: '#ffffff',
+                          fontSize: 'clamp(0.55rem, 1.1vw, 0.7rem)',
+                          fontWeight: 900,
+                          padding: '1px 6px',
+                          borderRadius: '6px',
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          boxShadow: '0 0 10px rgba(16, 185, 129, 0.6)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        SERVE{isPb ? ` • #${pbServerNum}` : ''}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.15)',
+                          color: '#94a3b8',
+                          fontSize: 'clamp(0.52rem, 1vw, 0.65rem)',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '5px',
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        RECEIVE
+                      </span>
+                    )}
+                  </div>
+                  {renderLineup(leftTeam)}
+                </div>
+
+                {/* Center: Large Bold Score */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -46%)',
+                    fontWeight: 950,
+                    fontSize: 'clamp(2.6rem, 8.5vw, 5rem)',
+                    lineHeight: 1,
+                    color: '#ffffff',
+                    textShadow: '0 4px 18px rgba(0, 0, 0, 0.85), 0 0 30px rgba(0, 0, 0, 0.5)',
+                    letterSpacing: '-0.02em',
+                    transition: 'transform 0.18s ease-out'
+                  }}
+                >
+                  {leftScore}
+                </div>
+
+                <div style={{ height: '14px' }} />
+              </div>
+
+              {/* Right Court Half Overlay */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  position: 'relative',
+                  padding: 'clamp(4px, 1.2vw, 10px)',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {/* Top: Team Name Pill, SERVE/RECEIVE Badge & Players */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px',
+                    maxWidth: '94%',
+                    background: 'rgba(15, 23, 42, 0.76)',
+                    backdropFilter: 'blur(6px)',
+                    WebkitBackdropFilter: 'blur(6px)',
+                    border: `1px solid ${rightIsServing ? 'rgba(16, 185, 129, 0.45)' : 'rgba(255, 255, 255, 0.12)'}`,
+                    padding: 'clamp(3px, 0.8vw, 5px) clamp(8px, 1.4vw, 12px)',
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
+                    alignSelf: 'center',
+                    marginTop: 'clamp(18px, 3.5vw, 24px)',
+                    textAlign: 'center'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(4px, 1vw, 8px)' }}>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 'clamp(0.68rem, 1.8vw, 0.95rem)',
+                        color: '#ffffff',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 'clamp(70px, 18vw, 130px)',
+                        textShadow: '0 1px 3px rgba(0,0,0,0.8)'
+                      }}
+                      title={rightTeamName}
+                    >
+                      {rightTeamName}
+                    </span>
+                    {rightIsServing ? (
+                      <span
+                        style={{
+                          background: '#10b981',
+                          color: '#ffffff',
+                          fontSize: 'clamp(0.55rem, 1.1vw, 0.7rem)',
+                          fontWeight: 900,
+                          padding: '1px 6px',
+                          borderRadius: '6px',
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          boxShadow: '0 0 10px rgba(16, 185, 129, 0.6)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        SERVE{isPb ? ` • #${pbServerNum}` : ''}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.15)',
+                          color: '#94a3b8',
+                          fontSize: 'clamp(0.52rem, 1vw, 0.65rem)',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '5px',
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        RECEIVE
+                      </span>
+                    )}
+                  </div>
+                  {renderLineup(rightTeam)}
+                </div>
+
+                {/* Center: Large Bold Score */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -46%)',
+                    fontWeight: 950,
+                    fontSize: 'clamp(2.6rem, 8.5vw, 5rem)',
+                    lineHeight: 1,
+                    color: '#ffffff',
+                    textShadow: '0 4px 18px rgba(0, 0, 0, 0.85), 0 0 30px rgba(0, 0, 0, 0.5)',
+                    letterSpacing: '-0.02em',
+                    transition: 'transform 0.18s ease-out'
+                  }}
+                >
+                  {rightScore}
+                </div>
+
+                <div style={{ height: '14px' }} />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Optional Team Labels inside court corners if requested */}
         {showTeamLabels && (

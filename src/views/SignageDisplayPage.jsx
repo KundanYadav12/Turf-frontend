@@ -22,8 +22,10 @@ import {
   Moon,
   Clock,
   CheckCircle2,
-  RotateCw
+  RotateCw,
+  Video
 } from 'lucide-react';
+import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 
 /**
  * Public Live Tournament Display Page
@@ -39,6 +41,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
   }
   const idFromUrl = typeof window !== 'undefined' ? (window.location.pathname.match(/\/display\/tournament\/([^/]+)/)?.[1] || window.location.pathname.match(/\/tournaments\/([^/]+)/)?.[1]) : null;
   const id = propsTournamentId || routeParams?.id || idFromUrl;
+  const tournamentId = id;
   const dispatch = useDispatch();
   const reduxTheme = useSelector((state) => state.theme?.mode) || 'dark';
 
@@ -61,6 +64,27 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
     });
     return () => observer.disconnect();
   }, [reduxTheme]);
+
+  // Superadmin authorization guard
+  const authUser = useSelector((state) => state.auth?.user);
+  const [isSuperAdminAuthorized, setIsSuperAdminAuthorized] = useState(null);
+
+  useEffect(() => {
+    let currentUser = authUser;
+    if (!currentUser && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('user');
+        if (stored) currentUser = JSON.parse(stored);
+      } catch (e) {}
+    }
+    const role = (currentUser?.role || '').toUpperCase();
+    const authorized = role === 'ADMIN' || role === 'SUPER_ADMIN';
+    setIsSuperAdminAuthorized(authorized);
+    if (!authorized && typeof window !== 'undefined') {
+      const targetUrl = id ? `/tournaments/${id}` : '/tournaments';
+      window.location.replace(targetUrl);
+    }
+  }, [authUser, id]);
 
   // Core Tournament & Match State
   const [tournament, setTournament] = useState(null);
@@ -97,6 +121,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
     leftAds: [],
     rightAds: [],
     courtAds: [],
+    courtMiddleAds: [],
     zoneSettings: { topHeight: 120, leftWidth: 220, rightWidth: 220, bottomHeight: 70 },
     venueZoneSettings: {},
     portraitZoneSettings: { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' },
@@ -114,6 +139,40 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
 
   // Top Ad Rotation Index
   const [currentTopAdIndex, setCurrentTopAdIndex] = useState(0);
+
+  // Live Streaming Signage State
+  const [activeStreamData, setActiveStreamData] = useState(null);
+  const [signageStreamMode, setSignageStreamMode] = useState(false);
+
+  // Stable Live Stream Checker
+  const checkLiveStreams = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/streams/active');
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        const stream = res.data.data.find(
+          (s) => (s.status === 'LIVE' || s.isLive) && (!id || !tournamentId || s.tournamentId === id || s.tournamentId === tournamentId || s.tournament_uuid === id)
+        );
+        if (stream) {
+          setActiveStreamData(stream);
+          setSignageStreamMode(true);
+        } else {
+          setActiveStreamData(null);
+          setSignageStreamMode(false);
+        }
+      } else {
+        setActiveStreamData(null);
+        setSignageStreamMode(false);
+      }
+    } catch (e) {
+      // non-blocking
+    }
+  }, [id, tournamentId]);
+
+  useEffect(() => {
+    checkLiveStreams();
+    const interval = setInterval(checkLiveStreams, 25000);
+    return () => clearInterval(interval);
+  }, [checkLiveStreams]);
 
   // Live Digital Clock Ticker
   useEffect(() => {
@@ -179,14 +238,22 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
   }, [id]);
 
   // Fetch Tournament, Matches, and Advertisements
-  const fetchLiveMatches = async () => {
+  const fetchLiveMatches = async (isBackground = false) => {
+    if (!isBackground && matches.length === 0) setLoading(true);
     try {
       const [tournRes, liveRes] = await Promise.all([
         axios.get(`/api/tournaments/${id}`),
         axios.get(`/api/tournaments/${id}/live`)
       ]);
       if (tournRes.data.success) setTournament(tournRes.data.data);
-      if (liveRes.data.success) setMatches(liveRes.data.data.items || []);
+      if (liveRes.data.success) {
+        const items = liveRes.data.data.items || [];
+        setMatches(items);
+        items.forEach((m) => {
+          const mid = m.uuid || m.id || m.matchId;
+          if (mid) socket.emit('join:match', { matchId: mid });
+        });
+      }
     } catch (err) {
       console.error('Failed to load tournament live matches:', err);
     } finally {
@@ -206,7 +273,6 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
   };
 
   useEffect(() => {
-    setLoading(true);
     fetchLiveMatches();
     fetchAdvertisements();
   }, [id]);
@@ -257,6 +323,14 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
       fetchAdvertisements();
     };
 
+    const onBadminton = (data) => handleLiveMatchUpdate(data);
+    const onBall = (data) => handleLiveMatchUpdate(data);
+    const onPickleball = (data) => handleLiveMatchUpdate(data);
+    const onPointScored = (data) => handleLiveMatchUpdate({ ...data, type: 'POINT_SCORED', pointEvent: data });
+    const onFootball = (data) => handleLiveMatchUpdate(data);
+    const onScoreUpdated = (data) => handleLiveMatchUpdate(data);
+    const onSignageUpdate = (data) => handleLiveMatchUpdate(data);
+
     socket.on('signage:playbackUpdated', handlePlaybackUpdate);
     socket.on('signage:adUpdated', handleAdUpdate);
     socket.on('signage:adAdded', handleAdUpdate);
@@ -265,11 +339,20 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
     socket.on('signage:adResumed', handleAdResumed);
     socket.on('signage:adsDisabled', handleAdsDisabled);
     socket.on('signage:adsEnabled', handleAdsEnabled);
-    socket.on('tournament:matchDisplayUpdated', fetchLiveMatches);
-    socket.on('display:matchesUpdated', fetchLiveMatches);
-    socket.on('match:badmintonEvent', (data) => handleLiveMatchUpdate(data));
-    socket.on('match:ballEvent', (data) => handleLiveMatchUpdate(data));
-    socket.on('match:pickleballScore', (data) => handleLiveMatchUpdate(data));
+    socket.on('tournament:matchDisplayUpdated', () => fetchLiveMatches(true));
+    socket.on('display:matchesUpdated', () => fetchLiveMatches(true));
+    socket.on('match:badmintonEvent', onBadminton);
+    socket.on('match:ballEvent', onBall);
+    socket.on('match:pickleballScore', onPickleball);
+    socket.on('match:footballEvent', onFootball);
+    socket.on('score:updated', onScoreUpdated);
+    socket.on('match:pointScored', onPointScored);
+    socket.on('signage:pointScored', onPointScored);
+    socket.on('signage:matchUpdate', onSignageUpdate);
+    socket.on('stream:status', checkLiveStreams);
+    socket.on('stream:status_changed', checkLiveStreams);
+    socket.on('stream:ended', checkLiveStreams);
+    socket.on('tournament:stream_status', checkLiveStreams);
 
     return () => {
       socket.off('signage:playbackUpdated', handlePlaybackUpdate);
@@ -280,11 +363,20 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
       socket.off('signage:adResumed', handleAdResumed);
       socket.off('signage:adsDisabled', handleAdsDisabled);
       socket.off('signage:adsEnabled', handleAdsEnabled);
-      socket.off('tournament:matchDisplayUpdated', fetchLiveMatches);
-      socket.off('display:matchesUpdated', fetchLiveMatches);
-      socket.off('match:badmintonEvent');
-      socket.off('match:ballEvent');
-      socket.off('match:pickleballScore');
+      socket.off('tournament:matchDisplayUpdated');
+      socket.off('display:matchesUpdated');
+      socket.off('match:badmintonEvent', onBadminton);
+      socket.off('match:ballEvent', onBall);
+      socket.off('match:pickleballScore', onPickleball);
+      socket.off('match:footballEvent', onFootball);
+      socket.off('score:updated', onScoreUpdated);
+      socket.off('match:pointScored', onPointScored);
+      socket.off('signage:pointScored', onPointScored);
+      socket.off('signage:matchUpdate', onSignageUpdate);
+      socket.off('stream:status', checkLiveStreams);
+      socket.off('stream:status_changed', checkLiveStreams);
+      socket.off('stream:ended', checkLiveStreams);
+      socket.off('tournament:stream_status', checkLiveStreams);
     };
   }, [id]);
 
@@ -305,14 +397,15 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
 
     setMatches((prev) =>
       prev.map((m) => {
-        if (m.id === targetId || m.uuid === targetId) {
+        if (m.id === targetId || m.uuid === targetId || m.matchId === targetId || (data.matchNumber && m.matchNumber === data.matchNumber)) {
           if (data.eventSeq && m._eventSeq && data.eventSeq < m._eventSeq) {
             return m; // Ignore stale or out-of-order event
           }
           return {
             ...m,
-            _eventSeq: data.eventSeq || Date.now(),
+            _eventSeq: data.eventSeq || data.seq || Date.now(),
             _lastEventType: data.type || null,
+            _pointEvent: data.pointEvent || (data.type === 'POINT_SCORED' ? data : null),
             status: data.status || m.status,
             courtColor: data.courtColor || m.courtColor,
             score: {
@@ -415,6 +508,15 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
 
   const resolvedStripHeight = resolveZoneDimension(activeZoneSettings?.sidebarStripHeight, 90);
   const sidebarsMode = activeZoneSettings?.sidebarsMode || 'STRIP';
+
+  if (isSuperAdminAuthorized === false) {
+    return (
+      <div style={{ textAlign: 'center', padding: '5rem 1rem', color: '#ef4444', fontFamily: 'system-ui, sans-serif' }}>
+        <h2>Access Restricted</h2>
+        <p>Signage TV Display is restricted to Superadmin users only. Redirecting…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="display-page-container display-theme-transition">
@@ -923,6 +1025,32 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
               >
                 {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
               </button>
+
+              {/* Live Stream Mode Toggle Button */}
+              {(activeStreamData || matches.some((m) => m.has_live_stream)) && (
+                <button
+                  type="button"
+                  onClick={() => setSignageStreamMode((prev) => !prev)}
+                  title={signageStreamMode ? 'Exit Live Stream View' : 'Watch Arena Live Broadcast'}
+                  style={{
+                    height: 44,
+                    padding: '0 0.85rem',
+                    borderRadius: 12,
+                    background: signageStreamMode ? '#ef4444' : 'rgba(239, 68, 68, 0.15)',
+                    border: signageStreamMode ? '1px solid #ef4444' : '1px solid rgba(239, 68, 68, 0.4)',
+                    color: signageStreamMode ? '#ffffff' : '#ef4444',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: '0.8rem'
+                  }}
+                >
+                  <Video size={16} className={signageStreamMode ? '' : 'animate-pulse'} />
+                  <span>{signageStreamMode ? 'SCOREBOARD' : '🔴 STREAM'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1033,6 +1161,17 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
               <div style={{ fontSize: 'clamp(1rem, 1.8vw, 1.35rem)', fontWeight: 800 }}>
                 Connecting to Stadium Live Feed...
               </div>
+            </div>
+          ) : signageStreamMode && activeStreamData ? (
+            /* ── SCENE: SIGNAGE LIVE ARENA STREAMING BROADCAST ── */
+            <div style={{ flex: 1, minHeight: 0, height: '100%', borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
+              <LiveStreamPlayer
+                matchId={activeStreamData.matchId}
+                streamData={activeStreamData}
+                match={displayMatches.find((m) => m.id === activeStreamData.matchId || m.uuid === activeStreamData.matchId) || displayMatches[0] || null}
+                showOverlay={true}
+                autoPlay={true}
+              />
             </div>
           ) : matchCount === 0 ? (
             <div
@@ -1657,6 +1796,7 @@ const MatchCardHero = ({ match }) => {
             match={match}
             courtColor={match.courtColor || '#0d5c3a'}
             courtAds={match.courtAds || []}
+            courtMiddleAds={adsData.courtMiddleAds || []}
             ambientRally={true}
           />
         </div>

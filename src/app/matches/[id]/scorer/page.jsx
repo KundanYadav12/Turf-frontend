@@ -1,5 +1,5 @@
-import React, { Suspense } from 'react';
-import UniversalScorerPage from '../../../../views/UniversalScorerPage';
+import React from 'react';
+import ScorerClientWrapper from './ScorerClientWrapper';
 
 export const metadata = {
   title: 'Official Match Scorer Console | TurfSpot',
@@ -10,10 +10,7 @@ export const metadata = {
   }
 };
 
-export default function ScorerPageRoute({ params }) {
-  return (
-    <Suspense fallback={<div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading Scorer Console…</div>}>
-      <UniversalScorerPage matchId={params?.id} />
-    </Suspense>
-  );
+export default async function ScorerPageRoute({ params }) {
+  const resolvedParams = params ? await params : {};
+  return <ScorerClientWrapper matchId={resolvedParams?.id} />;
 }

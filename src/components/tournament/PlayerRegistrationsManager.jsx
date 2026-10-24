@@ -84,12 +84,19 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
   const [newCustomField, setNewCustomField] = useState({ name: '', label: '', type: 'text', options: '' });
   const [showAddCustomField, setShowAddCustomField] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [myRegistration, setMyRegistration] = useState(null);
 
   const qrCanvasRef = useRef(null);
 
-  const getAuthHeaders = () => {
-    if (typeof window === 'undefined') return {};
+  const getAuthToken = () => {
+    if (typeof window === 'undefined') return null;
     const token = localStorage.getItem('turf_token') || localStorage.getItem('token');
+    if (!token || token === 'null' || token === 'undefined') return null;
+    return token;
+  };
+
+  const getAuthHeaders = () => {
+    const token = getAuthToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
@@ -102,32 +109,63 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
     setLoading(true);
     setErrorMsg('');
     try {
-      const [cfgRes, regRes] = await Promise.all([
-        axios.get(`/api/tournaments/${tournamentId}/registration-config`),
-        axios.get(`/api/tournaments/${tournamentId}/player-registrations`, {
-          headers: getAuthHeaders()
-        })
-      ]);
+      const token = getAuthToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-      if (cfgRes.data?.data) {
-        const c = cfgRes.data.data;
-        setConfig({
-          isOpen: c.isOpen ?? true,
-          registrationDeadline: c.registrationDeadline ? c.registrationDeadline.substring(0, 16) : '',
-          maxPlayers: c.maxPlayers || '',
-          minAge: c.minAge || '',
-          maxAge: c.maxAge || '',
-          consentText: c.consentText || '',
-          fieldsConfig: c.fieldsConfig || config.fieldsConfig
-        });
+      // 1. Fetch public registration configuration (always accessible, does not require authentication)
+      try {
+        const cfgRes = await axios.get(`/api/tournaments/${tournamentId}/registration-config`);
+        if (cfgRes.data?.data) {
+          const c = cfgRes.data.data;
+          setConfig({
+            isOpen: c.isOpen ?? true,
+            registrationDeadline: c.registrationDeadline ? c.registrationDeadline.substring(0, 16) : '',
+            maxPlayers: c.maxPlayers || '',
+            minAge: c.minAge || '',
+            maxAge: c.maxAge || '',
+            consentText: c.consentText || '',
+            fieldsConfig: c.fieldsConfig || config.fieldsConfig
+          });
+        }
+      } catch (cfgErr) {
+        console.warn('Registration config load note:', cfgErr?.message);
       }
 
-      if (regRes.data?.data) {
-        setRegistrations(regRes.data.data);
+      // 2. Fetch registrations list (sanitized for public visitors, full details for tournament organizers)
+      try {
+        const regRes = await axios.get(`/api/tournaments/${tournamentId}/player-registrations`, {
+          headers
+        });
+        if (regRes.data?.data) {
+          setRegistrations(regRes.data.data);
+        }
+      } catch (regErr) {
+        if (regErr?.response?.status === 401) {
+          setRegistrations([]);
+        } else {
+          console.warn('Player registrations load note:', regErr?.message);
+        }
+      }
+
+      // 3. If user is logged in, fetch their own registration status for this tournament
+      if (token) {
+        try {
+          const myRegRes = await axios.get(`/api/tournaments/${tournamentId}/my-registration`, {
+            headers
+          });
+          if (myRegRes.data?.data) {
+            setMyRegistration(myRegRes.data.data);
+          } else {
+            setMyRegistration(null);
+          }
+        } catch (myErr) {
+          setMyRegistration(null);
+        }
+      } else {
+        setMyRegistration(null);
       }
     } catch (err) {
-      console.error('Failed to load player registrations data:', err);
-      setErrorMsg(err.response?.data?.message || 'Failed to load registration data.');
+      console.warn('Failed to load tournament registration data:', err?.message);
     } finally {
       setLoading(false);
     }
@@ -460,9 +498,9 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
       {/* ───────────────────────────────────────────────────────── */}
       {subTab === 'requests' && (
         <div>
-          {/* Quick Share Banner for Organizer */}
+          {/* Quick Share Banner */}
           <div className="glass-panel" style={{
-            padding: '1rem 1.25rem',
+            padding: '1.15rem 1.35rem',
             marginBottom: '1.25rem',
             display: 'flex',
             justifyContent: 'space-between',
@@ -474,9 +512,9 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
             border: '1px solid rgba(16,185,129,0.2)'
           }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
                 <span style={{
-                  padding: '0.15rem 0.5rem',
+                  padding: '0.15rem 0.55rem',
                   borderRadius: '20px',
                   fontSize: '0.75rem',
                   fontWeight: 700,
@@ -490,13 +528,35 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                     • Capacity: {registrations.filter(r => r.status === 'CONFIRMED').length} / {config.maxPlayers} confirmed
                   </span>
                 )}
+                {config.registrationDeadline && (
+                  <span style={{ fontSize: '0.8rem', color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Clock size={12} /> Deadline: {new Date(config.registrationDeadline).toLocaleDateString()}
+                  </span>
+                )}
               </div>
               <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted)' }}>
                 Direct Link: <code style={{ color: 'var(--text-heading)', background: 'rgba(0,0,0,0.2)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>{registrationUrl}</code>
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <a
+                href={registrationUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary btn-sm"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.45rem 0.85rem',
+                  textDecoration: 'none',
+                  fontWeight: 700
+                }}
+              >
+                <UserPlus size={14} />
+                Register to Play
+              </a>
               <button
                 onClick={handleCopyLink}
                 className="btn btn-outline btn-sm"
@@ -507,7 +567,7 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
               </button>
               <button
                 onClick={handleShareLink}
-                className="btn btn-primary btn-sm"
+                className="btn btn-outline btn-sm"
                 style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
               >
                 <Share2 size={14} />
@@ -525,6 +585,65 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
               )}
             </div>
           </div>
+
+          {/* User's own registration status banner if submitted */}
+          {myRegistration && (
+            <div className="glass-panel" style={{
+              padding: '1.15rem 1.35rem',
+              marginBottom: '1.25rem',
+              borderRadius: '12px',
+              border: '1px solid rgba(59, 130, 246, 0.35)',
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(16, 185, 129, 0.05))',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '1rem'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#60a5fa' }}>
+                    Your Registration Status:
+                  </span>
+                  <span style={{
+                    padding: '0.15rem 0.6rem',
+                    borderRadius: '20px',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    background: STATUS_COLORS[myRegistration.status]?.bg || 'rgba(59, 130, 246, 0.2)',
+                    color: STATUS_COLORS[myRegistration.status]?.text || '#60a5fa',
+                    border: `1px solid ${STATUS_COLORS[myRegistration.status]?.border || 'rgba(59, 130, 246, 0.4)'}`
+                  }}>
+                    {myRegistration.status}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Name: <strong style={{ color: 'var(--text-heading)' }}>{myRegistration.fullName}</strong>
+                  {myRegistration.assignedTeam && (
+                    <span> • Assigned Team: <strong style={{ color: '#10b981' }}>{myRegistration.assignedTeam.name}</strong></span>
+                  )}
+                  {myRegistration.preferredRole && (
+                    <span> • Role: {myRegistration.preferredRole}</span>
+                  )}
+                  {myRegistration.denialReason && (
+                    <span style={{ color: '#ef4444', display: 'block', marginTop: '0.2rem' }}>
+                      Reason: {myRegistration.denialReason}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <a
+                  href={registrationUrl}
+                  className="btn btn-outline btn-sm"
+                  style={{ textDecoration: 'none', fontSize: '0.82rem' }}
+                >
+                  View / Edit Application
+                </a>
+              </div>
+            </div>
+          )}
 
           {/* Filter Bar */}
           <div style={{
@@ -681,9 +800,13 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                         </th>
                       )}
                       <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Player</th>
-                      <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Contact</th>
+                      {canManage && (
+                        <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Contact</th>
+                      )}
                       <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Role / Hand</th>
-                      <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Aadhaar / ID</th>
+                      {canManage && (
+                        <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Aadhaar / ID</th>
+                      )}
                       <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Assigned Team</th>
                       <th style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
                       {canManage && (
@@ -748,10 +871,12 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                             </div>
                           </td>
 
-                          <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
-                            <div style={{ color: 'var(--text-heading)' }}>{reg.phone || '—'}</div>
-                            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{reg.email || '—'}</div>
-                          </td>
+                          {canManage && (
+                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
+                              <div style={{ color: 'var(--text-heading)' }}>{reg.phone || '—'}</div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{reg.email || '—'}</div>
+                            </td>
+                          )}
 
                           <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
                             <div style={{ fontWeight: 500, color: 'var(--text-heading)' }}>
@@ -762,13 +887,13 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                             </div>
                           </td>
 
-                          <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
-                            {reg.maskedAadhaar ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <span style={{ fontFamily: 'monospace', color: 'var(--text-heading)' }}>
-                                  {reg.maskedAadhaar}
-                                </span>
-                                {canManage && (
+                          {canManage && (
+                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
+                              {reg.maskedAadhaar ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <span style={{ fontFamily: 'monospace', color: 'var(--text-heading)' }}>
+                                    {reg.maskedAadhaar}
+                                  </span>
                                   <button
                                     onClick={() => setRevealModalData({
                                       regId: reg.id,
@@ -788,12 +913,12 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                                   >
                                     <Eye size={14} />
                                   </button>
-                                )}
-                              </div>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)' }}>Not submitted</span>
-                            )}
-                          </td>
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>Not submitted</span>
+                              )}
+                            </td>
+                          )}
 
                           <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
                             {reg.assignedTeam ? (
@@ -1387,10 +1512,10 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                 onChange={(e) => setConfirmModalData(prev => ({ ...prev, teamId: e.target.value }))}
                 style={{
                   width: '100%',
-                  padding: '0.55rem 0.75rem',
+                  padding: '0.55rem 2.5rem 0.55rem 0.75rem',
                   borderRadius: '6px',
                   border: '1px solid var(--border-color)',
-                  background: 'var(--bg-card, #111)',
+                  backgroundColor: 'var(--bg-card, #111)',
                   color: 'var(--text-heading)',
                   fontSize: '0.88rem'
                 }}
@@ -1703,10 +1828,10 @@ export default function PlayerRegistrationsManager({ tournament, canManage, team
                 onChange={(e) => setNewCustomField(prev => ({ ...prev, type: e.target.value }))}
                 style={{
                   width: '100%',
-                  padding: '0.5rem 0.75rem',
+                  padding: '0.5rem 2.5rem 0.5rem 0.75rem',
                   borderRadius: '6px',
                   border: '1px solid var(--border-color)',
-                  background: 'var(--bg-card, #111)',
+                  backgroundColor: 'var(--bg-card, #111)',
                   color: 'var(--text-heading)',
                   fontSize: '0.85rem'
                 }}

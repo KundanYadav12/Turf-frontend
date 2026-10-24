@@ -12,6 +12,7 @@ import AdManagementPanel from '../components/admin/AdManagementPanel';
 import PrivacyPolicyManagementPanel from '../components/admin/PrivacyPolicyManagementPanel';
 import AccountDeletionManagementPanel from '../components/admin/AccountDeletionManagementPanel';
 import TVDisplayManagementPanel from '../components/admin/TVDisplayManagementPanel';
+import TournamentAnalyticsPanel from '../components/admin/TournamentAnalyticsPanel';
 
 const tdStyle     = { padding: '0.85rem 0.75rem', color: 'var(--text-main)' };
 const tdBoldStyle = { ...tdStyle, fontWeight: 700, color: 'var(--text-heading)' };
@@ -109,7 +110,7 @@ const AdminDashboardPage = () => {
 
       {/* Section Tabs */}
       <div className="touch-tabs-bar" style={{ display: 'flex', gap: '0.65rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem', overflowX: 'auto' }}>
-        {['OVERVIEW', 'USERS', 'VENUES', 'ADVERTISEMENTS', 'SMART_TV', 'PRIVACY_POLICY', 'ACCOUNT_DELETIONS'].map((tab) => (
+        {['OVERVIEW', 'TOURNAMENT_ANALYTICS', 'USERS', 'VENUES', 'ADVERTISEMENTS', 'SMART_TV', 'PRIVACY_POLICY', 'ACCOUNT_DELETIONS'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -122,10 +123,15 @@ const AdminDashboardPage = () => {
               flexShrink: 0
             }}
           >
-            {tab === 'ADVERTISEMENTS' ? 'STADIUM ADS' : tab === 'SMART_TV' ? '📺 SMART TV' : tab.replace('_', ' ')}
+            {tab === 'TOURNAMENT_ANALYTICS' ? '🏆 TOURNAMENT VIEWS' : tab === 'ADVERTISEMENTS' ? 'STADIUM ADS' : tab === 'SMART_TV' ? '📺 SMART TV' : tab.replace('_', ' ')}
           </button>
         ))}
       </div>
+
+      {/* ── TOURNAMENT_ANALYTICS Tab ── */}
+      {activeTab === 'TOURNAMENT_ANALYTICS' && (
+        <TournamentAnalyticsPanel />
+      )}
 
       {/* ── OVERVIEW Tab ── */}
       {activeTab === 'OVERVIEW' && (

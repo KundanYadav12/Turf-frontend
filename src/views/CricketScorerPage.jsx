@@ -76,8 +76,12 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
   // Last Action State for Universal Undo
   const [lastAction, setLastAction] = useState(null);
 
+  const isFetchingRef = useRef(false);
+
   // 1. Fetch full authoritative scorer state from backend
   const fetchScorerState = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const [res, lastActionRes] = await Promise.all([
         api.get(`/matches/${id}/scorer`),
@@ -114,6 +118,7 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
       setError(err.response?.data?.message || 'Authentication or scorer authorization required to operate scorer.');
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   }, [id]);
 
@@ -131,7 +136,6 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
         dispatch(setCredentials(res.data.data));
         setError(null);
         setIsUnauthorized(false);
-        setLoading(true);
         await fetchScorerState();
       }
     } catch (err) {
@@ -167,13 +171,13 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
 
     const handleBallEvent = (eventData) => {
       // Trigger full-screen boundary celebration if 4 or 6
-      if (eventData.celebration) {
+      if (eventData?.celebration) {
         const cel = String(eventData.celebration).toUpperCase();
         if (cel === 'FOUR' || cel === 'SIX') {
           setCelebration({ type: cel, id: eventData.ballId || Date.now() });
         }
       }
-      if (eventData.overCompleted) {
+      if (eventData?.overCompleted) {
         setShowBowlerModal(true);
       }
       // Re-fetch authoritative state to ensure 100% data fidelity
@@ -186,21 +190,27 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
+    socket.on('match:ballEvent', handleBallEvent);
     socket.on('score:updated', handleBallEvent);
+    socket.on('match:pointScored', handleBallEvent);
     socket.on('match:statusChanged', handleMatchUpdated);
     socket.on('match:completed', handleMatchUpdated);
     socket.on('match:bowlerSwitched', handleMatchUpdated);
     socket.on('match:undone', handleMatchUpdated);
+    socket.on('tournament:matchUpdated', handleMatchUpdated);
 
     return () => {
       socket.emit('leave:match', { matchId: id });
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
+      socket.off('match:ballEvent', handleBallEvent);
       socket.off('score:updated', handleBallEvent);
+      socket.off('match:pointScored', handleBallEvent);
       socket.off('match:statusChanged', handleMatchUpdated);
       socket.off('match:completed', handleMatchUpdated);
       socket.off('match:bowlerSwitched', handleMatchUpdated);
       socket.off('match:undone', handleMatchUpdated);
+      socket.off('tournament:matchUpdated', handleMatchUpdated);
     };
   }, [id, fetchScorerState]);
 
@@ -464,7 +474,7 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
     }
   };
 
-  if (loading) {
+  if (loading && !scorerState) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh', color: 'var(--text-secondary)' }}>
         <div style={{ textAlign: 'center' }}>
@@ -1792,9 +1802,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   onChange={(e) => setTossWinnerTeamId(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -1844,9 +1854,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   required
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -1872,9 +1882,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   required
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -1902,9 +1912,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   required
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -2001,9 +2011,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   onChange={(e) => setDismissedBatterId(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -2024,9 +2034,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   onChange={(e) => setDismissalType(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -2061,9 +2071,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                     onChange={(e) => setCaughtById(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.65rem',
+                      padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                       borderRadius: '8px',
-                      background: 'var(--bg-input)',
+                      backgroundColor: 'var(--bg-input)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
                       fontSize: '0.9rem'
@@ -2090,9 +2100,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                     onChange={(e) => setRunOutById(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.65rem',
+                      padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                       borderRadius: '8px',
-                      background: 'var(--bg-input)',
+                      backgroundColor: 'var(--bg-input)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
                       fontSize: '0.9rem'
@@ -2120,9 +2130,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   disabled={!eligibleBatters || eligibleBatters.length === 0}
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'
@@ -2221,9 +2231,9 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
                   required
                   style={{
                     width: '100%',
-                    padding: '0.65rem',
+                    padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                     borderRadius: '8px',
-                    background: 'var(--bg-input)',
+                    backgroundColor: 'var(--bg-input)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem'

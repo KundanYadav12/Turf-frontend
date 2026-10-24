@@ -24,3 +24,14 @@ export const updateVenueStatusApi = async (venueId, status) => {
   const response = await API.patch(`/admin/venues/${venueId}/status`, { status });
   return response.data;
 };
+
+// Tournament View Analytics Superadmin Insights
+export const getTournamentAnalyticsOverviewApi = async (params = {}) => {
+  const response = await API.get('/admin/tournament-analytics', { params });
+  return response.data;
+};
+
+export const getTournamentAnalyticsDetailApi = async (tournamentId, params = {}) => {
+  const response = await API.get(`/admin/tournament-analytics/${tournamentId}`, { params });
+  return response.data;
+};

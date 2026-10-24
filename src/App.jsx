@@ -23,6 +23,7 @@ import CricketScorerPage from './views/CricketScorerPage';
 import SignageDisplayPage from './views/SignageDisplayPage';
 import TeamsPage from './views/TeamsPage';
 import LiveAuctionPage from './views/LiveAuctionPage';
+import LiveScoreViewerPage from './views/LiveScoreViewerPage';
 
 // Protected Route Wrapper for Owner/Admin
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -58,9 +59,11 @@ function AppContent() {
           {/* Tournaments & Live Multi-Match Routes */}
           <Route path="/tournaments" element={<TournamentsPage />} />
           <Route path="/tournaments/:id" element={<TournamentDetailPage />} />
+          <Route path="/tournaments/:id/live" element={<LiveScoreViewerPage />} />
           <Route path="/tournaments/:id/auction/live" element={<LiveAuctionPage />} />
           <Route path="/auctions/:auctionId/live" element={<LiveAuctionPage />} />
           <Route path="/matches/:id" element={<MatchDetailPage />} />
+          <Route path="/matches/:id/live" element={<LiveScoreViewerPage />} />
           <Route path="/matches/:id/scorer" element={<CricketScorerPage />} />
           <Route path="/display/match/:id" element={<MatchDetailPage />} />
           <Route path="/display/tournament/:id" element={<SignageDisplayPage />} />

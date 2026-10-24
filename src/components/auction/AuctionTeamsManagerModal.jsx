@@ -218,11 +218,11 @@ const AuctionTeamsManagerModal = ({ isOpen, onClose, auctionId, tournamentId, on
                 onChange={(e) => setSelectedTeamId(e.target.value)}
                 style={{
                   width: '100%',
-                  background: 'var(--bg-input, rgba(15,23,42,0.9))',
+                  backgroundColor: 'var(--bg-input, rgba(15,23,42,0.9))',
                   border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
                   borderRadius: '6px',
                   color: '#fff',
-                  padding: '0.55rem 0.75rem',
+                  padding: '0.55rem 2.5rem 0.55rem 0.75rem',
                   fontSize: '0.85rem'
                 }}
               >

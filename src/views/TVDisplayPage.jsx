@@ -10,8 +10,9 @@ import {
   Radio, Maximize2, Minimize2, Trophy, Clock,
   Calendar, Table, Award, Play, Pause, RefreshCw,
   Sun, Moon, Shield, Tv, Sparkles, ChevronRight,
-  AlertCircle, Users, Activity, Flame, Target
+  AlertCircle, Users, Activity, Flame, Target, Video
 } from 'lucide-react';
+import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 
 /**
  * Team Logo or Fallback Monogram Avatar
@@ -131,7 +132,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
   const [standings, setStandings] = useState([]);
   const [results, setResults] = useState([]);
   const [leaderboard, setLeaderboard] = useState({ title: 'Top Tournament Performers', items: [] });
-  const [ads, setAds] = useState({ topAds: [], bottomAds: [], leftAds: [], rightAds: [], centerAds: [] });
+  const [ads, setAds] = useState({ topAds: [], bottomAds: [], leftAds: [], rightAds: [], centerAds: [], courtMiddleAds: [] });
   const [playbackState, setPlaybackState] = useState({
     adsEnabled: true,
     topAdMode: 'STATIC',
@@ -159,6 +160,11 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
   const [isRotationPaused, setIsRotationPaused] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimeoutRef = useRef(null);
+
+  // Live Stream TV View State
+  const [tvStreamMode, setTvStreamMode] = useState(false);
+  const [tvStreamData, setTvStreamData] = useState(null);
+  const [tvStreamMatch, setTvStreamMatch] = useState(null);
 
   // Live Celebration Overlay
   const [celebration, setCelebration] = useState(null);
@@ -224,8 +230,38 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     }
   }, [displayId]);
 
+  const matchesRef = useRef(matches);
   useEffect(() => {
-    setLoading(true);
+    matchesRef.current = matches;
+  }, [matches]);
+
+  // Check for active live streams across tournament matches (stable interval, no re-trigger on score update)
+  const checkLiveStreams = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/streams/active');
+      if (res.data?.success && res.data.data?.length > 0) {
+        const active = res.data.data[0];
+        setTvStreamData(active);
+        setTvStreamMode(true);
+        const matchObj = matchesRef.current.find(m => (m.uuid === active.matchId || m.id === active.matchId || m.matchNumber === active.matchId));
+        if (matchObj) setTvStreamMatch(matchObj);
+      } else {
+        setTvStreamData(null);
+        setTvStreamMode(false);
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    checkLiveStreams();
+    const interval = setInterval(checkLiveStreams, 20000);
+    return () => clearInterval(interval);
+  }, [checkLiveStreams]);
+
+  useEffect(() => {
+    if (matchesRef.current.length === 0) {
+      setLoading(true);
+    }
     fetchDisplaySnapshot();
   }, [fetchDisplaySnapshot]);
 
@@ -253,8 +289,9 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
           }
           return {
             ...m,
-            _eventSeq: payload.eventSeq || Date.now(),
+            _eventSeq: payload.eventSeq || payload.seq || Date.now(),
             _lastEventType: payload.type || null,
+            _pointEvent: payload.pointEvent || (payload.type === 'POINT_SCORED' ? payload : null),
             status: payload.status || m.status,
             courtColor: payload.courtColor || m.courtColor,
             score: {
@@ -317,6 +354,8 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     socket.on('match:pickleballScore', onMatchUpdate);
     socket.on('match:badmintonEvent', onMatchUpdate);
     socket.on('match:ballEvent', onMatchUpdate);
+    socket.on('match:pointScored', onMatchUpdate);
+    socket.on('signage:pointScored', onMatchUpdate);
     socket.on('signage:tvConfigUpdated', onConfigUpdate);
     socket.on('signage:playbackUpdated', onPlaybackUpdate);
     socket.on('signage:adUpdated', onPlaybackUpdate);
@@ -329,15 +368,37 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     socket.on('tournament:matchDisplayUpdated', fetchDisplaySnapshot);
     socket.on('display:matchesUpdated', fetchDisplaySnapshot);
 
+    const onStreamStatus = (payload) => {
+      const data = payload?.stream || payload;
+      if (data?.status === 'LIVE' || data?.status === 'PREVIEW' || data?.isLive) {
+        setTvStreamData(data);
+        setTvStreamMode(true);
+        const matchObj = matchesRef.current.find(m => (m.uuid === data.matchId || m.id === data.matchId || m.matchNumber === data.matchId));
+        if (matchObj) setTvStreamMatch(matchObj);
+      } else if (data?.status === 'ENDED' || data?.status === 'OFFLINE' || data?.isLive === false) {
+        setTvStreamData(null);
+        setTvStreamMode(false);
+      }
+    };
+
+    socket.on('stream:status', onStreamStatus);
+    socket.on('stream:status_changed', onStreamStatus);
+    socket.on('stream:ended', onStreamStatus);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('stream:status', onStreamStatus);
+      socket.off('stream:status_changed', onStreamStatus);
+      socket.off('stream:ended', onStreamStatus);
       socket.off('signage:matchUpdate', onMatchUpdate);
       socket.off('signage:emitMatchUpdate', onMatchUpdate);
       socket.off('tournament:matchUpdated', onMatchUpdate);
       socket.off('match:pickleballScore', onMatchUpdate);
       socket.off('match:badmintonEvent', onMatchUpdate);
       socket.off('match:ballEvent', onMatchUpdate);
+      socket.off('match:pointScored', onMatchUpdate);
+      socket.off('signage:pointScored', onMatchUpdate);
       socket.off('signage:tvConfigUpdated', onConfigUpdate);
       socket.off('signage:playbackUpdated', onPlaybackUpdate);
       socket.off('signage:adUpdated', onPlaybackUpdate);
@@ -393,6 +454,10 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       // 'r' -> Force snapshot refresh
       if (e.key === 'r' || e.key === 'R') {
         fetchDisplaySnapshot();
+      }
+      // 'v' -> Toggle Live Stream Video Mode
+      if (e.key === 'v' || e.key === 'V') {
+        setTvStreamMode(prev => !prev);
       }
       // Show controls on any interaction
       revealControls();
@@ -708,6 +773,31 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
               transition: 'opacity 0.4s'
             }}
           >
+            {/* Live Stream Mode Toggle */}
+            {(tvStreamData || matches.some(m => m.has_live_stream || m.streamStatus === 'LIVE')) && (
+              <button
+                onClick={() => setTvStreamMode(prev => !prev)}
+                title={tvStreamMode ? "Exit Live Stream View (V)" : "Watch Arena Live Stream (V)"}
+                style={{
+                  height: 36,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border: tvStreamMode ? '1px solid #ef4444' : '1px solid rgba(239, 68, 68, 0.4)',
+                  background: tvStreamMode ? '#ef4444' : 'rgba(239, 68, 68, 0.15)',
+                  color: tvStreamMode ? '#ffffff' : '#ef4444',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: '0.8rem',
+                  fontWeight: 800
+                }}
+              >
+                <Video size={16} className={tvStreamMode ? '' : 'animate-pulse'} />
+                <span>{tvStreamMode ? 'SCOREBOARD' : '🔴 STREAM'}</span>
+              </button>
+            )}
+
             {/* Play/Pause Rotation */}
             {config.rotationEnabled && (
               <button
@@ -826,10 +916,33 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
             position: 'relative'
           }}
         >
-          {loading ? (
+          {loading && matches.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', color: '#94a3b8' }}>
               <Radio size={48} className="animate-pulse" color="#10b981" />
               <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Connecting to Arena Smart TV Feed...</h2>
+            </div>
+          ) : tvStreamMode && tvStreamData ? (
+            /* ── SCENE: LIVE ARENA STREAMING BROADCAST (SPLIT / FULL TV VIEW) ── */
+            <div style={{
+              flex: 1,
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#020617',
+              borderRadius: 14,
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.1)',
+              position: 'relative',
+              padding: '0.5rem'
+            }}>
+              <LiveStreamPlayer
+                matchId={tvStreamData.matchId}
+                streamData={tvStreamData}
+                match={tvStreamMatch || (matches[0] || null)}
+                showOverlay={true}
+                autoPlay={true}
+              />
             </div>
           ) : currentScene === 'SCOREBOARD' ? (
             /* ── SCENE 1: LIVE SCOREBOARD (MULTI-MATCH LAYOUT ENGINE) ── */
@@ -839,6 +952,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
               theme={theme}
               centerAdEnabled={config.adCenterEnabled}
               centerAds={ads.centerAds || []}
+              courtMiddleAds={ads.courtMiddleAds || []}
             />
           ) : currentScene === 'FIXTURES' ? (
             /* ── SCENE 2: UPCOMING FIXTURES & SCHEDULE ── */
@@ -909,7 +1023,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
    SCENE 1: LIVE MULTI-MATCH SCOREBOARD LAYOUT ENGINE
    Supports: 1_HERO, 2_SPLIT, 3_BALANCED, 4_GRID, 6_GRID, 8_GRID
    ══════════════════════════════════════════════════════════════════════ */
-function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAds }) {
+function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAds, courtMiddleAds = [] }) {
   const count = matches.length;
 
   if (count === 0) {
@@ -941,7 +1055,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
 
   // 1 Match -> Full-Screen Stadium Hero
   if (layoutType === '1_HERO' || (layoutType === 'AUTO' && count === 1)) {
-    return <TVMatchCardHero match={matches[0]} theme={theme} />;
+    return <TVMatchCardHero match={matches[0]} theme={theme} courtMiddleAds={courtMiddleAds} />;
   }
 
   // 2 Matches -> Equal 50-50 Split (stretches full height)
@@ -949,7 +1063,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     return (
       <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridTemplateRows: '1fr', gap: 'clamp(0.6rem, 1.2vw, 1.2rem)' }}>
         {matches.slice(0, 2).map(m => (
-          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="large" />
+          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="large" courtMiddleAds={courtMiddleAds} />
         ))}
       </div>
     );
@@ -959,10 +1073,10 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
   if (layoutType === '3_BALANCED') {
     return (
       <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: '1.35fr 1fr', gridTemplateRows: '1fr', gap: 'clamp(0.55rem, 1.1vw, 1.1rem)' }}>
-        <TVMatchCardGrid match={matches[0]} theme={theme} size="large" isFeatured />
+        <TVMatchCardGrid match={matches[0]} theme={theme} size="large" isFeatured courtMiddleAds={courtMiddleAds} />
         <div style={{ display: 'grid', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.55rem, 1.1vw, 1rem)', height: '100%', minHeight: 0 }}>
-          <TVMatchCardGrid match={matches[1]} theme={theme} size="medium" />
-          <TVMatchCardGrid match={matches[2]} theme={theme} size="medium" />
+          <TVMatchCardGrid match={matches[1]} theme={theme} size="medium" courtMiddleAds={courtMiddleAds} />
+          <TVMatchCardGrid match={matches[2]} theme={theme} size="medium" courtMiddleAds={courtMiddleAds} />
         </div>
       </div>
     );
@@ -971,7 +1085,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     return (
       <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridTemplateRows: '1fr', gap: 'clamp(0.5rem, 1vw, 1rem)' }}>
         {matches.slice(0, 3).map(m => (
-          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="medium" />
+          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="medium" courtMiddleAds={courtMiddleAds} />
         ))}
       </div>
     );
@@ -983,7 +1097,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
       <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'clamp(0.45rem, 0.8vw, 0.85rem)' }}>
         <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.5rem, 0.9vw, 0.95rem)' }}>
           {matches.slice(0, 4).map(m => (
-            <TVMatchCardGrid key={m.id} match={m} theme={theme} size="medium" />
+            <TVMatchCardGrid key={m.id} match={m} theme={theme} size="medium" courtMiddleAds={courtMiddleAds} />
           ))}
         </div>
         {centerAdEnabled && centerAds && centerAds.length > 0 && (
@@ -1000,7 +1114,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     return (
       <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.4rem, 0.75vw, 0.8rem)' }}>
         {matches.slice(0, 6).map(m => (
-          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="compact" />
+          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="compact" courtMiddleAds={courtMiddleAds} />
         ))}
       </div>
     );
@@ -1011,7 +1125,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     return (
       <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.35rem, 0.65vw, 0.7rem)' }}>
         {matches.slice(0, 8).map(m => (
-          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="mini" />
+          <TVMatchCardGrid key={m.id} match={m} theme={theme} size="mini" courtMiddleAds={courtMiddleAds} />
         ))}
       </div>
     );
@@ -1023,7 +1137,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
   return (
     <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`, gap: 'clamp(0.35rem, 0.6vw, 0.65rem)' }}>
       {matches.slice(0, cols * rows).map(m => (
-        <TVMatchCardGrid key={m.id} match={m} theme={theme} size="mini" />
+        <TVMatchCardGrid key={m.id} match={m} theme={theme} size="mini" courtMiddleAds={courtMiddleAds} />
       ))}
     </div>
   );
@@ -1033,7 +1147,7 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
    HERO MATCH SCORECARD (1-Match Full Stadium Display)
    Dispatches to Cricket, Football, or Racquet sports based on sportSlug
    ══════════════════════════════════════════════════════════════════════ */
-function TVMatchCardHero({ match, theme }) {
+const TVMatchCardHero = React.memo(function TVMatchCardHero({ match, theme, courtMiddleAds = [] }) {
   const sportSlug = match.sportSlug || (match.score?.summary?.includes('/') ? 'cricket' : 'football');
 
   if (sportSlug === 'football') {
@@ -1041,11 +1155,11 @@ function TVMatchCardHero({ match, theme }) {
   }
 
   if (['badminton', 'pickleball', 'tennis', 'table-tennis'].includes(sportSlug)) {
-    return <TVMatchCardHeroRacquet match={match} theme={theme} />;
+    return <TVMatchCardHeroRacquet match={match} theme={theme} courtMiddleAds={courtMiddleAds} />;
   }
 
   return <TVMatchCardHeroCricket match={match} theme={theme} />;
-}
+});
 
 /* ── Cricket Hero Layout ── */
 function TVMatchCardHeroCricket({ match, theme }) {
@@ -1294,7 +1408,7 @@ function TVMatchCardHeroFootball({ match, theme }) {
 }
 
 /* ── Racquet Sports Hero Layout (Badminton, Pickleball, Tennis) ── */
-function TVMatchCardHeroRacquet({ match, theme }) {
+function TVMatchCardHeroRacquet({ match, theme, courtMiddleAds = [] }) {
   const courtState = getCourtState(match);
   const serveState = courtState.serveState || getServeState(match);
   const {
@@ -1516,6 +1630,7 @@ function TVMatchCardHeroRacquet({ match, theme }) {
           serveState={serveState}
           courtColor={match.courtColor || '#0d5c3a'}
           courtAds={match.courtAds}
+          courtMiddleAds={(courtMiddleAds && courtMiddleAds.length > 0) ? courtMiddleAds : (match?.courtMiddleAds || [])}
           theme={theme}
           ambientRally={true}
         />
@@ -1544,7 +1659,7 @@ function TVMatchCardHeroRacquet({ match, theme }) {
 }
 
 /* ── Racquet Sports Grid Card Layout ── */
-function TVMatchCardGridRacquet({ match, theme, size = 'medium', isFeatured = false }) {
+function TVMatchCardGridRacquet({ match, theme, size = 'medium', isFeatured = false, courtMiddleAds = [] }) {
   const courtState = getCourtState(match);
   const serveState = courtState?.serveState || getServeState(match);
   const parsed = parseRacquetScoreDetails(match);
@@ -1636,6 +1751,7 @@ function TVMatchCardGridRacquet({ match, theme, size = 'medium', isFeatured = fa
             match={match}
             serveState={serveState}
             courtColor={match.courtColor || '#0d5c3a'}
+            courtMiddleAds={(courtMiddleAds && courtMiddleAds.length > 0) ? courtMiddleAds : (match?.courtMiddleAds || [])}
             compact={true}
             theme={theme}
             ambientRally={true}
@@ -1657,12 +1773,12 @@ function TVMatchCardGridRacquet({ match, theme, size = 'medium', isFeatured = fa
    Supports size: 'large', 'medium', 'compact', 'mini'
    Optimized for 16:9 Smart TV full-screen stadium viewing distance
    ══════════════════════════════════════════════════════════════════════ */
-function TVMatchCardGrid({ match, theme, size = 'medium', isFeatured = false }) {
+const TVMatchCardGrid = React.memo(function TVMatchCardGrid({ match, theme, size = 'medium', isFeatured = false, courtMiddleAds = [] }) {
   const sportSlug = match.sportSlug || 'cricket';
 
   // Court-based sports dispatch to racquet layout
   if (['badminton', 'pickleball', 'tennis', 'table-tennis'].includes(sportSlug.toLowerCase())) {
-    return <TVMatchCardGridRacquet match={match} theme={theme} size={size} isFeatured={isFeatured} />;
+    return <TVMatchCardGridRacquet match={match} theme={theme} size={size} isFeatured={isFeatured} courtMiddleAds={courtMiddleAds} />;
   }
   const isLive = match.status === 'LIVE';
   const isCompleted = match.status === 'COMPLETED';
@@ -2263,7 +2379,7 @@ function TVMatchCardGrid({ match, theme, size = 'medium', isFeatured = false }) 
       </div>
     </div>
   );
-}
+});
 
 /* ══════════════════════════════════════════════════════════════════════
    SCENE 2: FIXTURES & UPCOMING MATCHES

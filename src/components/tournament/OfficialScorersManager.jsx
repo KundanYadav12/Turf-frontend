@@ -23,7 +23,9 @@ import {
 
 const getAuthToken = () => {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token') || sessionStorage.getItem('token');
+  const token = localStorage.getItem('turf_token') || localStorage.getItem('token') || sessionStorage.getItem('turf_token') || sessionStorage.getItem('token');
+  if (!token || token === 'null' || token === 'undefined') return null;
+  return token;
 };
 
 const getAuthHeaders = () => {
@@ -58,15 +60,20 @@ export default function OfficialScorersManager({ tournament, canManage, matches 
     setLoading(true);
     setErrorMsg('');
     try {
+      const headers = getAuthHeaders();
       const res = await axios.get(`/api/tournaments/${tournamentId}/scorers`, {
-        headers: getAuthHeaders()
+        headers
       });
       if (res.data?.success) {
         setScorers(res.data.data || []);
       }
     } catch (err) {
-      console.error('Failed to fetch scorers:', err);
-      setErrorMsg(err.response?.data?.message || 'Failed to load assigned scorers.');
+      if (err?.response?.status === 401) {
+        setScorers([]);
+      } else {
+        console.warn('Scorers fetch note:', err?.message);
+        setErrorMsg(err?.response?.data?.message || 'Failed to load assigned scorers.');
+      }
     } finally {
       setLoading(false);
     }
@@ -721,11 +728,11 @@ export default function OfficialScorersManager({ tournament, canManage, matches 
                       className="form-control"
                       style={{
                         width: '100%',
-                        background: 'var(--bg-input)',
+                        backgroundColor: 'var(--bg-input)',
                         border: '1px solid var(--border-color)',
                         color: 'var(--text-main)',
                         borderRadius: '10px',
-                        padding: '0.65rem 0.75rem'
+                        padding: '0.65rem 2.5rem 0.65rem 0.75rem'
                       }}
                     >
                       <option value="">-- Choose Match --</option>
