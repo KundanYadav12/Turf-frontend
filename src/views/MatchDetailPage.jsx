@@ -6,12 +6,14 @@ import axios from 'axios';
 import { useMatchLive } from '../hooks/useMatchLive';
 import {
   Radio, ArrowLeft, Send, Trophy, MapPin, Calendar, Clock,
-  ExternalLink, Zap, Video, Tv, Share2, Check, Eye, EyeOff
+  ExternalLink, Zap, Video, Tv, Share2, Check, Eye, EyeOff,
+  Activity, RefreshCw, AlertCircle
 } from 'lucide-react';
 import ScoreCelebration from '../components/scorer/ScoreCelebration';
 import CourtView, { getServeState, parseRacquetScoreDetails } from '../components/court/CourtView';
 import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 import LiveStreamManagerModal from '../components/streaming/LiveStreamManagerModal';
+import StreamingHealthModal from '../components/streaming/StreamingHealthModal';
 import { socket } from '../services/socket';
 
 const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
@@ -33,6 +35,7 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
   const [streamData, setStreamData] = useState(null);
   const [streamLoading, setStreamLoading] = useState(false);
   const [showStreamModal, setShowStreamModal] = useState(false);
+  const [showHealthModal, setShowHealthModal] = useState(false);
   const [showLivePlayer, setShowLivePlayer] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -78,7 +81,8 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
     if (!id) return;
     try {
       setStreamLoading(true);
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const effectiveToken = token || (typeof window !== 'undefined' ? (localStorage.getItem('turf_token') || localStorage.getItem('token')) : null);
+      const headers = effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {};
       const res = await axios.get(`/api/matches/${id}/stream`, { headers });
       if (res.data?.success) {
         const raw = res.data.data;
@@ -87,12 +91,15 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
           canManage: Boolean(raw?.canManage),
           exists: raw?.exists,
           stream: raw?.stream,
-          match: raw?.match
+          match: raw?.match,
+          iceServers: raw?.iceServers
         };
         setStreamData(streamInfo);
       }
     } catch (err) {
-      // No active stream configured yet
+      if (process.env.NODE_ENV !== 'production' || (typeof window !== 'undefined' && window.__DEBUG_STREAMING__)) {
+        console.warn('[Streaming] Failed to fetch stream config for match:', id, err?.response?.data || err?.message);
+      }
     } finally {
       setStreamLoading(false);
     }
@@ -101,6 +108,54 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
   useEffect(() => {
     fetchStreamData();
   }, [fetchStreamData]);
+
+  const [isMounted, setIsMounted] = useState(false);
+  const [localUser, setLocalUser] = useState(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+    if (!user && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('turf_user') || localStorage.getItem('user');
+        if (raw) setLocalUser(JSON.parse(raw));
+      } catch {}
+    }
+  }, [user]);
+
+  // Authoritative permissions: UNCONDITIONAL access for Super Admin (hydration-safe)
+  const effectiveUser = user || localUser;
+  const userRole = (effectiveUser?.role || '').toUpperCase();
+  const isSuperAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+  const isCreator = Boolean(
+    effectiveUser?.id && (
+      Number(effectiveUser.id) === Number(match?.createdBy) ||
+      Number(effectiveUser.id) === Number(match?.created_by) ||
+      Number(effectiveUser.id) === Number(match?.t_created_by) ||
+      Number(effectiveUser.id) === Number(match?.venueOwnerId) ||
+      Number(effectiveUser.id) === Number(match?.venue_owner_id)
+    )
+  );
+  const isAssignedScorer = Boolean(
+    effectiveUser?.id && match?.scorer_id && Number(effectiveUser.id) === Number(match.scorer_id)
+  );
+  const canManageStream = Boolean(isMounted && (isSuperAdmin || isCreator || isAssignedScorer || streamData?.canManage));
+
+  // Diagnostic logging in non-production when Go Live is hidden
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (process.env.NODE_ENV !== 'production' || window.__DEBUG_STREAMING__)) {
+      if (!canManageStream && (user || effectiveUser)) {
+        console.debug('[Streaming] Go Live button hidden:', {
+          userRole,
+          userId: effectiveUser?.id,
+          isSuperAdmin,
+          isCreator,
+          isAssignedScorer,
+          apiCanManage: streamData?.canManage,
+          matchId: id
+        });
+      }
+    }
+  }, [canManageStream, userRole, effectiveUser, isSuperAdmin, isCreator, isAssignedScorer, streamData?.canManage, id, user]);
 
   // Real-time Match Score & Stream status updates via Socket.IO
   useEffect(() => {
@@ -472,31 +527,111 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
             </Link>
           )}
 
-          {/* Go Live / Stream Settings Button (Superadmin, Creator, or Authorized Delegated Streamer) */}
-          {Boolean(streamData?.canManage) && (
-            <button
-              type="button"
-              onClick={() => setShowStreamModal(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                background: streamData?.status === 'LIVE'
-                  ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
-                  : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 700,
-                padding: '0.5rem 1rem',
-                borderRadius: 10,
-                cursor: 'pointer',
-                fontSize: '0.82rem',
-                boxShadow: streamData?.status === 'LIVE' ? '0 4px 14px rgba(239, 68, 68, 0.35)' : '0 4px 14px rgba(99, 102, 241, 0.3)'
-              }}
-            >
-              <Video size={15} />
-              <span>{streamData?.status === 'LIVE' ? '🔴 Live Stream Controls' : '🎥 Go Live'}</span>
-            </button>
+          {/* Go Live / Stream Settings Button (Always available to Super Admin; also organizers & assigned scorers) */}
+          {Boolean(canManageStream) && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              <button
+                type="button"
+                id="btn-go-live-stream"
+                onClick={() => {
+                  if (streamData?.status === 'ERROR') {
+                    fetchStreamData();
+                  }
+                  setShowStreamModal(true);
+                }}
+                title={
+                  streamData?.status === 'LIVE'
+                    ? 'Stream is Live • Click to Manage or End'
+                    : streamData?.status === 'RECONNECTING'
+                    ? 'Reconnecting to stream feed'
+                    : streamData?.status === 'ERROR'
+                    ? 'Stream encountered an error • Click to retry'
+                    : 'Broadcast match live'
+                }
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  background:
+                    streamData?.status === 'LIVE'
+                      ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                      : streamData?.status === 'RECONNECTING'
+                      ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                      : streamData?.status === 'ERROR'
+                      ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)'
+                      : streamLoading || streamData?.status === 'STARTING'
+                      ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
+                      : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 700,
+                  padding: '0.5rem 1rem',
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                  fontSize: '0.82rem',
+                  transition: 'all 0.2s ease',
+                  boxShadow:
+                    streamData?.status === 'LIVE'
+                      ? '0 0 16px rgba(239, 68, 68, 0.5)'
+                      : '0 4px 14px rgba(99, 102, 241, 0.3)'
+                }}
+              >
+                {streamData?.status === 'LIVE' ? (
+                  <>
+                    <Radio size={15} className="animate-pulse text-white" />
+                    <span>🔴 LIVE • Manage Stream</span>
+                  </>
+                ) : streamData?.status === 'RECONNECTING' ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin text-white" />
+                    <span>Reconnecting…</span>
+                  </>
+                ) : streamData?.status === 'ERROR' ? (
+                  <>
+                    <AlertCircle size={15} className="text-white" />
+                    <span>⚠️ Stream Error (Retry)</span>
+                  </>
+                ) : streamLoading || streamData?.status === 'STARTING' ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin text-white" />
+                    <span>Starting…</span>
+                  </>
+                ) : (
+                  <>
+                    <Video size={15} />
+                    <span>🎥 Go Live</span>
+                  </>
+                )}
+              </button>
+
+              {/* Super Admin Quick Health Diagnostic Button */}
+              {isSuperAdmin && (
+                <button
+                  type="button"
+                  id="btn-streaming-health"
+                  onClick={() => setShowHealthModal(true)}
+                  title="Streaming Health Diagnostics (Super Admin)"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.3rem',
+                    background: 'rgba(99, 102, 241, 0.14)',
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    color: '#818cf8',
+                    fontWeight: 600,
+                    padding: '0.5rem 0.65rem',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Activity size={14} />
+                  <span className="hidden sm:inline">Health</span>
+                </button>
+              )}
+            </div>
           )}
 
           {/* Official Scorer Console Link */}
@@ -959,6 +1094,15 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
             const streamInfo = updated?.stream || updated;
             setStreamData(streamInfo);
           }}
+        />
+      )}
+
+      {/* Super Admin Streaming Health Diagnostics Modal */}
+      {isSuperAdmin && (
+        <StreamingHealthModal
+          isOpen={showHealthModal}
+          onClose={() => setShowHealthModal(false)}
+          matchId={match?.uuid || id}
         />
       )}
     </div>

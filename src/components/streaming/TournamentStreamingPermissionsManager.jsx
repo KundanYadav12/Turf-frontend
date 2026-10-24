@@ -82,6 +82,7 @@ export default function TournamentStreamingPermissionsManager({
 
   // Fetch permissions list
   const fetchPermissions = useCallback(async () => {
+    if (!tournamentId) return;
     setErrorMsg('');
     try {
       const headers = getAuthHeaders();
@@ -92,15 +93,17 @@ export default function TournamentStreamingPermissionsManager({
         setPermissions(res.data.data || []);
       }
     } catch (err) {
-      if (err?.response?.status !== 401) {
-        console.warn('Stream permissions fetch note:', err?.message);
-        setErrorMsg(err?.response?.data?.message || 'Failed to load streaming permissions.');
+      if (err?.response?.status === 403) {
+        setErrorMsg(err?.response?.data?.message || 'Access restricted.');
+      } else if (err?.response?.status !== 401 && err?.response?.status !== 404) {
+        console.debug?.('Stream permissions fetch note:', err?.message);
       }
     }
   }, [tournamentId]);
 
   // Fetch tournament streaming matches overview
   const fetchStreamingOverview = useCallback(async () => {
+    if (!tournamentId) return;
     try {
       const headers = getAuthHeaders();
       const res = await axios.get(`/api/tournaments/${tournamentId}/streaming-overview`, {
@@ -110,7 +113,9 @@ export default function TournamentStreamingPermissionsManager({
         setStreamingOverview(res.data.data || []);
       }
     } catch (err) {
-      console.warn('Streaming overview fetch note:', err?.message);
+      if (err?.response?.status !== 404) {
+        console.debug?.('Streaming overview fetch note:', err?.message);
+      }
     }
   }, [tournamentId]);
 
@@ -273,11 +278,30 @@ export default function TournamentStreamingPermissionsManager({
 
   const isDelegatedStreamer = myDelegatedPermissions.length > 0;
 
+  // Combined match fixtures with fallback to tournament fixtures if overview is loading
+  const displayMatches = useMemo(() => {
+    if (streamingOverview && streamingOverview.length > 0) {
+      return streamingOverview;
+    }
+    return (matches || []).map((m, idx) => ({
+      matchId: m.uuid || m.id || `match-${idx}`,
+      matchNumber: m.match_number || m.matchNumber || (idx + 1),
+      matchStatus: m.status || m.matchStatus || 'SCHEDULED',
+      teamAName: m.team_a_name || m.teamAName || 'Team A',
+      teamALogo: m.team_a_logo || m.teamALogo || null,
+      teamBName: m.team_b_name || m.teamBName || 'Team B',
+      teamBLogo: m.team_b_logo || m.teamBLogo || null,
+      hasLiveStream: Boolean(m.has_live_stream || m.hasLiveStream),
+      stream: null,
+      canManageStream: Boolean(canManage)
+    }));
+  }, [streamingOverview, matches, canManage]);
+
   // Key metrics
   const activeCount = permissions.filter((p) => p.isActive).length;
   const tournamentWideCount = permissions.filter((p) => p.isActive && p.scope === 'TOURNAMENT').length;
   const matchSpecificCount = permissions.filter((p) => p.isActive && p.scope === 'MATCH').length;
-  const liveStreamsCount = streamingOverview.filter((m) => m.hasLiveStream).length;
+  const liveStreamsCount = displayMatches.filter((m) => m.hasLiveStream).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -580,11 +604,11 @@ export default function TournamentStreamingPermissionsManager({
             </p>
           </div>
           <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-            {streamingOverview.length} Match{streamingOverview.length === 1 ? '' : 'es'}
+            {displayMatches.length} Match{displayMatches.length === 1 ? '' : 'es'}
           </span>
         </div>
 
-        {streamingOverview.length === 0 ? (
+        {displayMatches.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8', fontSize: '0.9rem' }}>
             No matches scheduled for this tournament yet.
           </div>
@@ -596,7 +620,7 @@ export default function TournamentStreamingPermissionsManager({
               gap: '1rem'
             }}
           >
-            {streamingOverview.map((m) => (
+            {displayMatches.map((m) => (
               <div
                 key={m.matchId}
                 style={{
