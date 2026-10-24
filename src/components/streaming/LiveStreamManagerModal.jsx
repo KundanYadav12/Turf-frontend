@@ -7,7 +7,8 @@ import {
   X, Radio, Camera, Video, Youtube, Settings, Copy,
   Check, RefreshCw, Eye, EyeOff, Play, Pause, Square,
   Shield, AlertCircle, CheckCircle, Smartphone, ExternalLink,
-  Layers, Volume2, VolumeX, RotateCw, Monitor, Sparkles
+  Layers, Volume2, VolumeX, RotateCw, Monitor, Sparkles,
+  Minimize2, Maximize2
 } from 'lucide-react';
 
 export default function LiveStreamManagerModal({
@@ -126,8 +127,11 @@ export default function LiveStreamManagerModal({
   const videoPreviewRef = useRef(null);
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
+  const candidateQueuesRef = useRef(new Map());
+  const pendingViewersRef = useRef(new Set());
   const isBroadcastingRef = useRef(isBroadcasting);
   const facingModeRef = useRef(facingMode);
+  const [isMinimized, setIsMinimized] = useState(false);
 
   useEffect(() => {
     isBroadcastingRef.current = isBroadcasting;
@@ -337,6 +341,15 @@ export default function LiveStreamManagerModal({
         cancelGracePeriod();
         replaceTracksInPeerConnections(stream);
         socket.emit('stream:camera_resumed', { matchId });
+        socket.emit('stream:broadcaster_ready', { matchId });
+      }
+
+      // Automatically connect any viewers who joined before camera finished initializing
+      if (pendingViewersRef.current.size > 0) {
+        pendingViewersRef.current.forEach((socketId) => {
+          handleViewerJoined({ socketId });
+        });
+        pendingViewersRef.current.clear();
       }
 
       return stream;
@@ -504,15 +517,28 @@ export default function LiveStreamManagerModal({
 
     socket.emit('stream:join', { matchId, isBroadcaster: true });
 
-    // When a viewer joins, create a WebRTC PeerConnection and send an Offer
+    // When a viewer joins or requests an offer, create a WebRTC PeerConnection and send an Offer
     const handleViewerJoined = async ({ socketId }) => {
-      if (!localStreamRef.current) return;
+      if (!localStreamRef.current) {
+        // Record pending viewer until camera starts
+        pendingViewersRef.current.add(socketId);
+        return;
+      }
 
       try {
+        if (peerConnectionsRef.current.has(socketId)) {
+          try {
+            peerConnectionsRef.current.get(socketId).close();
+          } catch (e) {}
+          peerConnectionsRef.current.delete(socketId);
+        }
+
         const pc = new RTCPeerConnection({
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' }
           ]
         });
 
@@ -540,7 +566,7 @@ export default function LiveStreamManagerModal({
           sdp: offer
         });
       } catch (err) {
-        console.warn('Broadcaster WebRTC offer creation warning:', err);
+        console.warn('[Broadcaster] WebRTC offer creation warning:', err);
       }
     };
 
@@ -550,8 +576,19 @@ export default function LiveStreamManagerModal({
       if (pc) {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+          // Drain queued ICE candidates received before answer/remoteDescription was established
+          const queue = candidateQueuesRef.current.get(senderSocketId) || [];
+          for (const cand of queue) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
+              console.warn('[Broadcaster] Queued candidate error:', e);
+            }
+          }
+          candidateQueuesRef.current.delete(senderSocketId);
         } catch (err) {
-          console.warn('Set remote description warning:', err);
+          console.warn('[Broadcaster] Set remote description warning:', err);
         }
       }
     };
@@ -559,12 +596,17 @@ export default function LiveStreamManagerModal({
     // When viewer sends ICE candidate
     const handleCandidate = async ({ senderSocketId, candidate }) => {
       const pc = peerConnectionsRef.current.get(senderSocketId);
-      if (pc && candidate) {
+      if (!pc || !candidate) return;
+      if (pc.remoteDescription) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (err) {
-          console.warn('Add ice candidate warning:', err);
+          console.warn('[Broadcaster] Add ICE candidate notice:', err);
         }
+      } else {
+        const queue = candidateQueuesRef.current.get(senderSocketId) || [];
+        queue.push(candidate);
+        candidateQueuesRef.current.set(senderSocketId, queue);
       }
     };
 
@@ -574,6 +616,8 @@ export default function LiveStreamManagerModal({
         pc.close();
         peerConnectionsRef.current.delete(socketId);
       }
+      candidateQueuesRef.current.delete(socketId);
+      pendingViewersRef.current.delete(socketId);
       if (count !== undefined) setViewerCount(count);
     };
 
@@ -582,6 +626,7 @@ export default function LiveStreamManagerModal({
     };
 
     socket.on('stream:viewer_joined', handleViewerJoined);
+    socket.on('stream:request_offer', handleViewerJoined);
     socket.on('stream:signal:answer', handleAnswer);
     socket.on('stream:signal:candidate', handleCandidate);
     socket.on('stream:viewer_left', handleViewerLeft);
@@ -759,6 +804,79 @@ export default function LiveStreamManagerModal({
     }
   };
 
+  if (isMinimized) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 99999,
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(10px)',
+          border: '1.5px solid rgba(239, 68, 68, 0.5)',
+          borderRadius: '14px',
+          boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65)',
+          padding: '0.75rem 1.15rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          color: '#ffffff'
+        }}
+      >
+        <Radio size={18} className="animate-pulse" color="#ef4444" />
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{ fontSize: '0.86rem', fontWeight: 800, color: '#f8fafc' }}>
+            {isBroadcasting ? '🔴 LIVE Camera Active' : 'Camera On'}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+            {viewerCount} Viewer{viewerCount === 1 ? '' : 's'} watching
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsMinimized(false)}
+          style={{
+            background: 'rgba(255, 255, 255, 0.12)',
+            border: 'none',
+            color: '#ffffff',
+            borderRadius: '8px',
+            padding: '0.35rem 0.75rem',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+        >
+          Expand Controls
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            if (isBroadcasting) {
+              if (window.confirm('End the live broadcast?')) {
+                await handleEndStream();
+                onClose();
+              }
+            } else {
+              stopCamera();
+              onClose();
+            }
+          }}
+          title="End broadcast"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#ef4444',
+            cursor: 'pointer',
+            padding: '0.2rem'
+          }}
+        >
+          <X size={18} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -823,21 +941,59 @@ export default function LiveStreamManagerModal({
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              stopCamera();
-              onClose();
-            }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted, #94a3b8)',
-              cursor: 'pointer',
-              padding: '0.3rem'
-            }}
-          >
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            {isBroadcasting && (
+              <button
+                type="button"
+                onClick={() => setIsMinimized(true)}
+                title="Minimize (Keep broadcasting in background)"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: 'var(--text-muted, #94a3b8)',
+                  cursor: 'pointer',
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 600
+                }}
+              >
+                <Minimize2 size={13} />
+                <span>Minimize</span>
+              </button>
+            )}
+
+            <button
+              onClick={async () => {
+                if (isBroadcasting) {
+                  const endNow = window.confirm(
+                    'You are currently broadcasting live.\n\n• Click OK to END the stream.\n• Click Cancel to MINIMIZE and keep streaming in the background.'
+                  );
+                  if (endNow) {
+                    await handleEndStream();
+                    onClose();
+                  } else {
+                    setIsMinimized(true);
+                  }
+                  return;
+                }
+                stopCamera();
+                onClose();
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted, #94a3b8)',
+                cursor: 'pointer',
+                padding: '0.3rem'
+              }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}

@@ -143,6 +143,10 @@ export default function LiveStreamPlayer({
     }
   };
 
+  const broadcasterSocketIdRef = useRef(null);
+  const candidateQueueRef = useRef([]);
+  const remoteDescSetRef = useRef(false);
+
   // WebRTC Viewer Pipeline (For MOBILE_CAMERA streaming method)
   const initWebRTCViewer = useCallback(() => {
     if (isYouTube) return;
@@ -152,21 +156,28 @@ export default function LiveStreamPlayer({
         peerConnectionRef.current.close();
       }
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' }
-        ]
-      });
+      remoteDescSetRef.current = false;
+      candidateQueueRef.current = [];
 
+      const iceServers = activeStream?.iceServers || streamDataProp?.iceServers || [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' }
+      ];
+
+      const pc = new RTCPeerConnection({ iceServers });
       peerConnectionRef.current = pc;
 
       pc.ontrack = (event) => {
         if (videoRef.current && event.streams[0]) {
           videoRef.current.srcObject = event.streams[0];
-          videoRef.current.play().catch(() => {});
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((e) => {
+              console.warn('[Viewer] Video play deferred:', e?.message);
+            });
+          }
           setWebrtcConnected(true);
           setWebrtcError('');
         }
@@ -175,6 +186,7 @@ export default function LiveStreamPlayer({
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit('stream:signal:candidate', {
+            targetSocketId: broadcasterSocketIdRef.current,
             matchId,
             candidate: event.candidate
           });
@@ -193,7 +205,20 @@ export default function LiveStreamPlayer({
 
       const handleOffer = async ({ sdp, senderSocketId }) => {
         try {
+          broadcasterSocketIdRef.current = senderSocketId;
           await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+          remoteDescSetRef.current = true;
+
+          // Drain queued ICE candidates received before remoteDescription was set
+          while (candidateQueueRef.current.length > 0) {
+            const queuedCand = candidateQueueRef.current.shift();
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(queuedCand));
+            } catch (err) {
+              console.warn('[WebRTC Viewer] Queued candidate notice:', err);
+            }
+          }
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
 
@@ -202,35 +227,47 @@ export default function LiveStreamPlayer({
             sdp: answer
           });
         } catch (err) {
-          console.warn('WebRTC offer handling notice:', err);
+          console.warn('[WebRTC Viewer] Offer handling notice:', err);
         }
       };
 
       const handleCandidate = async ({ candidate }) => {
         try {
-          if (candidate && pc.remoteDescription) {
+          if (!candidate) return;
+          if (remoteDescSetRef.current && pc.remoteDescription) {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            // Queue candidate until remote description is established
+            candidateQueueRef.current.push(candidate);
           }
         } catch (err) {
-          console.warn('ICE candidate handling notice:', err);
+          console.warn('[WebRTC Viewer] ICE candidate notice:', err);
         }
+      };
+
+      const handleBroadcasterDisconnected = () => {
+        setWebrtcConnected(false);
+        setWebrtcError('Broadcaster disconnected. Waiting for broadcaster camera signal…');
       };
 
       socket.on('stream:signal:offer', handleOffer);
       socket.on('stream:signal:candidate', handleCandidate);
+      socket.on('stream:broadcaster_disconnected', handleBroadcasterDisconnected);
 
-      // Join stream room as viewer
+      // Join stream room as viewer and request offer from active broadcaster
       socket.emit('stream:join', { matchId, isBroadcaster: false });
+      socket.emit('stream:request_offer', { matchId });
 
       return () => {
         socket.off('stream:signal:offer', handleOffer);
         socket.off('stream:signal:candidate', handleCandidate);
+        socket.off('stream:broadcaster_disconnected', handleBroadcasterDisconnected);
         pc.close();
       };
     } catch (err) {
       setWebrtcError('Waiting for broadcaster camera signal…');
     }
-  }, [matchId, isYouTube]);
+  }, [matchId, isYouTube, activeStream?.iceServers, streamDataProp?.iceServers]);
 
   useEffect(() => {
     if (!isYouTube && isLive) {
@@ -263,8 +300,9 @@ export default function LiveStreamPlayer({
     };
 
     const handleBroadcasterReady = () => {
-      // Re-trigger join so broadcaster knows to emit an offer
-      socket.emit('stream:join', { matchId, isBroadcaster: false });
+      // Re-trigger viewer connection and request offer from newly-ready broadcaster
+      initWebRTCViewer();
+      socket.emit('stream:request_offer', { matchId });
     };
 
     socket.on('stream:status', handleStatus);
@@ -279,7 +317,7 @@ export default function LiveStreamPlayer({
       socket.off('stream:viewer_count', handleViewerCount);
       socket.off('stream:broadcaster_ready', handleBroadcasterReady);
     };
-  }, [matchId, onRefresh]);
+  }, [matchId, onRefresh, initWebRTCViewer]);
 
   // If stream is not live, do NOT render an empty player or play button
   if (!isLive) {
@@ -355,10 +393,35 @@ export default function LiveStreamPlayer({
                 <h4 style={{ margin: '0 0 0.25rem 0', color: '#f8fafc', fontSize: '1rem', fontWeight: 800 }}>
                   🔴 Connecting to Live Camera Feed…
                 </h4>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', maxWidth: '380px' }}>
                   {webrtcError || 'Establishing secure peer-to-peer broadcast signal'}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setWebrtcError('Re-requesting broadcast signal from camera…');
+                  initWebRTCViewer();
+                  socket.emit('stream:request_offer', { matchId });
+                }}
+                style={{
+                  marginTop: '0.35rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#e2e8f0',
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+              >
+                <RefreshCw size={13} /> Reconnect Signal
+              </button>
             </div>
           )}
         </>
