@@ -26,11 +26,15 @@ const createSocket = () => {
       : window.location.origin;
 
     socketInstance = io(SOCKET_URL, {
+      path: '/socket.io',
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      transports: ['websocket', 'polling']
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      transports: ['polling', 'websocket'],
+      upgrade: true
     });
 
     // Gracefully handle browser Back-Forward Cache (bfcache)

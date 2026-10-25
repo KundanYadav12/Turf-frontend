@@ -10,6 +10,7 @@ const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_U
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  skipTrailingSlashRedirect: true,
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
@@ -77,6 +78,10 @@ const nextConfig = {
       {
         source: '/uploads/:path*',
         destination: `${BACKEND_URL}/uploads/:path*`,
+      },
+      {
+        source: '/socket.io',
+        destination: `${BACKEND_URL}/socket.io/`,
       },
       {
         source: '/socket.io/:path*',

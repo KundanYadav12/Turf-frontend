@@ -515,7 +515,15 @@ export default function LiveStreamManagerModal({
   useEffect(() => {
     if (!matchId) return;
 
+    const handleConnect = () => {
+      socket.emit('stream:join', { matchId, isBroadcaster: true });
+      if (isBroadcastingRef.current) {
+        socket.emit('stream:broadcaster_ready', { matchId });
+      }
+    };
+
     socket.emit('stream:join', { matchId, isBroadcaster: true });
+    socket.on('connect', handleConnect);
 
     // When a viewer joins or requests an offer, create a WebRTC PeerConnection and send an Offer
     const handleViewerJoined = async ({ socketId }) => {
@@ -533,14 +541,14 @@ export default function LiveStreamManagerModal({
           peerConnectionsRef.current.delete(socketId);
         }
 
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' }
-          ]
-        });
+        const iceServers = streamData?.iceServers || [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' }
+        ];
+
+        const pc = new RTCPeerConnection({ iceServers });
 
         peerConnectionsRef.current.set(socketId, pc);
 
@@ -634,6 +642,7 @@ export default function LiveStreamManagerModal({
 
     return () => {
       socket.emit('stream:leave', { matchId });
+      socket.off('connect', handleConnect);
       socket.off('stream:viewer_joined', handleViewerJoined);
       socket.off('stream:signal:answer', handleAnswer);
       socket.off('stream:signal:candidate', handleCandidate);

@@ -280,7 +280,17 @@ export default function LiveStreamPlayer({
   useEffect(() => {
     if (!matchId) return;
 
+    const handleConnect = () => {
+      socket.emit('stream:join', { matchId, isBroadcaster: false });
+      socket.emit('stream:request_offer', { matchId });
+      if (!isYouTube && isLive) {
+        initWebRTCViewer();
+      }
+    };
+
     socket.emit('stream:join', { matchId, isBroadcaster: false });
+    socket.emit('stream:request_offer', { matchId });
+    socket.on('connect', handleConnect);
 
     const handleStatus = (data) => {
       if (!data) return;
@@ -312,12 +322,27 @@ export default function LiveStreamPlayer({
 
     return () => {
       socket.emit('stream:leave', { matchId });
+      socket.off('connect', handleConnect);
       socket.off('stream:status', handleStatus);
       socket.off('stream:status_changed', handleStatus);
       socket.off('stream:viewer_count', handleViewerCount);
       socket.off('stream:broadcaster_ready', handleBroadcasterReady);
     };
-  }, [matchId, onRefresh, initWebRTCViewer]);
+  }, [matchId, onRefresh, initWebRTCViewer, isYouTube, isLive]);
+
+  // Self-healing interval: while stream is marked LIVE and WebRTC video has not connected,
+  // re-request offer periodically every 8s in case broadcaster was initializing
+  useEffect(() => {
+    if (!isLive || isYouTube || webrtcConnected) return;
+
+    const interval = setInterval(() => {
+      if (!webrtcConnected) {
+        socket.emit('stream:request_offer', { matchId });
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [isLive, isYouTube, webrtcConnected, matchId]);
 
   // If stream is not live, do NOT render an empty player or play button
   if (!isLive) {
