@@ -62,7 +62,28 @@ const AdminDashboardPage = () => {
   };
 
   if (loading || !stats) {
-    return <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading Super Admin Portal…</div>;
+    return (
+      <div className="container" style={{ padding: 'clamp(1.5rem, 3.5vw, 3rem) clamp(0.75rem, 2.5vw, 1.5rem)' }}>
+        <div style={{ marginBottom: '2rem' }}>
+          <div className="skeleton-box" style={{ height: 36, width: 320, marginBottom: '0.5rem' }} />
+          <div className="skeleton-box" style={{ height: 16, width: 240 }} />
+        </div>
+        <div className="kpi-grid" style={{ marginBottom: '2rem' }}>
+          {[1, 2, 3, 4].map(n => (
+            <div key={n} className="skeleton-card" style={{ height: 110 }}>
+              <div className="skeleton-box" style={{ height: 14, width: '60%' }} />
+              <div className="skeleton-box" style={{ height: 32, width: '40%' }} />
+            </div>
+          ))}
+        </div>
+        <div className="skeleton-card" style={{ height: 300 }}>
+          <div className="skeleton-box" style={{ height: 24, width: '30%', marginBottom: '1rem' }} />
+          <div className="skeleton-box" style={{ height: 40, width: '100%', marginBottom: '0.5rem' }} />
+          <div className="skeleton-box" style={{ height: 40, width: '100%', marginBottom: '0.5rem' }} />
+          <div className="skeleton-box" style={{ height: 40, width: '100%' }} />
+        </div>
+      </div>
+    );
   }
 
   // KPI cards config
@@ -91,7 +112,7 @@ const AdminDashboardPage = () => {
         {kpis.map((kpi, i) => (
           <div
             key={i}
-            className="glass-panel"
+            className="glass-panel card-interactive"
             style={{
               padding: 'clamp(1rem, 2vw, 1.5rem)',
               border: kpi.highlight ? '1px solid var(--border-glow)' : undefined

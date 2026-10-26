@@ -28,7 +28,7 @@ const LoginPage = () => {
         const redirect = searchParams.get('redirect');
         if (redirect) {
           navigate(redirect);
-        } else if (role === 'ADMIN') {
+        } else if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
           navigate('/admin/dashboard');
         } else if (role === 'VENUE_OWNER') {
           navigate('/owner/dashboard');

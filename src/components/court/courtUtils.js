@@ -1,7 +1,46 @@
 /**
  * Single Authoritative Source of Truth for Racquet Sports (Badminton, Pickleball, Tennis).
  * Derives all court geometry, player positions, serving rules, and score formats.
+ * Backed by the pure, testable courtRulesEngine adapter system.
  */
+
+import {
+  COURT_BOXES,
+  BOX_COORDINATES,
+  PLAYER_REST_COORDINATES,
+  BOX_RECTS,
+  getScreenBox,
+  getDiagonalReceiverBox,
+  extractInitials,
+  calculatePickleballDoublesPositions,
+  PickleballAdapter,
+  BadmintonAdapter,
+  FallbackAdapter,
+  getSportAdapter,
+  getInitialCourtState,
+  applyPointToCourtState,
+  computeCourtStateFromHistory,
+  finalizeCourtState
+} from './courtRulesEngine.js';
+
+export {
+  COURT_BOXES,
+  BOX_COORDINATES,
+  PLAYER_REST_COORDINATES,
+  BOX_RECTS,
+  getScreenBox,
+  getDiagonalReceiverBox,
+  extractInitials,
+  calculatePickleballDoublesPositions,
+  PickleballAdapter,
+  BadmintonAdapter,
+  FallbackAdapter,
+  getSportAdapter,
+  getInitialCourtState,
+  applyPointToCourtState,
+  computeCourtStateFromHistory,
+  finalizeCourtState
+};
 
 /**
  * Authoritative Pure Function for Badminton (and Racquet) Serve State.
@@ -16,16 +55,6 @@
  * - Serve is always DIAGONAL cross-court.
  * - Team on left half faces right: right court is BOTTOM on screen, left court is TOP.
  * - Team on right half faces left: right court is TOP on screen, left court is BOTTOM.
- *
- * Acceptance table:
- * | Server (side) | Score | Expected serving box | Target box |
- * | Left team     | 0 (even) | bottom-left       | top-right  |
- * | Left team     | 13 (odd) | top-left          | bottom-right |
- * | Right team    | 14 (even)| top-right         | bottom-left  |
- * | Right team    | 15 (odd) | bottom-right      | top-left   |
- *
- * @param {Object} match - Complete or partial match state object.
- * @returns {Object} { serverTeam, serverSide, serviceBox, receiverTeam, targetBox, label, ... }
  */
 export function getServeState(match) {
   if (!match) {
@@ -204,31 +233,15 @@ export function getServeState(match) {
   const receiverCourt = isEven ? 'LEFT' : 'RIGHT'; // diagonal cross-court
 
   // 9. Screen Service Box Mapping (Facing Net)
-  // Team on LEFT faces RIGHT:
-  // - Right court is BOTTOM on screen
-  // - Left court is TOP on screen
-  // Team on RIGHT faces LEFT:
-  // - Right court is TOP on screen
-  // - Left court is BOTTOM on screen
   let serviceBox = 'bottom'; // 'top' | 'bottom'
   if (serverSide === 'left') {
     serviceBox = isEven ? 'bottom' : 'top';
   } else {
-    // serverSide === 'right'
     serviceBox = isEven ? 'top' : 'bottom';
   }
 
   // 10. Screen Target Box Mapping (Diagonal Cross-Court)
-  // Left bottom -> Right top
-  // Left top -> Right bottom
-  // Right top -> Left bottom
-  // Right bottom -> Left top
-  let targetBoxChoice = 'top';
-  if (serverSide === 'left') {
-    targetBoxChoice = serviceBox === 'top' ? 'bottom' : 'top';
-  } else {
-    targetBoxChoice = serviceBox === 'top' ? 'bottom' : 'top';
-  }
+  let targetBoxChoice = serviceBox === 'top' ? 'bottom' : 'top';
 
   const targetBox = {
     side: receiverSide,
@@ -271,11 +284,16 @@ export function getServeState(match) {
   };
 }
 
+/**
+ * Authoritative Single Source of Truth for Court State.
+ * Reconciles match logs with the pure rules engine to produce deterministic player positions,
+ * badges, serving states, scores, and graphics.
+ */
 export function getCourtState(match) {
   const serveState = match?.serveState || getServeState(match);
 
   // 1. Sport and format
-  const sport = serveState.sport;
+  const sport = serveState.sport || 'pickleball';
   const isBadminton = sport === 'badminton';
   const isPickleball = sport === 'pickleball';
   const format = (match?.matchFormat || match?.format || match?.rules?.matchFormat || 'DOUBLES').toUpperCase();
@@ -292,7 +310,6 @@ export function getCourtState(match) {
   }
 
   const summaryRaw = (match?.score?.summary || match?.live_score_summary || match?.scoreSummary || '').trim();
-  const subtextRaw = (match?.score?.subtext || match?.live_subtext || match?.liveSubtext || '').trim();
 
   // 3. Scores and Games
   const scoreA = serveState.scoreA;
@@ -317,35 +334,90 @@ export function getCourtState(match) {
   // 4. Team Identity & Player Lineup Extraction
   const lineupRawA = match?.lineup?.teamA || state?.lineup?.teamA || match?.lineupA || [];
   const lineupRawB = match?.lineup?.teamB || state?.lineup?.teamB || match?.lineupB || [];
-  const playersA = Array.isArray(lineupRawA)
-    ? lineupRawA.map(p => (typeof p === 'string' ? p : (p?.name || p?.playerName || ''))).filter(Boolean)
-    : [];
-  const playersB = Array.isArray(lineupRawB)
-    ? lineupRawB.map(p => (typeof p === 'string' ? p : (p?.name || p?.playerName || ''))).filter(Boolean)
-    : [];
 
   const teamA = {
-    id: match?.teamA?.id || match?.team_a_id || 'A',
+    id: match?.teamA?.id || match?.team_a_id || 'teamA',
     name: match?.teamA?.name || match?.team_a_name || 'Team A',
     logo: match?.teamA?.logo || match?.team_a_logo || null,
-    players: playersA,
     score: scoreA,
     isServing: serveState.isTeamAServing,
     side: (serveState.teamSides.teamA || 'left').toUpperCase()
   };
 
   const teamB = {
-    id: match?.teamB?.id || match?.team_b_id || 'B',
+    id: match?.teamB?.id || match?.team_b_id || 'teamB',
     name: match?.teamB?.name || match?.team_b_name || 'Team B',
     logo: match?.teamB?.logo || match?.team_b_logo || null,
-    players: playersB,
     score: scoreB,
     isServing: !serveState.isTeamAServing,
     side: (serveState.teamSides.teamB || 'right').toUpperCase()
   };
 
-  // 5. Left and Right Teams (Sides on Screen)
-  // A team's name, players, and score stay bound together as one object!
+  // 5. Config object for Rules Engine
+  const engineConfig = {
+    sport,
+    format,
+    scoringMode: match?.scoringMode || match?.rules?.scoringMode || (isPickleball ? 'SIDE_OUT' : 'RALLY'),
+    teamA,
+    teamB,
+    scores: { teamA: scoreA, teamB: scoreB },
+    lineup: {
+      teamA: lineupRawA,
+      teamB: lineupRawB
+    },
+    targetScore: match?.targetScore || match?.rules?.targetScore || (isBadminton ? 21 : 15),
+    winByTwo: match?.winByTwo ?? match?.rules?.winByTwo ?? true,
+    startingServingTeam: serveState.isTeamAServing ? 'teamA' : 'teamB'
+  };
+
+  // 6. Check for Point History Logs
+  const historyLogs = match?.logs || match?.score_logs || state?.logs || [];
+  let engineState = null;
+
+  if (Array.isArray(historyLogs) && historyLogs.length > 0) {
+    // Deterministic recomputation from full point history
+    engineState = computeCourtStateFromHistory(engineConfig, historyLogs);
+  } else {
+    // Snapshot initialization with current score
+    engineConfig.scores = { teamA: scoreA, teamB: scoreB };
+    engineState = getInitialCourtState(engineConfig);
+    engineState.scores.teamA = scoreA;
+    engineState.scores.teamB = scoreB;
+    engineState.scoreA = scoreA;
+    engineState.scoreB = scoreB;
+
+    if (isPickleball) {
+      if (!isSingles) {
+        const originalA = engineState.originalPlayerPositions?.teamA || {
+          [engineState.playersA[0].id]: 'RIGHT',
+          [engineState.playersA[1].id]: 'LEFT'
+        };
+        const originalB = engineState.originalPlayerPositions?.teamB || {
+          [engineState.playersB[0].id]: 'RIGHT',
+          [engineState.playersB[1].id]: 'LEFT'
+        };
+        const posA = calculatePickleballDoublesPositions(scoreA, originalA);
+        const posB = calculatePickleballDoublesPositions(scoreB, originalB);
+        engineState.playerLocations = { ...engineState.playerLocations, ...posA, ...posB };
+      } else {
+        engineState.playerLocations[engineState.playersA[0].id] = (scoreA % 2 === 0) ? 'RIGHT' : 'LEFT';
+        engineState.playerLocations[engineState.playersB[0].id] = (scoreB % 2 === 0) ? 'RIGHT' : 'LEFT';
+      }
+      const adapter = getSportAdapter('pickleball');
+      engineState = finalizeCourtState(engineState, adapter, engineConfig);
+    }
+  }
+
+  // 7. Server Number for Pickleball (1 or 2)
+  let serverNumber = engineState.serverNumber || state.serverNumber || 1;
+  if (isPickleball && summaryRaw) {
+    const parts = summaryRaw.split('-');
+    if (parts.length === 3) {
+      serverNumber = parseInt(parts[2].trim(), 10) || serverNumber;
+    }
+  }
+
+  // 8. Screen Team Alignment
   const leftTeam = teamA.side === 'LEFT' ? teamA : teamB;
   const rightTeam = teamA.side === 'LEFT' ? teamB : teamA;
   const leftScore = leftTeam.score;
@@ -353,10 +425,8 @@ export function getCourtState(match) {
   const leftIsServing = serveState.serverSide === 'left';
   const rightIsServing = serveState.serverSide === 'right';
 
-  // 6. Authoritative Serving Team & Sides from serveState
-  const isTeamAServing = serveState.isTeamAServing;
-  const servingTeam = isTeamAServing ? 'teamA' : 'teamB';
-  const servingSide = isTeamAServing ? 'team_a' : 'team_b';
+  const servingTeam = serveState.isTeamAServing ? 'teamA' : 'teamB';
+  const servingSide = serveState.isTeamAServing ? 'team_a' : 'team_b';
   const serverBox = serveState.serverCourt;
   const receiverBox = serveState.receiverCourt;
   const teamSides = {
@@ -366,147 +436,93 @@ export function getCourtState(match) {
   const servingTeamSide = serveState.serverSide.toUpperCase();
   const receivingTeamSide = serveState.receiverSide.toUpperCase();
 
-  // 6. Server Number for Pickleball (1 or 2)
-  let serverNumber = state.serverNumber || 1;
-  if (isPickleball && summaryRaw) {
-    const parts = summaryRaw.split('-');
-    if (parts.length === 3) {
-      serverNumber = parseInt(parts[2].trim(), 10) || 1;
-    }
-  }
+  // 9. Coordinates on 800x400 SVG Court ViewBox
+  const servingBoxName = serveState.servingBoxName || engineState.servingBoxName || 'bottom-left';
+  const targetBoxName = serveState.targetBoxName || engineState.targetBoxName || 'top-right';
 
-  // 7. Coordinates on 800x400 SVG Court ViewBox
-  // Top-left: x=75, y=115 | Bottom-left: x=75, y=285
-  // Top-right: x=725, y=115 | Bottom-right: x=725, y=285
-  let serverCoords = { x: 75, y: 285 };
-  if (serveState.servingBoxName === 'top-left') {
-    serverCoords = { x: 75, y: 115 };
-  } else if (serveState.servingBoxName === 'bottom-left') {
-    serverCoords = { x: 75, y: 285 };
-  } else if (serveState.servingBoxName === 'top-right') {
-    serverCoords = { x: 725, y: 115 };
-  } else if (serveState.servingBoxName === 'bottom-right') {
-    serverCoords = { x: 725, y: 285 };
-  }
-
-  let receiverCoords = { x: 725, y: 115 };
-  if (serveState.targetBoxName === 'top-left') {
-    receiverCoords = { x: 75, y: 115 };
-  } else if (serveState.targetBoxName === 'bottom-left') {
-    receiverCoords = { x: 75, y: 285 };
-  } else if (serveState.targetBoxName === 'top-right') {
-    receiverCoords = { x: 725, y: 115 };
-  } else if (serveState.targetBoxName === 'bottom-right') {
-    receiverCoords = { x: 725, y: 285 };
-  }
+  const serverCoords = BOX_COORDINATES[servingBoxName] || { x: 75, y: 285 };
+  const receiverCoords = BOX_COORDINATES[targetBoxName] || { x: 725, y: 115 };
 
   const defaultBallCoords = {
-    x: serveState.serverSide === 'left' ? serverCoords.x + 26 : serverCoords.x - 26,
+    x: serveState.serverSide === 'left' ? 95 : 705,
     y: serverCoords.y
   };
 
-  // 11. Player Roster & Doubles Partner Positions
-  // 11. Player Roster & Doubles Partner Positions
-  const players = [];
-  const serverTeam = isTeamAServing ? teamA : teamB;
-  const receiverTeam = isTeamAServing ? teamB : teamA;
+  // 10. Engine-Derived Players with Accurate Lineup / TBA Status
+  const players = engineState.players && engineState.players.length > 0
+    ? engineState.players
+    : [
+        {
+          id: 'A1',
+          name: teamA.name,
+          secondaryLabel: 'Lineup TBA',
+          team: 'teamA',
+          side: 'LEFT',
+          court: 'RIGHT',
+          boxName: 'bottom-left',
+          x: 75,
+          y: 285,
+          isServer: leftIsServing && serverBox === 'RIGHT',
+          isReceiver: !leftIsServing && receiverBox === 'RIGHT',
+          initials: extractInitials(teamA.name, 'A1')
+        },
+        {
+          id: 'A2',
+          name: teamA.name,
+          secondaryLabel: 'Lineup TBA',
+          team: 'teamA',
+          side: 'LEFT',
+          court: 'LEFT',
+          boxName: 'top-left',
+          x: 75,
+          y: 115,
+          isServer: leftIsServing && serverBox === 'LEFT',
+          isReceiver: !leftIsServing && receiverBox === 'LEFT',
+          initials: extractInitials(teamA.name, 'A2')
+        },
+        {
+          id: 'B1',
+          name: teamB.name,
+          secondaryLabel: 'Lineup TBA',
+          team: 'teamB',
+          side: 'RIGHT',
+          court: 'RIGHT',
+          boxName: 'top-right',
+          x: 725,
+          y: 115,
+          isServer: rightIsServing && serverBox === 'RIGHT',
+          isReceiver: !rightIsServing && receiverBox === 'RIGHT',
+          initials: extractInitials(teamB.name, 'B1')
+        },
+        {
+          id: 'B2',
+          name: teamB.name,
+          secondaryLabel: 'Lineup TBA',
+          team: 'teamB',
+          side: 'RIGHT',
+          court: 'LEFT',
+          boxName: 'bottom-right',
+          x: 725,
+          y: 285,
+          isServer: rightIsServing && serverBox === 'LEFT',
+          isReceiver: !rightIsServing && receiverBox === 'LEFT',
+          initials: extractInitials(teamB.name, 'B2')
+        }
+      ];
 
-  if (isSingles) {
-    players.push({
-      id: `${servingTeam}_SERVER`,
-      team: servingTeam,
-      name: serverTeam.players[0] || serverTeam.name,
-      x: serverCoords.x,
-      y: serverCoords.y,
-      isServer: true,
-      isReceiver: false,
-      box: serverBox,
-      side: servingTeamSide
-    });
-    players.push({
-      id: `${isTeamAServing ? 'teamB' : 'teamA'}_RECEIVER`,
-      team: isTeamAServing ? 'teamB' : 'teamA',
-      name: receiverTeam.players[0] || receiverTeam.name,
-      x: receiverCoords.x,
-      y: receiverCoords.y,
-      isServer: false,
-      isReceiver: true,
-      box: receiverBox,
-      side: receivingTeamSide
-    });
-  } else {
-    // Doubles: 4 Players (2 per side)
-    // Left side players:
-    const leftServerBox = leftIsServing ? serverBox : receiverBox;
-    const leftPartnerBox = leftServerBox === 'RIGHT' ? 'LEFT' : 'RIGHT';
-    const leftP1Name = leftTeam.players[0] || (leftTeam.players.length === 0 ? leftTeam.name : 'Player 1');
-    const leftP2Name = leftTeam.players[1] || (leftTeam.players.length === 0 ? 'Lineup not set' : 'Player 2');
-
-    players.push({
-      id: `LEFT_P1_${leftTeam.id}`,
-      team: leftTeam.id,
-      name: leftP1Name,
-      x: 75,
-      y: leftServerBox === 'RIGHT' ? 285 : 115,
-      isServer: leftIsServing,
-      isReceiver: !leftIsServing,
-      box: leftServerBox,
-      side: 'LEFT'
-    });
-    players.push({
-      id: `LEFT_P2_${leftTeam.id}`,
-      team: leftTeam.id,
-      name: leftP2Name,
-      x: 75,
-      y: leftPartnerBox === 'RIGHT' ? 285 : 115,
-      isServer: false,
-      isReceiver: false,
-      box: leftPartnerBox,
-      side: 'LEFT'
-    });
-
-    // Right side players:
-    const rightServerBox = rightIsServing ? serverBox : receiverBox;
-    const rightPartnerBox = rightServerBox === 'RIGHT' ? 'LEFT' : 'RIGHT';
-    const rightP1Name = rightTeam.players[0] || (rightTeam.players.length === 0 ? rightTeam.name : 'Player 1');
-    const rightP2Name = rightTeam.players[1] || (rightTeam.players.length === 0 ? 'Lineup not set' : 'Player 2');
-
-    players.push({
-      id: `RIGHT_P1_${rightTeam.id}`,
-      team: rightTeam.id,
-      name: rightP1Name,
-      x: 725,
-      y: rightServerBox === 'RIGHT' ? 285 : 115,
-      isServer: rightIsServing,
-      isReceiver: !rightIsServing,
-      box: rightServerBox,
-      side: 'RIGHT'
-    });
-    players.push({
-      id: `RIGHT_P2_${rightTeam.id}`,
-      team: rightTeam.id,
-      name: rightP2Name,
-      x: 725,
-      y: rightPartnerBox === 'RIGHT' ? 285 : 115,
-      isServer: false,
-      isReceiver: false,
-      box: rightPartnerBox,
-      side: 'RIGHT'
-    });
-  }
-
-  // 12. Game Point, Match Point, Winner flags
-  const isGamePoint = Boolean(state.isGamePoint);
-  const isMatchPoint = Boolean(state.isMatchPoint);
-  const status = match.status || 'LIVE';
+  // 11. Game Point, Match Point, Winner flags
+  const isGamePoint = Boolean(state.isGamePoint || engineState.isGamePoint);
+  const isMatchPoint = Boolean(state.isMatchPoint || engineState.isMatchWon);
+  const status = match.status || (engineState.isMatchWon ? 'COMPLETED' : 'LIVE');
   const winner = match.winnerTeamId
     ? (match.winnerTeamId === teamA.id ? 'teamA' : 'teamB')
-    : (match.winner ? (match.winner === 'team_a' ? 'teamA' : 'teamB') : null);
+    : (match.winner ? (match.winner === 'team_a' ? 'teamA' : 'teamB') : engineState.winner);
 
   const isGameWon = Boolean(state.gameWinner || match.isGameWon);
   const isMatchWon = Boolean(status === 'COMPLETED' || winner);
 
-  // 13. Descriptive status subtext
+  // 12. Descriptive status subtext
+  const isTeamAServing = Boolean(serveState?.isTeamAServing);
   const servingTeamName = isTeamAServing ? teamA.name : teamB.name;
   const receivingTeamName = isTeamAServing ? teamB.name : teamA.name;
   const servingStatusText = isBadminton
@@ -556,7 +572,8 @@ export function getCourtState(match) {
     winner,
     status,
     eventSeq: match?._eventSeq || state.eventSeq || 1,
-    serveState
+    serveState,
+    engineState
   };
 }
 

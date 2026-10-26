@@ -5,7 +5,7 @@ import axios from 'axios';
 import { socket } from '../services/socket';
 import {
   Trophy, ArrowLeft, RotateCcw, AlertTriangle, CheckCircle,
-  Zap, Award, Play, Shield, ChevronRight
+  Zap, Award, Play, Shield, ChevronRight, Users
 } from 'lucide-react';
 import BadmintonCourt, { getServeState } from '../components/court/BadmintonCourt';
 
@@ -21,12 +21,32 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
   const [errorMsg, setErrorMsg] = useState('');
   const [lastEventType, setLastEventType] = useState(null);
 
+  // Lineup selection and starting server state
+  const [playerA1, setPlayerA1] = useState('');
+  const [playerA2, setPlayerA2] = useState('');
+  const [playerB1, setPlayerB1] = useState('');
+  const [playerB2, setPlayerB2] = useState('');
+  const [startingServingTeam, setStartingServingTeam] = useState('teamA');
+  const [showLineupSetup, setShowLineupSetup] = useState(false);
+
   // Fetch full scorer state
   const fetchState = useCallback(async () => {
     try {
       const res = await axios.get(`/api/matches/${id}/badminton`);
       if (res.data.success) {
-        setState(res.data.data);
+        const d = res.data.data;
+        setState(d);
+        const l = d?.match?.lineup || d?.state?.lineup;
+        if (l) {
+          if (Array.isArray(l.teamA) && l.teamA.length > 0) {
+            setPlayerA1(typeof l.teamA[0] === 'string' ? l.teamA[0] : (l.teamA[0]?.name || ''));
+            if (l.teamA[1]) setPlayerA2(typeof l.teamA[1] === 'string' ? l.teamA[1] : (l.teamA[1]?.name || ''));
+          }
+          if (Array.isArray(l.teamB) && l.teamB.length > 0) {
+            setPlayerB1(typeof l.teamB[0] === 'string' ? l.teamB[0] : (l.teamB[0]?.name || ''));
+            if (l.teamB[1]) setPlayerB2(typeof l.teamB[1] === 'string' ? l.teamB[1] : (l.teamB[1]?.name || ''));
+          }
+        }
       }
     } catch (err) {
       setErrorMsg(err?.response?.data?.message || 'Failed to load badminton scorer state.');
@@ -104,6 +124,48 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
       }
     } catch (err) {
       setErrorMsg(err?.response?.data?.message || 'Failed to undo point.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Set Lineup and starting court positions
+  const handleSaveLineup = async () => {
+    setActionLoading(true);
+    setErrorMsg('');
+    setNotification('');
+    try {
+      const isSingles = (match?.matchFormat || state?.state?.matchFormat) === 'SINGLES';
+      const pA1 = playerA1.trim() || `${match.teamA.name} 1`;
+      const pA2 = playerA2.trim() || `${match.teamA.name} 2`;
+      const pB1 = playerB1.trim() || `${match.teamB.name} 1`;
+      const pB2 = playerB2.trim() || `${match.teamB.name} 2`;
+
+      const teamALineup = isSingles
+        ? [{ name: pA1, startCourt: 'RIGHT' }]
+        : [
+            { name: pA1, startCourt: 'RIGHT' },
+            { name: pA2, startCourt: 'LEFT' }
+          ];
+      const teamBLineup = isSingles
+        ? [{ name: pB1, startCourt: 'RIGHT' }]
+        : [
+            { name: pB1, startCourt: 'RIGHT' },
+            { name: pB2, startCourt: 'LEFT' }
+          ];
+
+      const res = await axios.post(`/api/matches/${id}/badminton/lineup`, {
+        matchFormat: isSingles ? 'SINGLES' : 'DOUBLES',
+        teamALineup,
+        teamBLineup
+      });
+      if (res.data.success) {
+        setNotification('Badminton lineup & court positions saved!');
+        setShowLineupSetup(false);
+        fetchState();
+      }
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || 'Failed to save lineup.');
     } finally {
       setActionLoading(false);
     }
@@ -334,7 +396,13 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
         {/* Live Animated Court Preview for Scorer Arena */}
         <div style={{ marginTop: '1.75rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
           <BadmintonCourt
-            match={{ ...match, sport_state: bState, scoreA: currentGameObj.teamA, scoreB: currentGameObj.teamB }}
+            match={{
+              ...match,
+              sport_state: bState,
+              scoreA: currentGameObj.teamA,
+              scoreB: currentGameObj.teamB,
+              lineup: match.lineup || bState?.lineup
+            }}
             serveState={serveState}
             courtColor="#0d5c3a"
             status={match.status}
@@ -346,6 +414,123 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
             showFooter={true}
           />
         </div>
+      </div>
+
+      {/* LINEUP & STARTING COURT SETUP (Inline Scorer Step) */}
+      <div className="glass-panel" style={{
+        padding: '1.25rem 1.5rem',
+        borderRadius: 'var(--radius-lg)',
+        marginBottom: '1.5rem',
+        background: 'var(--card-bg, #ffffff)',
+        border: '1px solid var(--border-color, #e2e8f0)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showLineupSetup ? '1rem' : 0, flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <Users size={20} color="var(--accent-primary, #059669)" />
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: 'var(--text-heading, #0f172a)' }}>
+              Badminton Lineup & Service Court Setup
+            </h3>
+            {(!bState?.lineup?.teamA || bState.lineup.teamA.length === 0) && (
+              <span className="badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#b45309', fontSize: '0.72rem', fontWeight: 800 }}>
+                Lineup TBA
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowLineupSetup(!showLineupSetup)}
+            className="btn btn-outline"
+            style={{ fontSize: '0.8rem', fontWeight: 700, padding: '4px 12px' }}
+          >
+            {showLineupSetup ? 'Close Setup' : (bState?.lineup?.teamA?.length > 0 ? 'Edit Lineup' : 'Set Lineup Now')}
+          </button>
+        </div>
+
+        {(showLineupSetup || (!bState?.lineup?.teamA || bState.lineup.teamA.length === 0) || !isMatchLive) && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+              {/* Team A */}
+              <div style={{ padding: '1rem', borderRadius: '12px', background: 'var(--bg-secondary, rgba(0,0,0,0.02))', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 800, margin: '0 0 0.75rem 0', color: 'var(--accent-primary, #059669)' }}>
+                  {match.teamA.name} Lineup
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted, #64748b)', marginBottom: '3px' }}>
+                      Player 1 — Starts in Right Court (Even Score)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Player Name"
+                      value={playerA1}
+                      onChange={(e) => setPlayerA1(e.target.value)}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted, #64748b)', marginBottom: '3px' }}>
+                      Player 2 — Starts in Left Court (Odd Score)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Partner Name"
+                      value={playerA2}
+                      onChange={(e) => setPlayerA2(e.target.value)}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Team B */}
+              <div style={{ padding: '1rem', borderRadius: '12px', background: 'var(--bg-secondary, rgba(0,0,0,0.02))', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 800, margin: '0 0 0.75rem 0', color: '#2563eb' }}>
+                  {match.teamB.name} Lineup
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted, #64748b)', marginBottom: '3px' }}>
+                      Player 1 — Starts in Right Court (Even Score)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Player Name"
+                      value={playerB1}
+                      onChange={(e) => setPlayerB1(e.target.value)}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted, #64748b)', marginBottom: '3px' }}>
+                      Player 2 — Starts in Left Court (Odd Score)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Partner Name"
+                      value={playerB2}
+                      onChange={(e) => setPlayerB2(e.target.value)}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveLineup}
+              disabled={actionLoading}
+              className="btn btn-outline"
+              style={{ width: '100%', padding: '8px', fontWeight: 800 }}
+            >
+              Confirm Lineup & Starting Courts
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Game Scores Breakdown Strip */}

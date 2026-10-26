@@ -314,7 +314,25 @@ const TeamsPage = () => {
 
       {/* Teams Grid */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted, #94a3b8)' }}>Loading teams catalog…</div>
+        <div className="teams-grid">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="skeleton-card" style={{ height: 260 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                <div className="skeleton-box" style={{ width: 52, height: 52, borderRadius: 14 }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div className="skeleton-box" style={{ height: 18, width: '80%' }} />
+                  <div className="skeleton-box" style={{ height: 12, width: '40%' }} />
+                </div>
+              </div>
+              <div className="skeleton-box" style={{ height: 14, width: '90%', marginTop: 8 }} />
+              <div className="skeleton-box" style={{ height: 14, width: '65%' }} />
+              <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="skeleton-box" style={{ height: 20, width: '35%' }} />
+                <div className="skeleton-box" style={{ height: 32, width: '30%', borderRadius: 8 }} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : displayedTeams.length === 0 ? (
         <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 1.5rem', borderRadius: '16px' }}>
           <Shield size={48} color="var(--text-muted, #64748b)" style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
@@ -333,7 +351,7 @@ const TeamsPage = () => {
       ) : (
         <div className="teams-grid">
           {displayedTeams.map((team) => (
-            <div key={team.id} className="team-card">
+            <div key={team.id} className="team-card card-interactive">
               <div>
                 {/* Header: Logo, Name & Badges */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', gap: '0.75rem' }}>

@@ -154,9 +154,52 @@ export function useBallAnimation({
   }, []);
 
   /**
+   * Deterministic PRNG seeded from matchId and eventSeq.
+   * Guarantees Web, Mobile, TV, and Signage all render the exact same rally choreography!
+   */
+  const createRng = useCallback((seedStr) => {
+    let h = 1779033703 ^ String(seedStr).length;
+    for (let i = 0; i < String(seedStr).length; i++) {
+      h = Math.imul(h ^ String(seedStr).charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function() {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return ((h >>> 0) / 4294967296);
+    };
+  }, []);
+
+  /**
+   * Pickleball Ground Bounce: A small, snappy rebound arc upon landing in the court.
+   */
+  const bounceSegment = useCallback((pos, durationMs = 85, bounceHeight = 12) => {
+    return new Promise((resolve) => {
+      if (reducedMotion) {
+        resolve();
+        return;
+      }
+      const startTime = performance.now();
+      const step = (now) => {
+        const elapsed = now - startTime;
+        const rawT = Math.min(1, elapsed / durationMs);
+        const arc = 4 * bounceHeight * rawT * (1 - rawT);
+        applyTransforms(pos.x, pos.y, arc, 0);
+        if (rawT < 1) {
+          rafIdRef.current = requestAnimationFrame(step);
+        } else {
+          applyTransforms(pos.x, pos.y, 0, 0);
+          resolve();
+        }
+      };
+      rafIdRef.current = requestAnimationFrame(step);
+    });
+  }, [reducedMotion, applyTransforms]);
+
+  /**
    * Execute a single parabolic flight segment between two percentage coordinates
    */
-  const flySegment = useCallback((startPos, endPos, durationMs, startRot = 0, endRot = 0) => {
+  const flySegment = useCallback((startPos, endPos, durationMs, startRot = 0, endRot = 0, customArc = null) => {
     return new Promise((resolve) => {
       if (reducedMotion) {
         applyTransforms(endPos.x, endPos.y, 0, endRot);
@@ -165,7 +208,7 @@ export function useBallAnimation({
       }
 
       const startTime = performance.now();
-      const maxArc = motionConfig.arcHeight;
+      const maxArc = customArc !== null ? customArc : motionConfig.arcHeight;
       const easingType = motionConfig.easing;
 
       const step = (now) => {
@@ -194,11 +237,16 @@ export function useBallAnimation({
 
   /**
    * Run authoritatively choreographed Point Scored sequence:
-   * 1. Flight 1: Server service box -> Diagonal Receiver box (Serve)
-   * 2. Flight 2: Receiver return shot -> Crosses net back to Server side (Rally exchange)
-   * 3. Settle: Moves smoothly and rests in the NEW server's box for next rally
+   * 1. 2 to 5 exchanges seeded deterministically from (matchId, eventSeq)
+   * 2. Server racket swipe arc & parabolic flight into diagonal box
+   * 3. Pickleball bounces once in box; Badminton decelerates and drops steeply
+   * 4. Alternating rally exchanges with impact ripples and player nudges
+   * 5. Point end lands on correct side per outcome:
+   *    - Serving team won -> lands on receiver's side
+   *    - Receiver won -> lands on server's side
+   * 6. Smooth settle to new server's racket position (<2.2s total duration)
    */
-  const playPointRally = useCallback(async (fromBoxName, toBoxName, newServingBoxName) => {
+  const playPointRally = useCallback(async (fromBoxName, toBoxName, newServingBoxName, rallyContext = {}) => {
     cancelAnimation();
     isAnimatingRef.current = true;
     setIsAnimatingState(true);
@@ -210,30 +258,88 @@ export function useBallAnimation({
     // Initial position at server racket
     applyTransforms(fromCoords.x, fromCoords.y, 0, fromCoords.x < 50 ? 35 : -145);
 
-    const flightMs = motionConfig.flightMs;
+    // Deterministic RNG from matchId and sequence number
+    const seed = `${matchId || 'match'}_${eventSeq || rallyContext.eventSeq || 1}`;
+    const rng = createRng(seed);
+
+    // Determine total exchanges:
+    // If serving team won -> odd count (3 or 5), final shot lands on receiver side!
+    // If receiving team won -> even count (2 or 4), final shot lands on server side!
+    const isServingTeamWinner = rallyContext.isServingTeamWinner !== undefined
+      ? rallyContext.isServingTeamWinner
+      : (fromCoords.x < 50 ? (rallyContext.scoringTeam !== 'teamB') : (rallyContext.scoringTeam !== 'teamA'));
+
+    let totalShots = isServingTeamWinner
+      ? (rng() > 0.65 ? 5 : 3)
+      : (rng() > 0.65 ? 4 : 2);
+
+    // Budget total duration under 2.2 seconds
+    const totalDurationBudget = Math.min(2100, (sportKey === 'badminton' ? 1750 : 1950));
+    const perShotMs = Math.floor(totalDurationBudget / (totalShots + 0.8));
+
     const isFromLeft = fromCoords.x < 50;
+    const isPb = sportKey === 'pickleball';
+
+    let currentPos = fromCoords;
+    let currentSide = isFromLeft ? 'left' : 'right';
+
+    // Shot 1: The Serve from Server Box into Diagonal Receiver Box
     const serveAngle = isFromLeft ? 40 : -140;
-    const returnAngle = isFromLeft ? -140 : 40;
+    const serveArc = motionConfig.arcHeight * (0.85 + rng() * 0.3);
 
-    // Shot 1: Serve across net to receiver box
-    await flySegment(fromCoords, receiverCoords, flightMs, serveAngle, serveAngle);
-    if (onShotLand) onShotLand(receiverCoords);
+    await flySegment(fromCoords, receiverCoords, perShotMs, serveAngle, serveAngle, serveArc);
+    currentPos = receiverCoords;
+    currentSide = isFromLeft ? 'right' : 'left';
 
-    // Shot 2: Receiver returns shot back across net
-    const returnCoords = {
-      x: isFromLeft ? 26.0 : 74.0,
-      y: receiverCoords.y === 28.75 ? 65.0 : 35.0
-    };
-    await flySegment(receiverCoords, returnCoords, flightMs * 0.85, returnAngle, returnAngle);
-    if (onShotLand) onShotLand(returnCoords);
+    if (onShotLand) {
+      onShotLand(receiverCoords, { shotIndex: 1, totalShots, isLastShot: totalShots === 1 });
+    }
 
-    // Shot 3: Settle into new authoritative server box
-    await flySegment(returnCoords, newServerCoords, flightMs * 0.75, newServerCoords.x < 50 ? 35 : -145, newServerCoords.x < 50 ? 35 : -145);
+    // Pickleball: bounces once in the box beyond kitchen
+    if (isPb) {
+      await bounceSegment(receiverCoords, 85, 12);
+    }
 
-    applyTransforms(newServerCoords.x, newServerCoords.y, 0, newServerCoords.x < 50 ? 35 : -145);
+    // Shots 2 through totalShots: Alternating Rally Exchanges
+    for (let shotIdx = 2; shotIdx <= totalShots; shotIdx++) {
+      const isNextToLeft = currentSide === 'right';
+      const isLast = shotIdx === totalShots;
+
+      // Coordinate on opposite half
+      const targetSideX = isNextToLeft ? (18.0 + rng() * 16.0) : (66.0 + rng() * 16.0);
+      const targetSideY = 22.0 + rng() * 56.0;
+      const nextPos = { x: targetSideX, y: targetSideY };
+
+      const shotAngle = isNextToLeft ? -135 : 45;
+      const shotArc = motionConfig.arcHeight * (0.75 + rng() * 0.5);
+
+      await flySegment(currentPos, nextPos, perShotMs * 0.9, shotAngle, shotAngle, shotArc);
+      currentPos = nextPos;
+      currentSide = isNextToLeft ? 'left' : 'right';
+
+      if (onShotLand) {
+        onShotLand(nextPos, { shotIndex: shotIdx, totalShots, isLastShot: isLast });
+      }
+
+      // Small bounce on final ground impact if pickleball
+      if (isLast && isPb) {
+        await bounceSegment(nextPos, 70, 8);
+      }
+    }
+
+    // Point concluded! Settle ball smoothly to rest at new server's racket
+    const settleDuration = Math.min(380, perShotMs * 0.8);
+    const finalRot = newServerCoords.x < 50 ? 35 : -145;
+    await flySegment(currentPos, newServerCoords, settleDuration, finalRot, finalRot, 15);
+
+    applyTransforms(newServerCoords.x, newServerCoords.y, 0, finalRot);
     isAnimatingRef.current = false;
     setIsAnimatingState(false);
-  }, [cancelAnimation, getBoxCoords, getReceiverCoords, applyTransforms, motionConfig, flySegment, onShotLand]);
+  }, [
+    cancelAnimation, getBoxCoords, getReceiverCoords, applyTransforms,
+    motionConfig, flySegment, bounceSegment, onShotLand, createRng,
+    matchId, eventSeq, sportKey
+  ]);
 
   /**
    * Undo Point Handler: Quick snap/glide back to previous server position without long animation

@@ -59,7 +59,25 @@ const VenueDetailPage = () => {
   };
 
   if (loading || !venue) {
-    return <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading sports venue…</div>;
+    return (
+      <div className="container" style={{ padding: 'clamp(1.5rem, 3.5vw, 3rem) clamp(0.75rem, 2.5vw, 1.5rem)' }}>
+        <div className="skeleton-card" style={{ height: 280, marginBottom: '2rem' }}>
+          <div className="skeleton-box" style={{ height: 32, width: '40%' }} />
+          <div className="skeleton-box" style={{ height: 18, width: '60%' }} />
+          <div className="skeleton-box" style={{ height: 120, width: '100%' }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
+          <div className="skeleton-card" style={{ height: 200 }}>
+            <div className="skeleton-box" style={{ height: 24, width: '50%' }} />
+            <div className="skeleton-box" style={{ height: 48, width: '100%' }} />
+          </div>
+          <div className="skeleton-card" style={{ height: 200 }}>
+            <div className="skeleton-box" style={{ height: 24, width: '50%' }} />
+            <div className="skeleton-box" style={{ height: 48, width: '100%' }} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -181,7 +199,11 @@ const VenueDetailPage = () => {
             </div>
 
             {slotsLoading ? (
-              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Calculating availability…</div>
+              <div className="slot-grid">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                  <div key={n} className="skeleton-box" style={{ height: 56, borderRadius: 'var(--radius-sm)' }} />
+                ))}
+              </div>
             ) : slots.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No slots available for this court on the selected date.</div>
             ) : (

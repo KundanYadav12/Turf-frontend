@@ -77,6 +77,13 @@ export default function RootLayout({ children }) {
 
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('turf_theme');if(!t){var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;t=prefersDark?'dark':'light';}document.documentElement.setAttribute('data-theme',t);document.documentElement.style.colorScheme=t;}catch(e){}})();`
+          }}
+        />
+      </head>
       <body suppressHydrationWarning>
         <script
           type="application/ld+json"

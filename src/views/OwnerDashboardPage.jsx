@@ -9,7 +9,7 @@ import TVDisplayManagementPanel from '../components/admin/TVDisplayManagementPan
 
 // Reusable KPI Card
 const KpiCard = ({ label, value, icon, iconBg, valueColor }) => (
-  <div className="glass-panel" style={{ padding: 'clamp(1rem, 2vw, 1.5rem)' }}>
+  <div className="glass-panel card-interactive" style={{ padding: 'clamp(1rem, 2vw, 1.5rem)' }}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
       <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{label}</span>
       <div style={{ background: iconBg, width: 34, height: 34, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -47,7 +47,28 @@ const OwnerDashboardPage = () => {
   };
 
   if (loading || !stats) {
-    return <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading Owner Console…</div>;
+    return (
+      <div className="container" style={{ padding: 'clamp(1.5rem, 3.5vw, 3rem) clamp(0.75rem, 2.5vw, 1.5rem)' }}>
+        <div style={{ marginBottom: '2rem' }}>
+          <div className="skeleton-box" style={{ height: 36, width: 320, marginBottom: '0.5rem' }} />
+          <div className="skeleton-box" style={{ height: 16, width: 220 }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+          {[1, 2, 3, 4].map(n => (
+            <div key={n} className="skeleton-card" style={{ height: 110 }}>
+              <div className="skeleton-box" style={{ height: 14, width: '60%' }} />
+              <div className="skeleton-box" style={{ height: 32, width: '40%' }} />
+            </div>
+          ))}
+        </div>
+        <div className="skeleton-card" style={{ height: 260 }}>
+          <div className="skeleton-box" style={{ height: 24, width: '30%', marginBottom: '1rem' }} />
+          <div className="skeleton-box" style={{ height: 40, width: '100%', marginBottom: '0.5rem' }} />
+          <div className="skeleton-box" style={{ height: 40, width: '100%', marginBottom: '0.5rem' }} />
+          <div className="skeleton-box" style={{ height: 40, width: '100%' }} />
+        </div>
+      </div>
+    );
   }
 
   return (

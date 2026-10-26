@@ -5,9 +5,11 @@ import axios from 'axios';
 import { socket } from '../services/socket';
 import {
   Trophy, ArrowLeft, Users, Zap, RotateCcw, Edit3, CheckCircle,
-  AlertCircle, Play, Shield, Clock, Award, Sparkles, ChevronRight
+  AlertCircle, Play, Shield, Clock, Award, Sparkles, ChevronRight,
+  Coffee
 } from 'lucide-react';
 import CourtView, { getServeState } from '../components/court/CourtView';
+import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi } from '../services/advertisementService';
 
 export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const routeParams = useParams();
@@ -22,9 +24,22 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const [lastEventType, setLastEventType] = useState(null);
   const [pointEvent, setPointEvent] = useState(null);
 
-  // Lineup selection state
+  // Match Break State
+  const [breakState, setBreakState] = useState({ isBreak: false, reason: 'Interval', durationMinutes: null });
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [breakReason, setBreakReason] = useState('Interval');
+  const [breakDuration, setBreakDuration] = useState('2');
+  const [breakActionLoading, setBreakActionLoading] = useState(false);
+
+  // Lineup selection and starting server state
   const [selectedLineupA, setSelectedLineupA] = useState([]);
   const [selectedLineupB, setSelectedLineupB] = useState([]);
+  const [playerA1, setPlayerA1] = useState('');
+  const [playerA2, setPlayerA2] = useState('');
+  const [playerB1, setPlayerB1] = useState('');
+  const [playerB2, setPlayerB2] = useState('');
+  const [startingServingTeam, setStartingServingTeam] = useState('teamA');
+  const [showLineupSetup, setShowLineupSetup] = useState(false);
 
   // Score correction modal
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
@@ -42,9 +57,17 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         if (d.lineup) {
           if (Array.isArray(d.lineup.teamA) && d.lineup.teamA.length > 0) {
             setSelectedLineupA(d.lineup.teamA);
+            setPlayerA1(typeof d.lineup.teamA[0] === 'string' ? d.lineup.teamA[0] : (d.lineup.teamA[0]?.name || ''));
+            if (d.lineup.teamA[1]) {
+              setPlayerA2(typeof d.lineup.teamA[1] === 'string' ? d.lineup.teamA[1] : (d.lineup.teamA[1]?.name || ''));
+            }
           }
           if (Array.isArray(d.lineup.teamB) && d.lineup.teamB.length > 0) {
             setSelectedLineupB(d.lineup.teamB);
+            setPlayerB1(typeof d.lineup.teamB[0] === 'string' ? d.lineup.teamB[0] : (d.lineup.teamB[0]?.name || ''));
+            if (d.lineup.teamB[1]) {
+              setPlayerB2(typeof d.lineup.teamB[1] === 'string' ? d.lineup.teamB[1] : (d.lineup.teamB[1]?.name || ''));
+            }
           }
         }
         setCorrectionScoreA(d.scores.teamA);
@@ -94,17 +117,89 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       }
     };
 
+    if (id) {
+      getMatchBreakApi(id).then(res => {
+        if (res?.success && res.data) {
+          setBreakState(res.data);
+        }
+      }).catch(() => {});
+    }
+
+    const handleBreakStart = (data) => {
+      if (!data) return;
+      const tId = data.matchId || data.id;
+      if (tId && String(tId) !== String(id)) return;
+      setBreakState({
+        isBreak: true,
+        reason: data.reason || 'Interval',
+        startedAt: data.startedAt,
+        expectedEndAt: data.expectedEndAt
+      });
+    };
+
+    const handleBreakEnd = (data) => {
+      if (data) {
+        const tId = data.matchId || data.id;
+        if (tId && String(tId) !== String(id)) return;
+      }
+      setBreakState({ isBreak: false, reason: '', startedAt: null, expectedEndAt: null });
+    };
+
     socket.on('match:pickleballScore', handleScore);
     socket.on('tournament:courtColorUpdated', handleCourtColor);
     socket.on('court:colorUpdated', handleCourtColor);
+    socket.on('match:break:start', handleBreakStart);
+    socket.on('match:break:end', handleBreakEnd);
+    socket.on('match:break_updated', handleBreakStart);
 
     return () => {
       socket.emit('leave:match', { matchId: id });
       socket.off('match:pickleballScore', handleScore);
       socket.off('tournament:courtColorUpdated', handleCourtColor);
       socket.off('court:colorUpdated', handleCourtColor);
+      socket.off('match:break:start', handleBreakStart);
+      socket.off('match:break:end', handleBreakEnd);
+      socket.off('match:break_updated', handleBreakStart);
     };
   }, [id, fetchState]);
+
+  const handleToggleBreak = async () => {
+    if (breakState.isBreak) {
+      setBreakActionLoading(true);
+      try {
+        await endMatchBreakApi(id);
+        setBreakState({ isBreak: false, reason: '', startedAt: null, expectedEndAt: null });
+        setSuccess('Match break ended. Live scoring active.');
+      } catch (err) {
+        setError('Failed to end match break.');
+      } finally {
+        setBreakActionLoading(false);
+      }
+    } else {
+      setShowBreakModal(true);
+    }
+  };
+
+  const handleConfirmStartBreak = async () => {
+    setBreakActionLoading(true);
+    try {
+      const durNum = breakDuration ? parseInt(breakDuration, 10) : null;
+      const res = await startMatchBreakApi(id, {
+        reason: breakReason,
+        durationMinutes: isNaN(durNum) ? null : durNum
+      });
+      if (res?.success && res.data) {
+        setBreakState(res.data);
+      }
+      setShowBreakModal(false);
+      setSuccess(`Match break started (${breakReason}). Stream viewers are now seeing sponsor ads.`);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to start match break.');
+    } finally {
+      setBreakActionLoading(false);
+    }
+  };
+
 
   // Set Lineup handler
   const handleSaveLineup = async () => {
@@ -112,13 +207,34 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     setError('');
     setSuccess('');
     try {
+      const isSingles = rules?.matchFormat === 'SINGLES';
+      const pA1 = playerA1.trim() || (typeof selectedLineupA[0] === 'string' ? selectedLineupA[0] : selectedLineupA[0]?.name) || `${state.teamA.name} 1`;
+      const pA2 = playerA2.trim() || (typeof selectedLineupA[1] === 'string' ? selectedLineupA[1] : selectedLineupA[1]?.name) || `${state.teamA.name} 2`;
+      const pB1 = playerB1.trim() || (typeof selectedLineupB[0] === 'string' ? selectedLineupB[0] : selectedLineupB[0]?.name) || `${state.teamB.name} 1`;
+      const pB2 = playerB2.trim() || (typeof selectedLineupB[1] === 'string' ? selectedLineupB[1] : selectedLineupB[1]?.name) || `${state.teamB.name} 2`;
+
+      const lineupA = isSingles
+        ? [{ name: pA1, startCourt: 'RIGHT' }]
+        : [
+            { name: pA1, startCourt: 'RIGHT' },
+            { name: pA2, startCourt: 'LEFT' }
+          ];
+      const lineupB = isSingles
+        ? [{ name: pB1, startCourt: 'RIGHT' }]
+        : [
+            { name: pB1, startCourt: 'RIGHT' },
+            { name: pB2, startCourt: 'LEFT' }
+          ];
+
       const res = await axios.post(`/api/matches/${id}/pickleball/lineup`, {
-        teamALineup: selectedLineupA,
-        teamBLineup: selectedLineupB
+        teamALineup: lineupA,
+        teamBLineup: lineupB,
+        startingServingTeam
       });
       if (res.data.success) {
         setState(res.data.data);
-        setSuccess('Active lineup confirmed successfully!');
+        setSuccess('Active lineup and starting servers confirmed successfully!');
+        setShowLineupSetup(false);
       }
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to set lineup.');
@@ -304,7 +420,20 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const { tournament, rules, teamA, teamB, scores, status, winner, resultSummary, lineup, logs } = state;
   const isSingles = rules.matchFormat === 'SINGLES';
   const expectedLineupCount = isSingles ? 1 : 2;
-  const isLineupReady = selectedLineupA.length === expectedLineupCount && selectedLineupB.length === expectedLineupCount;
+
+  const formatLineup = (teamLineup) => {
+    if (!teamLineup || !Array.isArray(teamLineup) || teamLineup.length === 0) return 'Lineup TBA';
+    return teamLineup.map(p => typeof p === 'string' ? p : (p.name || p.id)).join(' & ');
+  };
+
+  const isLineupReady = isSingles
+    ? Boolean((playerA1.trim() || selectedLineupA.length > 0) && (playerB1.trim() || selectedLineupB.length > 0))
+    : Boolean(
+        (playerA1.trim() || selectedLineupA[0]) &&
+        (playerA2.trim() || selectedLineupA[1]) &&
+        (playerB1.trim() || selectedLineupB[0]) &&
+        (playerB2.trim() || selectedLineupB[1])
+      );
 
   return (
     <div className="container scorer-page-wrapper" style={{ padding: 'clamp(1rem, 2vw, 2rem) 16px', maxWidth: '1080px', boxSizing: 'border-box', overflowX: 'hidden' }}>
@@ -383,7 +512,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
           </div>
 
           {/* Quick Action buttons */}
-          <div className="scorer-quick-actions" style={{ display: 'grid', gridTemplateColumns: status === 'LIVE' ? '1fr 1fr' : '1fr', gap: '0.5rem', width: '100%', maxWidth: '300px' }}>
+          <div className="scorer-quick-actions" style={{ display: 'grid', gridTemplateColumns: status === 'LIVE' ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: '0.5rem', width: '100%', maxWidth: '420px' }}>
             <button
               type="button"
               onClick={() => setShowCorrectionModal(true)}
@@ -404,7 +533,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                 width: '100%'
               }}
             >
-              <Edit3 size={15} style={{ flexShrink: 0 }} /> Correct Score
+              <Edit3 size={15} style={{ flexShrink: 0 }} /> Correct
             </button>
             {status === 'LIVE' && (
               <button
@@ -430,9 +559,37 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                   width: '100%'
                 }}
               >
-                <RotateCcw size={15} style={{ flexShrink: 0 }} /> Undo Point
+                <RotateCcw size={15} style={{ flexShrink: 0 }} /> Undo
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleToggleBreak}
+              disabled={breakActionLoading}
+              className="btn btn-outline btn-sm"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                minHeight: '40px',
+                height: '40px',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                padding: '0.45rem 0.65rem',
+                borderRadius: '10px',
+                background: breakState.isBreak ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
+                color: breakState.isBreak ? '#fbbf24' : '#f59e0b',
+                borderColor: breakState.isBreak ? '#fbbf24' : 'rgba(245, 158, 11, 0.4)',
+                boxSizing: 'border-box',
+                whiteSpace: 'nowrap',
+                width: '100%'
+              }}
+              title="Display Match Break ads & countdown on live stream"
+            >
+              <Coffee size={15} style={{ flexShrink: 0 }} />
+              {breakState.isBreak ? 'On Break' : 'Break'}
+            </button>
           </div>
         </div>
       </div>
@@ -504,9 +661,9 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                 whiteSpace: 'nowrap',
                 marginBottom: '0.25rem'
               }}
-              title={lineup.teamA && lineup.teamA.length > 0 ? lineup.teamA.join(' & ') : 'Lineup Not Set'}
+              title={formatLineup(lineup?.teamA)}
             >
-              {lineup.teamA && lineup.teamA.length > 0 ? lineup.teamA.join(' & ') : 'Lineup Not Set'}
+              {formatLineup(lineup?.teamA)}
             </div>
             <div
               className={winner === 'team_a' ? 'scorer-score-num-win-a' : 'scorer-score-num'}
@@ -622,9 +779,9 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                 whiteSpace: 'nowrap',
                 marginBottom: '0.25rem'
               }}
-              title={lineup.teamB && lineup.teamB.length > 0 ? lineup.teamB.join(' & ') : 'Lineup Not Set'}
+              title={formatLineup(lineup?.teamB)}
             >
-              {lineup.teamB && lineup.teamB.length > 0 ? lineup.teamB.join(' & ') : 'Lineup Not Set'}
+              {formatLineup(lineup?.teamB)}
             </div>
             <div
               className={winner === 'team_b' ? 'scorer-score-num-win-b' : 'scorer-score-num'}
@@ -684,8 +841,6 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
             lineup={lineup}
             scores={scores}
             scoreSummary={`${scores.teamA} - ${scores.teamB}`}
-            servingSide={scores.teamA % 2 === 0 ? 'team_a' : 'team_b'}
-            serverCourt={scores.teamA % 2 === 0 ? 'RIGHT' : 'LEFT'}
             courtColor={tournament?.courtColor || '#0d5c3a'}
             canEditColor={true}
             onColorChange={handleCourtColorChange}
@@ -708,6 +863,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               tournament,
               courtColor: tournament?.courtColor || '#0d5c3a',
               lineup,
+              logs: logs || state?.logs || [],
               _pointEvent: pointEvent,
               _lastEventType: lastEventType,
               _eventSeq: logs?.length || 1
@@ -716,101 +872,212 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         </div>
       </div>
 
-      {/* LINEUP SELECTION SECTION (When match has not started or can configure) */}
-      {status === 'SCHEDULED' || status === 'READY' ? (
-        <div className="scorer-panel" style={{ padding: '1.5rem', borderRadius: '16px', marginBottom: '1.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
-            <Users size={22} color="var(--accent-primary, #10b981)" />
-            <h3 className="scorer-text-heading" style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>
-              Select Active Lineup ({rules.matchFormat})
+      {/* LINEUP & STARTING SERVER CONFIGURATION (Inline Scorer Step) */}
+      <div className="scorer-panel" style={{ padding: '1.25rem 1.5rem', borderRadius: '16px', marginBottom: '1.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showLineupSetup ? '1rem' : 0, flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <Users size={20} color="var(--accent-primary, #10b981)" />
+            <h3 className="scorer-text-heading" style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
+              Lineup & Starting Court Setup ({rules.matchFormat})
             </h3>
+            {(!lineup?.teamA || lineup.teamA.length === 0) && (
+              <span className="badge badge-warning" style={{ fontSize: '0.72rem', fontWeight: 800 }}>
+                Lineup TBA
+              </span>
+            )}
           </div>
-          <p className="scorer-text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-            Choose exactly {expectedLineupCount} player{expectedLineupCount > 1 ? 's' : ''} from each team squad before starting the match.
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
-            {/* Team A Roster Checklist */}
-            <div className="scorer-subcard" style={{ padding: '1rem', borderRadius: '12px' }}>
-              <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.75rem 0', color: '#10b981' }}>
-                {teamA.name} Squad ({selectedLineupA.length}/{expectedLineupCount} Selected)
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }}>
-                {teamA.squad.map((player) => {
-                  const isChecked = selectedLineupA.includes(player.name);
-                  return (
-                    <label key={player.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.88rem', cursor: 'pointer', padding: '0.4rem 0.6rem', borderRadius: '6px', background: isChecked ? 'rgba(16,185,129,0.15)' : 'transparent' }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          if (isChecked) {
-                            setSelectedLineupA(selectedLineupA.filter(p => p !== player.name));
-                          } else {
-                            if (selectedLineupA.length < expectedLineupCount) {
-                              setSelectedLineupA([...selectedLineupA, player.name]);
-                            }
-                          }
-                        }}
-                      />
-                      <span>{player.name} {player.role === 'CAPTAIN' ? '(C)' : ''}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Team B Roster Checklist */}
-            <div className="scorer-subcard" style={{ padding: '1rem', borderRadius: '12px' }}>
-              <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.75rem 0', color: '#3b82f6' }}>
-                {teamB.name} Squad ({selectedLineupB.length}/{expectedLineupCount} Selected)
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }}>
-                {teamB.squad.map((player) => {
-                  const isChecked = selectedLineupB.includes(player.name);
-                  return (
-                    <label key={player.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.88rem', cursor: 'pointer', padding: '0.4rem 0.6rem', borderRadius: '6px', background: isChecked ? 'rgba(59,130,246,0.15)' : 'transparent' }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          if (isChecked) {
-                            setSelectedLineupB(selectedLineupB.filter(p => p !== player.name));
-                          } else {
-                            if (selectedLineupB.length < expectedLineupCount) {
-                              setSelectedLineupB([...selectedLineupB, player.name]);
-                            }
-                          }
-                        }}
-                      />
-                      <span>{player.name} {player.role === 'CAPTAIN' ? '(C)' : ''}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <button
-              onClick={handleSaveLineup}
-              disabled={actionLoading || !isLineupReady}
-              className="btn btn-outline"
-              style={{ flex: 1 }}
-            >
-              Confirm Lineup
-            </button>
-            <button
-              onClick={handleStartMatch}
-              disabled={actionLoading || !isLineupReady}
-              className="btn btn-primary"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-            >
-              <Play size={18} /> Start Match Live
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowLineupSetup(!showLineupSetup)}
+            className="btn btn-outline btn-sm"
+            style={{ fontSize: '0.8rem', fontWeight: 700, padding: '4px 12px' }}
+          >
+            {showLineupSetup ? 'Close Setup' : (lineup?.teamA && lineup.teamA.length > 0 ? 'Edit Lineup / Starting Server' : 'Set Lineup Now')}
+          </button>
         </div>
-      ) : null}
+
+        {(showLineupSetup || (!lineup?.teamA || lineup.teamA.length === 0) || status === 'SCHEDULED' || status === 'READY') && (
+          <div style={{ marginTop: '0.75rem' }}>
+            {/* First Serving Team Toggle */}
+            <div style={{ marginBottom: '1.25rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'var(--bg-secondary, rgba(0,0,0,0.03))', border: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '0.5rem' }}>
+                First Serving Team (Starts 0-0-2):
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setStartingServingTeam('teamA')}
+                  className={`btn ${startingServingTeam === 'teamA' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                  style={{ flex: 1, fontWeight: 800 }}
+                >
+                  🏸 {teamA.name} Serves First
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStartingServingTeam('teamB')}
+                  className={`btn ${startingServingTeam === 'teamB' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                  style={{ flex: 1, fontWeight: 800 }}
+                >
+                  🏸 {teamB.name} Serves First
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+              {/* Team A Court Positions */}
+              <div className="scorer-subcard" style={{ padding: '1rem', borderRadius: '12px' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 800, margin: '0 0 0.75rem 0', color: '#10b981' }}>
+                  {teamA.name} Positions
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                      {isSingles ? 'Starting Player (Right Court)' : 'Player 1 — Starts in Right Court (Server #1)'}
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Player Name"
+                      value={playerA1}
+                      onChange={(e) => setPlayerA1(e.target.value)}
+                      style={{ fontSize: '0.88rem', padding: '6px 10px' }}
+                    />
+                    {teamA.squad && teamA.squad.length > 0 && (
+                      <select
+                        className="form-control"
+                        style={{ fontSize: '0.78rem', marginTop: '4px', padding: '4px 8px' }}
+                        onChange={(e) => { if (e.target.value) setPlayerA1(e.target.value); }}
+                        value=""
+                      >
+                        <option value="">Choose from {teamA.name} squad…</option>
+                        {teamA.squad.map(sq => (
+                          <option key={sq.id} value={sq.name}>{sq.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {!isSingles && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                        Player 2 — Starts in Left Court
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Partner Name"
+                        value={playerA2}
+                        onChange={(e) => setPlayerA2(e.target.value)}
+                        style={{ fontSize: '0.88rem', padding: '6px 10px' }}
+                      />
+                      {teamA.squad && teamA.squad.length > 0 && (
+                        <select
+                          className="form-control"
+                          style={{ fontSize: '0.78rem', marginTop: '4px', padding: '4px 8px' }}
+                          onChange={(e) => { if (e.target.value) setPlayerA2(e.target.value); }}
+                          value=""
+                        >
+                          <option value="">Choose from {teamA.name} squad…</option>
+                          {teamA.squad.map(sq => (
+                            <option key={sq.id} value={sq.name}>{sq.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Team B Court Positions */}
+              <div className="scorer-subcard" style={{ padding: '1rem', borderRadius: '12px' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 800, margin: '0 0 0.75rem 0', color: '#3b82f6' }}>
+                  {teamB.name} Positions
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                      {isSingles ? 'Starting Player (Right Court)' : 'Player 1 — Starts in Right Court (Server #1)'}
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Player Name"
+                      value={playerB1}
+                      onChange={(e) => setPlayerB1(e.target.value)}
+                      style={{ fontSize: '0.88rem', padding: '6px 10px' }}
+                    />
+                    {teamB.squad && teamB.squad.length > 0 && (
+                      <select
+                        className="form-control"
+                        style={{ fontSize: '0.78rem', marginTop: '4px', padding: '4px 8px' }}
+                        onChange={(e) => { if (e.target.value) setPlayerB1(e.target.value); }}
+                        value=""
+                      >
+                        <option value="">Choose from {teamB.name} squad…</option>
+                        {teamB.squad.map(sq => (
+                          <option key={sq.id} value={sq.name}>{sq.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {!isSingles && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                        Player 2 — Starts in Left Court
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Partner Name"
+                        value={playerB2}
+                        onChange={(e) => setPlayerB2(e.target.value)}
+                        style={{ fontSize: '0.88rem', padding: '6px 10px' }}
+                      />
+                      {teamB.squad && teamB.squad.length > 0 && (
+                        <select
+                          className="form-control"
+                          style={{ fontSize: '0.78rem', marginTop: '4px', padding: '4px 8px' }}
+                          onChange={(e) => { if (e.target.value) setPlayerB2(e.target.value); }}
+                          value=""
+                        >
+                          <option value="">Choose from {teamB.name} squad…</option>
+                          {teamB.squad.map(sq => (
+                            <option key={sq.id} value={sq.name}>{sq.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleSaveLineup}
+                disabled={actionLoading || !isLineupReady}
+                className="btn btn-outline"
+                style={{ flex: 1, fontWeight: 800 }}
+              >
+                Confirm Lineup & Starting Server
+              </button>
+              {(status === 'SCHEDULED' || status === 'READY') && (
+                <button
+                  type="button"
+                  onClick={handleStartMatch}
+                  disabled={actionLoading || !isLineupReady}
+                  className="btn btn-primary"
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 800 }}
+                >
+                  <Play size={18} /> Start Match Live
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Point Scoring History / Audit Log */}
       <div className="scorer-panel" style={{ padding: '1.5rem', borderRadius: '16px' }}>
@@ -925,6 +1192,84 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                 style={{ flex: 1 }}
               >
                 Save Correction
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Break Start Modal */}
+      {showBreakModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}>
+          <div className="scorer-panel" style={{ borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 className="scorer-text-heading" style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Coffee size={20} color="#fbbf24" /> Start Match Break
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowBreakModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="scorer-text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem', lineHeight: 1.4 }}>
+              While the match is on break, live stream viewers will see your configured sponsor ad-break screen with a countdown. Video and audio continue streaming underneath without interruption.
+            </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading)' }}>
+                Break Reason
+              </label>
+              <select
+                value={breakReason}
+                onChange={(e) => setBreakReason(e.target.value)}
+                className="scorer-subcard"
+                style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '0.9rem' }}
+              >
+                <option value="Timeout">Timeout</option>
+                <option value="Interval">Interval / Water Break</option>
+                <option value="Game break">Game / Set Break</option>
+                <option value="Technical">Technical / Injury Break</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-heading)' }}>
+                Expected Duration
+              </label>
+              <select
+                value={breakDuration}
+                onChange={(e) => setBreakDuration(e.target.value)}
+                className="scorer-subcard"
+                style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '0.9rem' }}
+              >
+                <option value="1">1 Minute</option>
+                <option value="2">2 Minutes (Standard Timeout)</option>
+                <option value="3">3 Minutes</option>
+                <option value="5">5 Minutes (Extended Interval)</option>
+                <option value="">Manual (No Countdown)</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => setShowBreakModal(false)}
+                className="btn btn-outline"
+                style={{ flex: 1 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmStartBreak}
+                disabled={breakActionLoading}
+                className="btn btn-primary"
+                style={{ flex: 1, background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff', fontWeight: 800 }}
+              >
+                {breakActionLoading ? 'Starting…' : 'Start Break'}
               </button>
             </div>
           </div>

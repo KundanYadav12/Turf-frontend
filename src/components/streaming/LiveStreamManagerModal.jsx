@@ -8,8 +8,9 @@ import {
   Check, RefreshCw, Eye, EyeOff, Play, Pause, Square,
   Shield, AlertCircle, CheckCircle, Smartphone, ExternalLink,
   Layers, Volume2, VolumeX, RotateCw, Monitor, Sparkles,
-  Minimize2, Maximize2
+  Minimize2, Maximize2, Coffee, Clock
 } from 'lucide-react';
+import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi } from '../../services/advertisementService';
 
 export default function LiveStreamManagerModal({
   matchId,
@@ -53,8 +54,23 @@ export default function LiveStreamManagerModal({
 
   const [liveScore, setLiveScore] = useState(() => resolveScore(matchData));
 
-  // Sync real-time score in modal overlay
+  // Match Break State
+  const [breakState, setBreakState] = useState({ isBreak: false, reason: 'Interval', durationMinutes: null });
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [breakReason, setBreakReason] = useState('Interval');
+  const [breakDuration, setBreakDuration] = useState('2');
+  const [breakActionLoading, setBreakActionLoading] = useState(false);
+
+  // Sync real-time score & break state in modal
   useEffect(() => {
+    if (matchId) {
+      getMatchBreakApi(matchId).then(res => {
+        if (res?.success && res.data) {
+          setBreakState(res.data);
+        }
+      }).catch(() => {});
+    }
+
     const onScoreChange = (payload) => {
       if (!payload) return;
       const tId = payload.matchId || payload.matchUuid || payload.id;
@@ -69,16 +85,80 @@ export default function LiveStreamManagerModal({
       }
     };
 
+    const handleBreakStart = (data) => {
+      if (!data) return;
+      const tId = data.matchId || data.id;
+      if (tId && String(tId) !== String(matchId)) return;
+      setBreakState({
+        isBreak: true,
+        reason: data.reason || 'Interval',
+        startedAt: data.startedAt,
+        expectedEndAt: data.expectedEndAt
+      });
+    };
+
+    const handleBreakEnd = (data) => {
+      if (data) {
+        const tId = data.matchId || data.id;
+        if (tId && String(tId) !== String(matchId)) return;
+      }
+      setBreakState({ isBreak: false, reason: '', startedAt: null, expectedEndAt: null });
+    };
+
     socket.on('score:updated', onScoreChange);
     socket.on('match:pickleballScore', onScoreChange);
     socket.on('signage:matchUpdate', onScoreChange);
+    socket.on('match:break:start', handleBreakStart);
+    socket.on('match:break:end', handleBreakEnd);
+    socket.on('match:break_updated', handleBreakStart);
+    socket.on('stream:break_state', handleBreakStart);
 
     return () => {
       socket.off('score:updated', onScoreChange);
       socket.off('match:pickleballScore', onScoreChange);
       socket.off('signage:matchUpdate', onScoreChange);
+      socket.off('match:break:start', handleBreakStart);
+      socket.off('match:break:end', handleBreakEnd);
+      socket.off('match:break_updated', handleBreakStart);
+      socket.off('stream:break_state', handleBreakStart);
     };
   }, [matchId]);
+
+  const handleToggleBreak = async () => {
+    if (breakState.isBreak) {
+      setBreakActionLoading(true);
+      try {
+        await endMatchBreakApi(matchId);
+        setBreakState({ isBreak: false, reason: '', startedAt: null, expectedEndAt: null });
+      } catch (err) {
+        console.warn('End break error:', err);
+      } finally {
+        setBreakActionLoading(false);
+      }
+    } else {
+      setShowBreakModal(true);
+    }
+  };
+
+  const handleConfirmStartBreak = async () => {
+    setBreakActionLoading(true);
+    try {
+      const durNum = breakDuration ? parseInt(breakDuration, 10) : null;
+      const res = await startMatchBreakApi(matchId, {
+        reason: breakReason,
+        durationMinutes: isNaN(durNum) ? null : durNum
+      });
+      if (res?.success && res.data) {
+        setBreakState(res.data);
+      }
+      setShowBreakModal(false);
+    } catch (err) {
+      console.warn('Start break error:', err);
+    } finally {
+      setBreakActionLoading(false);
+    }
+  };
+
 
   const [activeTab, setActiveTab] = useState('mobile'); // 'mobile' | 'external' | 'youtube' | 'overlay'
   const [streamData, setStreamData] = useState(null);
@@ -1317,6 +1397,27 @@ export default function LiveStreamManagerModal({
                     {isAudioMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
                     {isAudioMuted ? 'Muted' : 'Mic Active'}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleBreak}
+                    disabled={breakActionLoading}
+                    className="btn btn-outline btn-sm"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      borderRadius: '8px',
+                      background: breakState.isBreak ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
+                      color: breakState.isBreak ? '#fbbf24' : 'inherit',
+                      borderColor: breakState.isBreak ? '#fbbf24' : 'inherit',
+                      fontWeight: 700
+                    }}
+                    title="Display Match Break sponsor ads & countdown to viewers"
+                  >
+                    <Coffee size={14} />
+                    {breakState.isBreak ? '⏸️ On Break • End' : 'Break'}
+                  </button>
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1717,6 +1818,126 @@ export default function LiveStreamManagerModal({
           )}
         </div>
       </div>
+
+      {/* Break Config Modal */}
+      {showBreakModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+        >
+          <div
+            style={{
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '16px',
+              padding: '1.5rem',
+              maxWidth: '420px',
+              width: '100%',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Coffee size={18} color="#fbbf24" /> Start Match Break
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowBreakModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 1rem 0', fontSize: '0.84rem', color: '#94a3b8', lineHeight: 1.4 }}>
+              While the match is on break, live stream viewers will see your configured sponsor ad-break screen with a countdown. Video and audio stream continue uninterrupted.
+            </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.35rem' }}>
+                Break Reason
+              </label>
+              <select
+                value={breakReason}
+                onChange={(e) => setBreakReason(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  background: '#1e293b',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  fontSize: '0.85rem'
+                }}
+              >
+                <option value="Timeout">Timeout</option>
+                <option value="Interval">Interval / Water Break</option>
+                <option value="Game break">Game / Set Break</option>
+                <option value="Technical">Technical / Injury Break</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.35rem' }}>
+                Expected Duration
+              </label>
+              <select
+                value={breakDuration}
+                onChange={(e) => setBreakDuration(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  background: '#1e293b',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  fontSize: '0.85rem'
+                }}
+              >
+                <option value="1">1 Minute</option>
+                <option value="2">2 Minutes (Standard Timeout)</option>
+                <option value="3">3 Minutes</option>
+                <option value="5">5 Minutes (Extended Interval)</option>
+                <option value="">Manual (No Countdown)</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowBreakModal(false)}
+                className="btn btn-secondary btn-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmStartBreak}
+                disabled={breakActionLoading}
+                className="btn btn-primary btn-sm"
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  color: '#ffffff',
+                  fontWeight: 800
+                }}
+              >
+                {breakActionLoading ? 'Starting…' : 'Start Break Mode'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

@@ -9,13 +9,29 @@ const Footer = () => {
 
           {/* Brand */}
           <div>
-            <div className="brand-logo" style={{ marginBottom: '0.85rem' }}>
-              <Trophy size={24} color="var(--accent-primary)" />
-              <span>TurfSpot</span>
+            <div className="brand-logo" style={{ marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div style={{
+                width: 34,
+                height: 34,
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(132, 204, 22, 0.2))',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Trophy size={18} color="var(--accent-primary)" />
+              </div>
+              <span style={{ fontWeight: 800 }}>TurfSpot</span>
             </div>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: '1.6', maxWidth: 320 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: '1.6', maxWidth: 320, marginBottom: '0.85rem' }}>
               The complete sports booking, turf management, team organizing, and match scoring SaaS platform.
             </p>
+            <div className="sports-status-chip">
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-primary)', display: 'inline-block' }} />
+              <span>All Systems Operational</span>
+            </div>
           </div>
 
           {/* Sports */}

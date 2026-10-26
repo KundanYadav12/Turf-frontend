@@ -144,9 +144,10 @@ export default function MobileAdStrip({
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '0 8px',
+          padding: '0 16px',
           boxSizing: 'border-box',
-          flexShrink: 0
+          flexShrink: 0,
+          gap: '8px'
         }}
       >
         {(ad.imageUrl || ad.image_url) ? (
@@ -154,8 +155,8 @@ export default function MobileAdStrip({
             src={ad.imageUrl || ad.image_url}
             alt={ad.title || 'Sponsor Ad'}
             style={{
-              height: `calc(100% - 8px)`,
-              maxHeight: `${Math.max(28, height - 8)}px`,
+              height: `calc(100% - 10px)`,
+              maxHeight: `${Math.max(28, height - 10)}px`,
               width: 'auto',
               objectFit: fit,
               borderRadius: '6px',
@@ -177,6 +178,23 @@ export default function MobileAdStrip({
             {ad.title}
           </div>
         )}
+        <span
+          style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: theme === 'dark' ? '#94a3b8' : '#64748b',
+            background: theme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+            padding: '2px 5px',
+            borderRadius: '4px',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}
+        >
+          Ad
+        </span>
       </div>
     );
 
@@ -218,8 +236,9 @@ export default function MobileAdStrip({
         backdropFilter: 'blur(10px)',
         WebkitBackdropFilter: 'blur(10px)',
         borderTop: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 4px)',
         boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.35)',
+        boxSizing: 'border-box',
         ...style
       }
     : {
@@ -230,6 +249,7 @@ export default function MobileAdStrip({
         overflow: 'hidden',
         marginBottom: '0.85rem',
         boxShadow: '0 2px 10px rgba(0, 0, 0, 0.15)',
+        boxSizing: 'border-box',
         ...style
       };
 
@@ -296,7 +316,9 @@ export default function MobileAdStrip({
             overflow: 'hidden',
             position: 'relative',
             display: 'flex',
-            alignItems: 'center'
+            alignItems: 'center',
+            paddingRight: isBottom ? '44px' : '0',
+            boxSizing: 'border-box'
           }}
         >
           <div

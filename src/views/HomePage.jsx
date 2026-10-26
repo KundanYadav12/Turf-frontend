@@ -172,14 +172,26 @@ const HomePage = () => {
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading sports arenas…</div>
+          <div className="venue-grid">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="skeleton-card" style={{ height: 320 }}>
+                <div className="skeleton-box" style={{ height: 160, width: '100%', borderRadius: 'var(--radius-sm)' }} />
+                <div className="skeleton-box" style={{ height: 22, width: '70%' }} />
+                <div className="skeleton-box" style={{ height: 16, width: '45%' }} />
+                <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="skeleton-box" style={{ height: 24, width: '30%' }} />
+                  <div className="skeleton-box" style={{ height: 32, width: '35%', borderRadius: 'var(--radius-sm)' }} />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="venue-grid">
             {featuredVenues.map((v) => (
               <div
                 key={v.id}
                 onClick={() => navigate(`/venue/${v.slug || v.id}`)}
-                className="glass-panel venue-card"
+                className="glass-panel venue-card card-interactive"
                 style={{ cursor: 'pointer' }}
               >
                 <div className="venue-card-image">

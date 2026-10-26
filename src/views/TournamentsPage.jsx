@@ -160,8 +160,22 @@ const TournamentsPage = () => {
 
       {/* Tournaments Grid (Minimal Summary Cards) */}
       {loading && tournaments.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3.5rem', color: 'var(--text-muted, #94a3b8)' }}>
-          Loading tournaments...
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 290px), 1fr))',
+          gap: '1.25rem'
+        }}>
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="skeleton-card" style={{ height: 290 }}>
+              <div className="skeleton-box" style={{ height: 110, width: '100%', borderRadius: 'var(--radius-sm)' }} />
+              <div className="skeleton-box" style={{ height: 22, width: '75%' }} />
+              <div className="skeleton-box" style={{ height: 14, width: '50%' }} />
+              <div className="skeleton-box" style={{ height: 14, width: '60%' }} />
+              <div style={{ marginTop: 'auto', display: 'flex', gap: '0.5rem' }}>
+                <div className="skeleton-box" style={{ height: 32, flex: 1, borderRadius: 'var(--radius-sm)' }} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : tournaments.length === 0 ? (
         <div style={{
@@ -211,7 +225,7 @@ const TournamentsPage = () => {
           {tournaments.map((t) => (
             <div
               key={t.id}
-              className="tournament-card"
+              className="tournament-card card-interactive"
             >
               {/* Banner / Header */}
               <div style={{

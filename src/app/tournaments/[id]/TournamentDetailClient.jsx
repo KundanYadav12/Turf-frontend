@@ -16,7 +16,7 @@ import {
   Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft,
   Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv,
   ChevronRight, Trash2, Search, Check, Filter, X, ClipboardList, Settings, AlertTriangle, Info, Clock, ExternalLink,
-  Eye, Activity, Video
+  Eye, Activity, Video, Lock
 } from 'lucide-react';
 import TeamRosterDrawer from '../../../components/tournament/TeamRosterDrawer';
 import PlayerRegistrationsManager from '../../../components/tournament/PlayerRegistrationsManager';
@@ -129,12 +129,55 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   // Module D: Live match display selection state
   const [displayUpdating, setDisplayUpdating] = useState(false);
 
+  // Standings freeze and recalculate state
+  const [freezeSubmitting, setFreezeSubmitting] = useState(false);
+  const [recalcSubmitting, setRecalcSubmitting] = useState(false);
+
   // Redux live matches with stable selector and memoization
   const liveMatchIds = useSelector((state) => state.tournament?.liveMatchesByTournament?.[tournamentId] || EMPTY_ARRAY);
   const liveMatchesById = useSelector((state) => state.tournament?.liveMatchesById);
   const liveMatches = useMemo(() => (liveMatchIds || []).map((mId) => liveMatchesById?.[mId]).filter(Boolean), [liveMatchIds, liveMatchesById]);
 
   const isPickleball = tournament?.sport?.slug === 'pickleball' || tournament?.name?.toLowerCase().includes('pickleball');
+
+  const handleToggleFreezeStandings = async () => {
+    if (!canManage) return;
+    const targetState = !Boolean(standings?.isFrozen || tournament?.is_standings_frozen);
+    const confirmMsg = targetState
+      ? 'Freeze the tournament points table? This will permanently lock and stabilize the final standings from any further automatic modifications.'
+      : 'Unfreeze the points table? Standings will resume dynamic live calculation.';
+    if (!window.confirm(confirmMsg)) return;
+
+    setFreezeSubmitting(true);
+    try {
+      const res = await axios.post(`/api/tournaments/${tournamentId}/standings/freeze`, { freeze: targetState });
+      if (res.data.success) {
+        setStandings(res.data.data);
+        setTournament(prev => ({ ...prev, is_standings_frozen: targetState ? 1 : 0 }));
+      }
+    } catch (err) {
+      console.error('Failed to toggle standings freeze:', err);
+      alert(err?.response?.data?.message || 'Failed to update standings freeze state.');
+    } finally {
+      setFreezeSubmitting(false);
+    }
+  };
+
+  const handleRecalculateStandings = async () => {
+    if (!canManage) return;
+    setRecalcSubmitting(true);
+    try {
+      const res = await axios.post(`/api/tournaments/${tournamentId}/standings/recalculate`);
+      if (res.data.success) {
+        setStandings(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to recalculate standings:', err);
+      alert(err?.response?.data?.message || 'Failed to recalculate standings.');
+    } finally {
+      setRecalcSubmitting(false);
+    }
+  };
 
   // Load Tab Data dynamically
   const loadTabData = useCallback(async (isBackground = false) => {
@@ -1414,9 +1457,30 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: 'var(--text-heading)' }}>
-                  Pickleball Group Points Table
-                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-heading)' }}>
+                    {tournament?.sport?.name ? `${tournament.sport.name} Group Points Table` : 'Tournament Points Table'}
+                  </h3>
+                  {(standings?.isFrozen || tournament?.is_standings_frozen || tournament?.status === 'COMPLETED') && (
+                    <span
+                      className="badge"
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        color: '#38bdf8',
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                        fontWeight: 800,
+                        fontSize: '0.75rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        letterSpacing: '0.03em'
+                      }}
+                      title="Points table is permanently locked and frozen with official final results"
+                    >
+                      <Lock size={12} /> FROZEN • OFFICIAL FINAL STANDINGS
+                    </span>
+                  )}
+                </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <span className="badge" style={{ background: 'var(--slot-available-bg, rgba(16,185,129,0.12))', color: 'var(--accent-primary, #059669)', border: '1px solid var(--border-glow, rgba(16,185,129,0.3))', fontWeight: 700 }}>
                     1. Most Wins
@@ -1433,14 +1497,46 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 </div>
               </div>
 
-              <button
-                onClick={loadTabData}
-                disabled={loadingTab}
-                className="btn btn-outline btn-sm"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                <RefreshCw size={14} /> Refresh
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {canManage && (
+                  <>
+                    <button
+                      onClick={handleToggleFreezeStandings}
+                      disabled={freezeSubmitting}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        color: (standings?.isFrozen || tournament?.is_standings_frozen) ? '#38bdf8' : 'var(--text-secondary)',
+                        borderColor: (standings?.isFrozen || tournament?.is_standings_frozen) ? 'rgba(56, 189, 248, 0.4)' : 'var(--border-color)'
+                      }}
+                      title="Freeze or unfreeze standings after tournament"
+                    >
+                      <Lock size={13} />
+                      {freezeSubmitting ? 'Updating...' : (standings?.isFrozen || tournament?.is_standings_frozen) ? 'Unfreeze Standings' : 'Freeze Standings'}
+                    </button>
+                    <button
+                      onClick={handleRecalculateStandings}
+                      disabled={recalcSubmitting}
+                      className="btn btn-outline btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                      title="Authoritatively recalculate all scores and rankings"
+                    >
+                      <Zap size={13} /> {recalcSubmitting ? 'Calculating...' : 'Recalculate'}
+                    </button>
+                  </>
+                )}
+
+                <button
+                  onClick={loadTabData}
+                  disabled={loadingTab}
+                  className="btn btn-outline btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <RefreshCw size={14} /> Refresh
+                </button>
+              </div>
             </div>
 
             {loadingTab && !standings ? (

@@ -71,7 +71,20 @@ const Navbar = () => {
         <div className="container nav-content">
           {/* Brand Logo */}
           <Link to="/" className="brand-logo" onClick={() => setIsMobileMenuOpen(false)}>
-            <Trophy size={28} color="#10b981" />
+            <div style={{
+              width: 36,
+              height: 36,
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(132, 204, 22, 0.2))',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 16px rgba(16, 185, 129, 0.25)',
+              flexShrink: 0
+            }}>
+              <Trophy size={20} color="var(--accent-primary, #10b981)" />
+            </div>
             <span>TurfSpot</span>
           </Link>
 
@@ -146,7 +159,7 @@ const Navbar = () => {
                       <LayoutDashboard size={16} /> Owner
                     </Link>
                   )}
-                  {user?.role === 'ADMIN' && (
+                  {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
                     <Link to="/admin/dashboard" className="btn btn-secondary btn-sm">
                       <Shield size={16} /> Admin
                     </Link>
@@ -227,8 +240,20 @@ const Navbar = () => {
           <div className="mobile-nav-drawer" role="dialog" aria-modal="true">
             {/* Drawer Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.25rem' }}>
-              <div className="brand-logo" style={{ fontSize: '1.3rem' }}>
-                <Trophy size={24} color="#10b981" />
+              <div className="brand-logo" style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(132, 204, 22, 0.2))',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Trophy size={18} color="var(--accent-primary, #10b981)" />
+                </div>
                 <span>TurfSpot</span>
               </div>
               <button
@@ -296,7 +321,7 @@ const Navbar = () => {
                       <LayoutDashboard size={16} /> Owner Dashboard
                     </Link>
                   )}
-                  {user?.role === 'ADMIN' && (
+                  {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
                     <Link
                       to="/admin/dashboard"
                       className="btn btn-secondary"

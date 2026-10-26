@@ -55,3 +55,32 @@ export const controlAdsAdminApi = async (action, payload = {}) => {
   const response = await API.post('/advertisements/control', { action, payload });
   return response.data;
 };
+
+export const getStreamAdsApi = async ({ matchId = null, tournamentId = null, venueId = null } = {}) => {
+  const params = new URLSearchParams();
+  if (matchId) params.append('matchId', matchId);
+  if (tournamentId) params.append('tournamentId', tournamentId);
+  if (venueId) params.append('venueId', venueId);
+  const qs = params.toString();
+  const url = qs ? `/advertisements/stream?${qs}` : '/advertisements/stream';
+  const response = await API.get(url);
+  return response.data;
+};
+
+export const getMatchBreakApi = async (matchId) => {
+  if (!matchId) return { success: false, data: { isBreak: false } };
+  const response = await API.get(`/matches/${matchId}/break`);
+  return response.data;
+};
+
+export const startMatchBreakApi = async (matchId, { reason = 'Interval', durationMinutes = null } = {}) => {
+  if (!matchId) return { success: false };
+  const response = await API.post(`/matches/${matchId}/break/start`, { reason, durationMinutes });
+  return response.data;
+};
+
+export const endMatchBreakApi = async (matchId) => {
+  if (!matchId) return { success: false };
+  const response = await API.post(`/matches/${matchId}/break/end`);
+  return response.data;
+};

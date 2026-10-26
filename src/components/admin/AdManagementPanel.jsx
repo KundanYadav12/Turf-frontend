@@ -66,6 +66,11 @@ const inputStyle = {
 
 const PRESET_SIZES = [
   { id: 'RESPONSIVE', label: 'Responsive (Auto Fit Container)', width: '100%', height: 'auto', fit: 'contain' },
+  { id: 'STREAM_TOP_STRIP', label: 'Stream Top Strip (Full Width × 48px)', width: '100%', height: '48px', fit: 'contain' },
+  { id: 'STREAM_BOTTOM_STRIP', label: 'Stream Bottom Strip (Full Width × 52px)', width: '100%', height: '52px', fit: 'contain' },
+  { id: 'STREAM_SIDEBAR_LEFT', label: 'Stream Left Sidebar (140px × 100%)', width: '140px', height: '100%', fit: 'contain' },
+  { id: 'STREAM_SIDEBAR_RIGHT', label: 'Stream Right Sidebar (140px × 100%)', width: '140px', height: '100%', fit: 'contain' },
+  { id: 'STREAM_BREAK_CARD', label: 'Stream Match Break Card (Full Player 16:9)', width: '100%', height: '100%', fit: 'contain' },
   { id: 'MOBILE_TOP_STRIP', label: 'Mobile Top Strip (720px × 120px / ~64px)', width: '100%', height: '64px', fit: 'contain' },
   { id: 'MOBILE_BOTTOM_STRIP', label: 'Mobile Bottom Strip (720px × 110px / ~56px)', width: '100%', height: '56px', fit: 'contain' },
   { id: 'COURT_MIDDLE_STRIP', label: 'Court Middle Strip (Vertical Beside Net ~80×240px)', width: '80px', height: '240px', fit: 'cover' },
@@ -103,7 +108,19 @@ const AdManagementPanel = () => {
     portraitZoneSettings: { topHeight: 160, bottomHeight: 80, sidebarStripHeight: 90, sidebarsMode: 'STRIP' },
     venuePortraitZoneSettings: {},
     mobileZoneSettings: { topHeight: 64, bottomHeight: 56, topSpeed: 50, bottomSpeed: 40 },
-    venueMobileZoneSettings: {}
+    venueMobileZoneSettings: {},
+    streamZoneSettings: {
+      topHeight: 48,
+      bottomHeight: 52,
+      leftWidth: 140,
+      rightWidth: 140,
+      topSpeed: 45,
+      bottomSpeed: 45,
+      rotateInterval: 6,
+      breakInterval: 5,
+      hideSidebarsOnMobile: true
+    },
+    venueStreamZoneSettings: {}
   });
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -442,6 +459,138 @@ const AdManagementPanel = () => {
     }
   };
 
+  // Active Stream Zone Sizes (resolved per venue with global fallback)
+  const currentStreamZoneSizes = useMemo(() => {
+    const defaults = {
+      topHeight: 48,
+      bottomHeight: 52,
+      leftWidth: 140,
+      rightWidth: 140,
+      topSpeed: 45,
+      bottomSpeed: 45,
+      rotateInterval: 6,
+      breakInterval: 5,
+      hideSidebarsOnMobile: true
+    };
+    const globalZones = { ...defaults, ...(playbackState?.streamZoneSettings || {}) };
+    if (venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL') {
+      const vSettings = playbackState?.venueStreamZoneSettings?.[String(venueFilter)];
+      return { ...globalZones, ...(vSettings || {}) };
+    }
+    return globalZones;
+  }, [playbackState, venueFilter]);
+
+  const handleStreamZoneSizeChange = async (zoneKey, value) => {
+    const isBool = typeof value === 'boolean';
+    const numVal = isBool ? value : parseInt(value, 10);
+    if (!isBool && isNaN(numVal)) return;
+
+    setPlaybackState(prev => {
+      const isVenueSpecific = venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL';
+      const defaults = {
+        topHeight: 48,
+        bottomHeight: 52,
+        leftWidth: 140,
+        rightWidth: 140,
+        topSpeed: 45,
+        bottomSpeed: 45,
+        rotateInterval: 6,
+        breakInterval: 5,
+        hideSidebarsOnMobile: true
+      };
+      if (isVenueSpecific) {
+        const vKey = String(venueFilter);
+        return {
+          ...prev,
+          venueStreamZoneSettings: {
+            ...prev.venueStreamZoneSettings,
+            [vKey]: {
+              ...(prev.venueStreamZoneSettings?.[vKey] || prev.streamZoneSettings || defaults),
+              [zoneKey]: numVal
+            }
+          }
+        };
+      }
+      return {
+        ...prev,
+        streamZoneSettings: {
+          ...(prev.streamZoneSettings || defaults),
+          [zoneKey]: numVal
+        }
+      };
+    });
+
+    try {
+      await controlAdsAdminApi('UPDATE_ZONE_SIZES', {
+        venueId: venueFilter,
+        isStream: true,
+        orientation: 'STREAM',
+        sizes: { [zoneKey]: numVal }
+      });
+    } catch (err) {
+      console.warn('Stream zone size update error:', err);
+    }
+  };
+
+  const handleResetStreamZone = async (zoneKey) => {
+    const defaults = {
+      topHeight: 48,
+      bottomHeight: 52,
+      leftWidth: 140,
+      rightWidth: 140,
+      topSpeed: 45,
+      bottomSpeed: 45,
+      rotateInterval: 6,
+      breakInterval: 5,
+      hideSidebarsOnMobile: true
+    };
+    const defaultVal = defaults[zoneKey] !== undefined ? defaults[zoneKey] : 48;
+
+    setPlaybackState(prev => {
+      const isVenueSpecific = venueFilter && venueFilter !== 'ALL' && venueFilter !== 'GLOBAL';
+      if (isVenueSpecific) {
+        const vKey = String(venueFilter);
+        if (zoneKey === 'ALL') {
+          const nextVenueSettings = { ...(prev.venueStreamZoneSettings || {}) };
+          delete nextVenueSettings[vKey];
+          return { ...prev, venueStreamZoneSettings: nextVenueSettings };
+        }
+        return {
+          ...prev,
+          venueStreamZoneSettings: {
+            ...prev.venueStreamZoneSettings,
+            [vKey]: {
+              ...(prev.venueStreamZoneSettings?.[vKey] || prev.streamZoneSettings || defaults),
+              [zoneKey]: defaultVal
+            }
+          }
+        };
+      }
+      if (zoneKey === 'ALL') {
+        return { ...prev, streamZoneSettings: { ...defaults } };
+      }
+      return {
+        ...prev,
+        streamZoneSettings: {
+          ...(prev.streamZoneSettings || defaults),
+          [zoneKey]: defaultVal
+        }
+      };
+    });
+
+    try {
+      await controlAdsAdminApi('RESET_ZONE_SIZE', {
+        venueId: venueFilter,
+        isStream: true,
+        orientation: 'STREAM',
+        zone: zoneKey
+      });
+      showToast(`Reset stream ${zoneKey} to default`);
+    } catch (err) {
+      console.warn('Stream zone reset error:', err);
+    }
+  };
+
   const handleZoneSizeChange = async (zoneKey, value) => {
     const numVal = parseInt(value, 10);
     if (isNaN(numVal)) return;
@@ -573,23 +722,102 @@ const AdManagementPanel = () => {
     const isCourtMiddle = initialPosition === 'COURT_MIDDLE';
     const isMobileTop = initialPosition === 'MOBILE_TOP';
     const isMobileBottom = initialPosition === 'MOBILE_BOTTOM';
+    const isStreamTop = initialPosition === 'STREAM_TOP';
+    const isStreamBottom = initialPosition === 'STREAM_BOTTOM';
+    const isStreamLeft = initialPosition === 'STREAM_LEFT';
+    const isStreamRight = initialPosition === 'STREAM_RIGHT';
+    const isStreamBreak = initialPosition === 'STREAM_BREAK';
+
+    let defaultPreset = 'RESPONSIVE';
+    let defaultWidth = '100%';
+    let defaultHeight = 'auto';
+    let defaultWidthVal = 100;
+    let defaultWidthUnit = '%';
+    let defaultHeightVal = 76;
+    let defaultHeightUnit = 'px';
+    let defaultFit = 'contain';
+    let defaultMotion = 'STATIC';
+    let defaultDir = 'RIGHT_TO_LEFT';
+    let defaultSpeed = 25;
+    let defaultDevices = ['MOBILE', 'TV', 'SIGNAGE'];
+
+    if (isCourtMiddle) {
+      defaultPreset = 'COURT_MIDDLE_STRIP';
+      defaultWidth = '80px';
+      defaultHeight = '240px';
+      defaultWidthVal = 80;
+      defaultWidthUnit = 'px';
+      defaultHeightVal = 240;
+      defaultFit = 'cover';
+    } else if (isMobileTop) {
+      defaultPreset = 'MOBILE_TOP_STRIP';
+      defaultHeight = '64px';
+      defaultHeightVal = 64;
+      defaultMotion = 'SCROLL';
+      defaultSpeed = 50;
+      defaultDevices = ['MOBILE'];
+    } else if (isMobileBottom) {
+      defaultPreset = 'MOBILE_BOTTOM_STRIP';
+      defaultHeight = '56px';
+      defaultHeightVal = 56;
+      defaultMotion = 'SCROLL';
+      defaultDir = 'LEFT_TO_RIGHT';
+      defaultSpeed = 40;
+      defaultDevices = ['MOBILE'];
+    } else if (isStreamTop) {
+      defaultPreset = 'STREAM_TOP_STRIP';
+      defaultHeight = '48px';
+      defaultHeightVal = 48;
+      defaultMotion = 'SCROLL';
+      defaultSpeed = 45;
+    } else if (isStreamBottom) {
+      defaultPreset = 'STREAM_BOTTOM_STRIP';
+      defaultHeight = '52px';
+      defaultHeightVal = 52;
+      defaultMotion = 'SCROLL';
+      defaultDir = 'LEFT_TO_RIGHT';
+      defaultSpeed = 45;
+    } else if (isStreamLeft) {
+      defaultPreset = 'STREAM_SIDEBAR_LEFT';
+      defaultWidth = '140px';
+      defaultWidthVal = 140;
+      defaultWidthUnit = 'px';
+      defaultHeight = '100%';
+      defaultHeightVal = 100;
+      defaultHeightUnit = '%';
+    } else if (isStreamRight) {
+      defaultPreset = 'STREAM_SIDEBAR_RIGHT';
+      defaultWidth = '140px';
+      defaultWidthVal = 140;
+      defaultWidthUnit = 'px';
+      defaultHeight = '100%';
+      defaultHeightVal = 100;
+      defaultHeightUnit = '%';
+    } else if (isStreamBreak) {
+      defaultPreset = 'STREAM_BREAK_CARD';
+      defaultWidth = '100%';
+      defaultHeight = '100%';
+      defaultHeightVal = 100;
+      defaultHeightUnit = '%';
+      defaultFit = 'contain';
+    }
 
     setFormData({
       title: '',
       description: '',
       linkUrl: '',
       position: initialPosition,
-      sizePreset: isCourtMiddle ? 'COURT_MIDDLE_STRIP' : isMobileTop ? 'MOBILE_TOP_STRIP' : isMobileBottom ? 'MOBILE_BOTTOM_STRIP' : 'RESPONSIVE',
-      width: isCourtMiddle ? '80px' : '100%',
-      height: isCourtMiddle ? '240px' : isMobileTop ? '64px' : isMobileBottom ? '56px' : 'auto',
-      widthUnit: isCourtMiddle ? 'px' : '%',
-      widthValue: isCourtMiddle ? 80 : 100,
-      heightUnit: 'px',
-      heightValue: isCourtMiddle ? 240 : isMobileTop ? 64 : isMobileBottom ? 56 : 76,
-      imageFit: isCourtMiddle ? 'cover' : 'contain',
-      motionType: isMobileTop || isMobileBottom ? 'SCROLL' : 'STATIC',
-      movementDirection: isMobileBottom ? 'LEFT_TO_RIGHT' : 'RIGHT_TO_LEFT',
-      speed: isMobileTop ? 50 : isMobileBottom ? 40 : 25,
+      sizePreset: defaultPreset,
+      width: defaultWidth,
+      height: defaultHeight,
+      widthUnit: defaultWidthUnit,
+      widthValue: defaultWidthVal,
+      heightUnit: defaultHeightUnit,
+      heightValue: defaultHeightVal,
+      imageFit: defaultFit,
+      motionType: defaultMotion,
+      movementDirection: defaultDir,
+      speed: defaultSpeed,
       slideInterval: 6,
       pauseOnHover: true,
       venueIds: [],
@@ -600,7 +828,7 @@ const AdManagementPanel = () => {
       status: 'ACTIVE',
       targetPage: 'ALL',
       deviceTarget: 'ALL',
-      devices: isMobileTop || isMobileBottom ? ['MOBILE'] : ['MOBILE', 'TV', 'SIGNAGE'],
+      devices: defaultDevices,
       imageFile: null
     });
     setFormImagePreview('');
@@ -679,6 +907,21 @@ const AdManagementPanel = () => {
       } else if (preset.id === 'MOBILE_BOTTOM_STRIP') {
         nextPos = 'MOBILE_BOTTOM';
         nextMotion = 'SCROLL';
+      } else if (preset.id === 'STREAM_TOP_STRIP') {
+        nextPos = 'STREAM_TOP';
+        nextMotion = 'SCROLL';
+      } else if (preset.id === 'STREAM_BOTTOM_STRIP') {
+        nextPos = 'STREAM_BOTTOM';
+        nextMotion = 'SCROLL';
+      } else if (preset.id === 'STREAM_SIDEBAR_LEFT') {
+        nextPos = 'STREAM_LEFT';
+        nextMotion = 'STATIC';
+      } else if (preset.id === 'STREAM_SIDEBAR_RIGHT') {
+        nextPos = 'STREAM_RIGHT';
+        nextMotion = 'STATIC';
+      } else if (preset.id === 'STREAM_BREAK_CARD') {
+        nextPos = 'STREAM_BREAK';
+        nextMotion = 'STATIC';
       } else if (preset.id === 'COURT_MIDDLE_STRIP') {
         nextPos = 'COURT_MIDDLE';
         nextMotion = 'STATIC';
@@ -834,6 +1077,154 @@ const AdManagementPanel = () => {
   const courtMiddleAds = filterAds(ads.filter(a => a.position === 'COURT_MIDDLE' || a.position === 'court_middle'));
   const mobileTopAds = filterAds(ads.filter(a => a.position === 'MOBILE_TOP' || a.position === 'mobile_top'));
   const mobileBottomAds = filterAds(ads.filter(a => a.position === 'MOBILE_BOTTOM' || a.position === 'mobile_bottom'));
+  const streamTopAds = filterAds(ads.filter(a => a.position === 'STREAM_TOP' || a.position === 'stream_top'));
+  const streamBottomAds = filterAds(ads.filter(a => a.position === 'STREAM_BOTTOM' || a.position === 'stream_bottom'));
+  const streamLeftAds = filterAds(ads.filter(a => a.position === 'STREAM_LEFT' || a.position === 'stream_left'));
+  const streamRightAds = filterAds(ads.filter(a => a.position === 'STREAM_RIGHT' || a.position === 'stream_right'));
+  const streamBreakAds = filterAds(ads.filter(a => a.position === 'STREAM_BREAK' || a.position === 'stream_break'));
+
+  const renderStreamTable = (tableTitle, adsList, positionKey, accentColor) => (
+    <div style={{ marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor }} />
+          <h4 style={{ fontSize: '0.95rem', margin: 0, fontWeight: 800, color: '#f8fafc' }}>
+            {tableTitle}
+          </h4>
+        </div>
+        <button
+          type="button"
+          onClick={() => openCreateModal(positionKey)}
+          className="btn btn-sm"
+          style={{ fontSize: '0.75rem', padding: '3px 8px', background: 'rgba(255,255,255,0.06)', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 4 }}
+        >
+          <Plus size={12} /> Add {positionKey.replace('STREAM_', '')} Ad
+        </button>
+      </div>
+
+      {adsList.length === 0 ? (
+        <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 10, fontSize: '0.84rem' }}>
+          No {tableTitle} configured yet. Click &quot;Add {positionKey.replace('STREAM_', '')} Ad&quot; to create one.
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Preview</th>
+                <th>Title</th>
+                <th>Preset / Sizing</th>
+                <th>Fit</th>
+                <th>Motion</th>
+                <th>Tournament</th>
+                <th>Venue</th>
+                <th>Device</th>
+                <th>Order</th>
+                <th>Schedule</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adsList.map(ad => (
+                <tr key={ad.id}>
+                  <td>
+                    <img
+                      src={ad.imageUrl}
+                      alt={ad.title}
+                      onClick={() => setPreviewModal(ad)}
+                      style={{ width: 70, height: 32, objectFit: ad.imageFit || 'contain', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.4)' }}
+                    />
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 700 }}>{ad.title}</div>
+                    {ad.description && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.description}</div>}
+                    {ad.linkUrl && <div style={{ fontSize: '0.68rem', color: '#60a5fa', textDecoration: 'underline' }}>{ad.linkUrl}</div>}
+                  </td>
+                  <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {ad.sizePreset || 'CUSTOM'}
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{ad.width || '100%'} × {ad.height || 'auto'}</div>
+                  </td>
+                  <td>
+                    <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
+                      {ad.imageFit || 'contain'}
+                    </span>
+                  </td>
+                  <td>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: accentColor }}>
+                      {ad.motionType || 'STATIC'} {ad.motionType === 'SCROLL' ? (ad.movementDirection === 'LEFT_TO_RIGHT' ? '(LTR)' : '(RTL)') : ''}
+                    </span>
+                  </td>
+                  <td>
+                    {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                      <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                        All Tournaments
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                        {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {!ad.venueIds || ad.venueIds.length === 0 ? (
+                      <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
+                        All Venues
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                        {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-main)', fontWeight: 600 }}>
+                      {ad.devices && ad.devices.length ? ad.devices.join(', ') : 'All Devices'}
+                    </span>
+                  </td>
+                  <td style={{ fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
+                    {ad.sortOrder ?? 0}
+                  </td>
+                  <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
+                  </td>
+                  <td>
+                    <span
+                      onClick={() => handleToggleStatus(ad)}
+                      style={{
+                        cursor: 'pointer',
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                        color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
+                      }}
+                    >
+                      {ad.status}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
+                        <Eye size={14} />
+                      </button>
+                      <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -1103,6 +1494,8 @@ const AdManagementPanel = () => {
                     handleResetPortraitZone('ALL');
                   } else if (zoneOrientationTab === 'MOBILE') {
                     handleResetMobileZone('ALL');
+                  } else if (zoneOrientationTab === 'STREAM') {
+                    handleResetStreamZone('ALL');
                   } else {
                     handleResetZone('ALL');
                   }
@@ -1111,12 +1504,12 @@ const AdManagementPanel = () => {
                 style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                 title="Reset all zones to default sizes"
               >
-                Reset All Zones ({zoneOrientationTab === 'PORTRAIT' ? 'Portrait' : zoneOrientationTab === 'MOBILE' ? 'Mobile' : 'Landscape'})
+                Reset All Zones ({zoneOrientationTab === 'PORTRAIT' ? 'Portrait' : zoneOrientationTab === 'MOBILE' ? 'Mobile' : zoneOrientationTab === 'STREAM' ? 'Stream' : 'Landscape'})
               </button>
             </div>
           </div>
 
-          {/* Orientation Mode Switcher: Landscape (16:9) vs Portrait (9:16) vs Mobile (Live Viewer) */}
+          {/* Orientation Mode Switcher: Landscape (16:9) vs Portrait (9:16) vs Mobile (Live Viewer) vs Stream */}
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -1174,6 +1567,25 @@ const AdManagementPanel = () => {
               }}
             >
               📲 Mobile (Live Viewer Strips)
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoneOrientationTab('STREAM')}
+              style={{
+                background: zoneOrientationTab === 'STREAM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: zoneOrientationTab === 'STREAM' ? '#10b981' : '#94a3b8',
+                border: `1px solid ${zoneOrientationTab === 'STREAM' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              🎥 Stream (Live Match Viewer)
             </button>
           </div>
 
@@ -1726,7 +2138,7 @@ const AdManagementPanel = () => {
               </div>
             </div>
           </div>
-          ) : (
+          ) : zoneOrientationTab === 'MOBILE' ? (
           /* ── MOBILE (LIVE VIEWER STRIPS) AD ZONES & PHONE MINI-PREVIEW ── */
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', alignItems: 'center' }}>
             {/* Left Column: Mobile Sliders & Inputs */}
@@ -2068,6 +2480,433 @@ const AdManagementPanel = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
                 Mobile Live Viewer WebSocket sync active
+              </div>
+            </div>
+          </div>
+          ) : (
+          /* ── STREAM (LIVE STREAM PLAYER) AD ZONES & 16:9 PLAYER MINI-PREVIEW ── */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', alignItems: 'center' }}>
+            {/* Left Column: Stream Sliders & Numeric Inputs */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              {/* Stream Top Strip Height */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.65rem 0.9rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Layers size={13} color="#ef4444" /> Stream Top Strip Height
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <input
+                      type="number"
+                      min={30}
+                      max={120}
+                      value={currentStreamZoneSizes.topHeight}
+                      onChange={(e) => handleStreamZoneSizeChange('topHeight', e.target.value)}
+                      style={{ ...inputStyle, width: '65px', padding: '3px 6px', fontSize: '0.8rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>px</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetStreamZone('topHeight')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.68rem', padding: '2px 6px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (48)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={120}
+                  step={2}
+                  value={currentStreamZoneSizes.topHeight}
+                  onChange={(e) => handleStreamZoneSizeChange('topHeight', e.target.value)}
+                  style={{ width: '100%', accentColor: '#ef4444', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Stream Top Speed */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.65rem 0.9rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Move size={13} color="#ef4444" /> Top Strip Scroll Speed
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <input
+                      type="number"
+                      min={15}
+                      max={150}
+                      value={currentStreamZoneSizes.topSpeed || 45}
+                      onChange={(e) => handleStreamZoneSizeChange('topSpeed', e.target.value)}
+                      style={{ ...inputStyle, width: '65px', padding: '3px 6px', fontSize: '0.8rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>px/s</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetStreamZone('topSpeed')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.68rem', padding: '2px 6px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (45)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={15}
+                  max={150}
+                  step={5}
+                  value={currentStreamZoneSizes.topSpeed || 45}
+                  onChange={(e) => handleStreamZoneSizeChange('topSpeed', e.target.value)}
+                  style={{ width: '100%', accentColor: '#ef4444', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Stream Bottom Strip Height */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.65rem 0.9rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Layers size={13} color="#f59e0b" /> Stream Bottom Strip Height
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <input
+                      type="number"
+                      min={30}
+                      max={120}
+                      value={currentStreamZoneSizes.bottomHeight}
+                      onChange={(e) => handleStreamZoneSizeChange('bottomHeight', e.target.value)}
+                      style={{ ...inputStyle, width: '65px', padding: '3px 6px', fontSize: '0.8rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>px</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetStreamZone('bottomHeight')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.68rem', padding: '2px 6px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (52)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={120}
+                  step={2}
+                  value={currentStreamZoneSizes.bottomHeight}
+                  onChange={(e) => handleStreamZoneSizeChange('bottomHeight', e.target.value)}
+                  style={{ width: '100%', accentColor: '#f59e0b', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Stream Bottom Speed */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.65rem 0.9rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Move size={13} color="#f59e0b" /> Bottom Strip Scroll Speed
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <input
+                      type="number"
+                      min={15}
+                      max={150}
+                      value={currentStreamZoneSizes.bottomSpeed || 45}
+                      onChange={(e) => handleStreamZoneSizeChange('bottomSpeed', e.target.value)}
+                      style={{ ...inputStyle, width: '65px', padding: '3px 6px', fontSize: '0.8rem', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>px/s</span>
+                    <button
+                      type="button"
+                      onClick={() => handleResetStreamZone('bottomSpeed')}
+                      className="btn btn-sm"
+                      style={{ fontSize: '0.68rem', padding: '2px 6px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+                    >
+                      Reset (45)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={15}
+                  max={150}
+                  step={5}
+                  value={currentStreamZoneSizes.bottomSpeed || 45}
+                  onChange={(e) => handleStreamZoneSizeChange('bottomSpeed', e.target.value)}
+                  style={{ width: '100%', accentColor: '#f59e0b', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Left & Right Sidebar Widths in 2 columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                {/* Left Width */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <ArrowLeft size={12} color="#3b82f6" /> Left Width
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <input
+                        type="number"
+                        min={80}
+                        max={260}
+                        value={currentStreamZoneSizes.leftWidth}
+                        onChange={(e) => handleStreamZoneSizeChange('leftWidth', e.target.value)}
+                        style={{ ...inputStyle, width: '56px', padding: '2px 4px', fontSize: '0.78rem', textAlign: 'right' }}
+                      />
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>px</span>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={80}
+                    max={260}
+                    step={5}
+                    value={currentStreamZoneSizes.leftWidth}
+                    onChange={(e) => handleStreamZoneSizeChange('leftWidth', e.target.value)}
+                    style={{ width: '100%', accentColor: '#3b82f6', cursor: 'pointer' }}
+                  />
+                </div>
+
+                {/* Right Width */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <ArrowRight size={12} color="#3b82f6" /> Right Width
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <input
+                        type="number"
+                        min={80}
+                        max={260}
+                        value={currentStreamZoneSizes.rightWidth}
+                        onChange={(e) => handleStreamZoneSizeChange('rightWidth', e.target.value)}
+                        style={{ ...inputStyle, width: '56px', padding: '2px 4px', fontSize: '0.78rem', textAlign: 'right' }}
+                      />
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>px</span>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={80}
+                    max={260}
+                    step={5}
+                    value={currentStreamZoneSizes.rightWidth}
+                    onChange={(e) => handleStreamZoneSizeChange('rightWidth', e.target.value)}
+                    style={{ width: '100%', accentColor: '#3b82f6', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+
+              {/* Intervals (Sidebar Rotate & Break Crossfade) in 2 columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f8fafc', display: 'block', marginBottom: '0.2rem' }}>
+                    Sidebar Rotate: {currentStreamZoneSizes.rotateInterval}s
+                  </label>
+                  <input
+                    type="range"
+                    min={3}
+                    max={30}
+                    step={1}
+                    value={currentStreamZoneSizes.rotateInterval}
+                    onChange={(e) => handleStreamZoneSizeChange('rotateInterval', e.target.value)}
+                    style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
+                  />
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f8fafc', display: 'block', marginBottom: '0.2rem' }}>
+                    Break Crossfade: {currentStreamZoneSizes.breakInterval}s
+                  </label>
+                  <input
+                    type="range"
+                    min={3}
+                    max={20}
+                    step={1}
+                    value={currentStreamZoneSizes.breakInterval}
+                    onChange={(e) => handleStreamZoneSizeChange('breakInterval', e.target.value)}
+                    style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+
+              {/* Mobile Portrait toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', color: '#cbd5e1', cursor: 'pointer', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.8rem', borderRadius: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={currentStreamZoneSizes.hideSidebarsOnMobile !== false}
+                  onChange={(e) => handleStreamZoneSizeChange('hideSidebarsOnMobile', e.target.checked)}
+                  style={{ accentColor: '#10b981', cursor: 'pointer' }}
+                />
+                Auto-hide Left &amp; Right stream sidebars on small mobile portrait screens
+              </label>
+            </div>
+
+            {/* Right Column: Live 16:9 Stream Player Mockup */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.5px' }}>
+                LIVE STREAM PLAYER MOCKUP (16:9 BROADCAST)
+              </div>
+              <div
+                style={{
+                  width: '380px',
+                  maxWidth: '100%',
+                  height: '240px',
+                  borderRadius: '12px',
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  boxShadow: '0 16px 36px rgba(0,0,0,0.6)',
+                  background: '#040711',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                {/* Top Stream Strip */}
+                {playbackState.adsEnabled ? (
+                  <div style={{
+                    height: `${Math.max(20, Math.min(38, (currentStreamZoneSizes.topHeight / 48) * 26))}px`,
+                    background: 'rgba(239, 68, 68, 0.22)',
+                    borderBottom: '1px solid rgba(239, 68, 68, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#f87171',
+                    fontSize: '0.56rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.4px',
+                    flexShrink: 0,
+                    textAlign: 'center',
+                    padding: '0 6px'
+                  }}>
+                    STREAM TOP ({currentStreamZoneSizes.topHeight}px · {currentStreamZoneSizes.topSpeed || 45}px/s · RTL)
+                  </div>
+                ) : (
+                  <div style={{ height: 16, background: 'rgba(239,68,68,0.1)', color: '#f87171', fontSize: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    ADS STOPPED
+                  </div>
+                )}
+
+                {/* Middle Row: Left Sidebar + Center Video + Right Sidebar */}
+                <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+                  {/* Left Sidebar */}
+                  {playbackState.adsEnabled && (
+                    <div style={{
+                      width: `${Math.max(38, Math.min(65, (currentStreamZoneSizes.leftWidth / 140) * 48))}px`,
+                      background: 'rgba(59, 130, 246, 0.22)',
+                      borderRight: '1px solid rgba(59, 130, 246, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#60a5fa',
+                      fontSize: '0.52rem',
+                      fontWeight: 800,
+                      writingMode: 'vertical-rl',
+                      textAlign: 'center',
+                      flexShrink: 0
+                    }}>
+                      LEFT ({currentStreamZoneSizes.leftWidth}px)
+                    </div>
+                  )}
+
+                  {/* Center Video Area */}
+                  <div style={{
+                    flex: 1,
+                    background: 'radial-gradient(circle at center, #1e293b 0%, #090d16 100%)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    padding: '8px'
+                  }}>
+                    {/* Top video controls header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.55rem', fontWeight: 800, background: '#dc2626', color: '#fff', padding: '1px 5px', borderRadius: 3 }}>
+                        ● LIVE
+                      </span>
+                      <span style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.7)', background: 'rgba(0,0,0,0.5)', padding: '1px 5px', borderRadius: 3 }}>
+                        👁️ 2 Viewers
+                      </span>
+                    </div>
+
+                    {/* Court net visual representation in background */}
+                    <div style={{ textAlign: 'center', opacity: 0.25, fontSize: '1.4rem' }}>🎾</div>
+
+                    {/* Lower-third Scoreboard Overlay Mockup */}
+                    <div style={{
+                      background: 'rgba(10, 15, 29, 0.92)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e' }} />
+                        <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#fff' }}>Team A (A1)</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 900, color: '#22c55e', background: 'rgba(34,197,94,0.15)', padding: '1px 6px', borderRadius: 4 }}>
+                        13 - 12
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#fff' }}>Team B (A3)</span>
+                        <span style={{ fontSize: '0.5rem', fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.08)', padding: '1px 3px', borderRadius: 3 }}>G1</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Sidebar */}
+                  {playbackState.adsEnabled && (
+                    <div style={{
+                      width: `${Math.max(38, Math.min(65, (currentStreamZoneSizes.rightWidth / 140) * 48))}px`,
+                      background: 'rgba(59, 130, 246, 0.22)',
+                      borderLeft: '1px solid rgba(59, 130, 246, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#60a5fa',
+                      fontSize: '0.52rem',
+                      fontWeight: 800,
+                      writingMode: 'vertical-rl',
+                      textAlign: 'center',
+                      flexShrink: 0
+                    }}>
+                      RIGHT ({currentStreamZoneSizes.rightWidth}px)
+                    </div>
+                  )}
+                </div>
+
+                {/* Bottom Stream Strip */}
+                {playbackState.adsEnabled ? (
+                  <div style={{
+                    height: `${Math.max(22, Math.min(40, (currentStreamZoneSizes.bottomHeight / 52) * 28))}px`,
+                    background: 'rgba(245, 158, 11, 0.22)',
+                    borderTop: '1px solid rgba(245, 158, 11, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fbbf24',
+                    fontSize: '0.56rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.4px',
+                    flexShrink: 0,
+                    textAlign: 'center',
+                    padding: '0 6px'
+                  }}>
+                    STREAM BOTTOM ({currentStreamZoneSizes.bottomHeight}px · {currentStreamZoneSizes.bottomSpeed || 45}px/s · LTR)
+                  </div>
+                ) : (
+                  <div style={{ height: 16, background: 'rgba(245,158,11,0.1)', color: '#fbbf24', fontSize: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    ADS STOPPED
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                Stream Player WebSocket sync active
               </div>
             </div>
           </div>
@@ -2984,6 +3823,57 @@ const AdManagementPanel = () => {
         </div>
       </div>
 
+      {/* ── 6. STREAMING SCREEN ADS (LIVE MATCH VIEWER) ── */}
+      <div className="glass-panel" style={{ padding: '1.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Layers size={18} color="#3b82f6" /> Streaming Screen Ads (Live Stream Viewer Player)
+            </h3>
+            <p style={{ margin: '0.25rem 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Managed sponsor ads around and over the live video player (Top, Bottom, Left, Right) and full-player Match Break sponsor carousels.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {streamTopAds.length} Top
+            </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {streamBottomAds.length} Bottom
+            </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(59,130,246,0.15)', color: '#60a5fa', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {streamLeftAds.length} Left · {streamRightAds.length} Right
+            </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(139,92,246,0.15)', color: '#a78bfa', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {streamBreakAds.length} Break
+            </span>
+            <button
+              type="button"
+              onClick={() => openCreateModal('STREAM_TOP')}
+              className="btn btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+            >
+              <Plus size={15} /> Configure &amp; Upload Ad
+            </button>
+          </div>
+        </div>
+
+        {/* 6A. Stream Top Strip Ads */}
+        {renderStreamTable('6A. Stream Top Strip (Marquee above video)', streamTopAds, 'STREAM_TOP', '#ef4444')}
+
+        {/* 6B. Stream Bottom Strip Ads */}
+        {renderStreamTable('6B. Stream Bottom Strip (Marquee below video)', streamBottomAds, 'STREAM_BOTTOM', '#f59e0b')}
+
+        {/* 6C. Stream Left Sidebar Ads */}
+        {renderStreamTable('6C. Stream Left Sidebar (Vertical dock left of video)', streamLeftAds, 'STREAM_LEFT', '#3b82f6')}
+
+        {/* 6D. Stream Right Sidebar Ads */}
+        {renderStreamTable('6D. Stream Right Sidebar (Vertical dock right of video)', streamRightAds, 'STREAM_RIGHT', '#3b82f6')}
+
+        {/* 6E. Stream Match Break Ads */}
+        {renderStreamTable('6E. Stream Match Break (Full-player sponsor carousel on timeout/interval)', streamBreakAds, 'STREAM_BREAK', '#8b5cf6')}
+      </div>
+
       {/* ── ADVANCED AD CONFIGURATION / UPLOAD MODAL ── */}
       {modalOpen && (
         <div style={{
@@ -3115,6 +4005,17 @@ const AdManagementPanel = () => {
                       } else if (nextPos === 'MOBILE_BOTTOM') {
                         nextMotion = 'SCROLL';
                         nextDir = 'LEFT_TO_RIGHT';
+                      } else if (nextPos === 'STREAM_TOP') {
+                        nextMotion = 'SCROLL';
+                        nextDir = 'RIGHT_TO_LEFT';
+                      } else if (nextPos === 'STREAM_BOTTOM') {
+                        nextMotion = 'SCROLL';
+                        nextDir = 'LEFT_TO_RIGHT';
+                      } else if (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') {
+                        nextMotion = 'STATIC';
+                        nextDir = 'BOTTOM_TO_TOP';
+                      } else if (nextPos === 'STREAM_BREAK') {
+                        nextMotion = 'STATIC';
                       } else if (nextPos === 'COURT_MIDDLE') {
                         nextMotion = 'STATIC';
                         nextDir = 'RIGHT_TO_LEFT';
@@ -3127,12 +4028,14 @@ const AdManagementPanel = () => {
                         position: nextPos,
                         motionType: nextMotion,
                         movementDirection: nextDir,
-                        height: nextPos === 'MOBILE_TOP' ? '64px' : nextPos === 'MOBILE_BOTTOM' ? '56px' : nextPos === 'COURT_MIDDLE' ? '240px' : prev.height,
-                        heightValue: nextPos === 'MOBILE_TOP' ? 64 : nextPos === 'MOBILE_BOTTOM' ? 56 : nextPos === 'COURT_MIDDLE' ? 240 : prev.heightValue,
-                        width: nextPos === 'COURT_MIDDLE' ? '80px' : prev.width,
-                        widthValue: nextPos === 'COURT_MIDDLE' ? 80 : prev.widthValue,
-                        widthUnit: nextPos === 'COURT_MIDDLE' ? 'px' : prev.widthUnit,
-                        imageFit: nextPos === 'COURT_MIDDLE' ? 'cover' : prev.imageFit
+                        height: nextPos === 'MOBILE_TOP' ? '64px' : nextPos === 'MOBILE_BOTTOM' ? '56px' : nextPos === 'STREAM_TOP' ? '48px' : nextPos === 'STREAM_BOTTOM' ? '52px' : nextPos === 'STREAM_BREAK' ? '100%' : nextPos === 'COURT_MIDDLE' ? '240px' : prev.height,
+                        heightValue: nextPos === 'MOBILE_TOP' ? 64 : nextPos === 'MOBILE_BOTTOM' ? 56 : nextPos === 'STREAM_TOP' ? 48 : nextPos === 'STREAM_BOTTOM' ? 52 : nextPos === 'STREAM_BREAK' ? 100 : nextPos === 'COURT_MIDDLE' ? 240 : prev.heightValue,
+                        heightUnit: nextPos === 'STREAM_BREAK' ? '%' : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? '%' : prev.heightUnit,
+                        width: nextPos === 'COURT_MIDDLE' ? '80px' : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? '140px' : nextPos === 'STREAM_BREAK' ? '100%' : prev.width,
+                        widthValue: nextPos === 'COURT_MIDDLE' ? 80 : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? 140 : nextPos === 'STREAM_BREAK' ? 100 : prev.widthValue,
+                        widthUnit: nextPos === 'COURT_MIDDLE' || nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT' ? 'px' : prev.widthUnit,
+                        imageFit: nextPos === 'COURT_MIDDLE' ? 'cover' : nextPos === 'STREAM_BREAK' ? 'contain' : prev.imageFit,
+                        sizePreset: nextPos === 'STREAM_TOP' ? 'STREAM_TOP_STRIP' : nextPos === 'STREAM_BOTTOM' ? 'STREAM_BOTTOM_STRIP' : nextPos === 'STREAM_LEFT' ? 'STREAM_SIDEBAR_LEFT' : nextPos === 'STREAM_RIGHT' ? 'STREAM_SIDEBAR_RIGHT' : nextPos === 'STREAM_BREAK' ? 'STREAM_BREAK_CARD' : prev.sizePreset
                       }));
                     }}
                     style={{ ...selectStyle, width: '100%' }}
@@ -3146,6 +4049,11 @@ const AdManagementPanel = () => {
                     <option value="COURT_MIDDLE" style={optionStyle}>Court Middle Strip (Vertical Beside Net)</option>
                     <option value="MOBILE_TOP" style={optionStyle}>Mobile Top (Right → Left)</option>
                     <option value="MOBILE_BOTTOM" style={optionStyle}>Mobile Bottom (Left → Right)</option>
+                    <option value="STREAM_TOP" style={optionStyle}>Stream Top (Above Viewer Video Player)</option>
+                    <option value="STREAM_BOTTOM" style={optionStyle}>Stream Bottom (Below Viewer Video Player)</option>
+                    <option value="STREAM_LEFT" style={optionStyle}>Stream Left Sidebar (Beside Viewer Video)</option>
+                    <option value="STREAM_RIGHT" style={optionStyle}>Stream Right Sidebar (Beside Viewer Video)</option>
+                    <option value="STREAM_BREAK" style={optionStyle}>Stream Match Break (Full-Player Sponsor Card)</option>
                   </select>
                 </div>
 
@@ -3498,6 +4406,22 @@ const AdManagementPanel = () => {
                     gap: 6
                   }}>
                     💡 <strong>Recommended Mobile Creative Size:</strong> 720×120px banner (aspect ratio ~6:1) for sharp retina display on mobile viewer screens.
+                  </div>
+                )}
+                {formData.position.startsWith('STREAM_') && (
+                  <div style={{
+                    marginTop: '0.6rem',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    fontSize: '0.82rem',
+                    color: '#60a5fa',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    🎥 <strong>Live Stream Placement:</strong> Displays directly on/around the viewer stream player with instant WebSocket sync. Does not disturb, reload, or rebuffer video playback.
                   </div>
                 )}
               </div>

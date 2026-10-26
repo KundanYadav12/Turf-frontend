@@ -274,6 +274,15 @@ export default function CourtView({
 
     const prev = prevCourtRef.current || courtState;
     const isScoreChanged = courtState.scoreA !== prev.scoreA || courtState.scoreB !== prev.scoreB;
+    const isSideOut = Boolean(courtState.isSideOut);
+    const isServerChange = Boolean(courtState.isServerChange);
+    const isForward = (
+      isScoreChanged ||
+      isSideOut ||
+      isServerChange ||
+      (courtState.eventSeq && prev.eventSeq && courtState.eventSeq > prev.eventSeq) ||
+      unifiedMatch._lastEventType === 'POINT'
+    );
     const isUndo = (
       unifiedMatch._lastEventType === 'UNDO' ||
       courtState.scoreA < prev.scoreA ||
@@ -303,8 +312,10 @@ export default function CourtView({
     }
 
     // ── SCENARIO B: FORWARD POINT CHOREOGRAPHY ──
-    if (isScoreChanged) {
-      const scoringTeam = courtState.scoreA > prev.scoreA ? 'teamA' : 'teamB';
+    if (isForward) {
+      const scoringTeam = isScoreChanged
+        ? (courtState.scoreA > prev.scoreA ? 'teamA' : 'teamB')
+        : null;
       const isWinner = courtState.isMatchWon || courtState.winner;
 
       // Calculate from and to service boxes from previous state
@@ -314,20 +325,51 @@ export default function CourtView({
       const toBoxName = prev.serveState?.targetBoxName || (fromBoxName === 'bottom-left' ? 'top-right' : fromBoxName === 'top-left' ? 'bottom-right' : fromBoxName === 'top-right' ? 'bottom-left' : 'top-left');
       const newServingBoxName = courtState.serveState?.servingBoxName || 'bottom-left';
 
-      // Play continuous 60fps rally flight if not already triggered by socket pointEvent
+      // Did the serving team win the rally?
+      // In rally scoring, winning team is scoringTeam.
+      // In side-out scoring: if score changed, serving team won. If score didn't change (side-out/server change), receiving team won rally.
+      const isServingTeamWinner = isScoreChanged
+        ? (scoringTeam === prev.servingTeam)
+        : false;
+
+      // Play continuous 60fps rally flight
       if (!isBallAnimating) {
-        playPointRally(fromBoxName, toBoxName, newServingBoxName);
+        playPointRally(fromBoxName, toBoxName, newServingBoxName, {
+          isServingTeamWinner,
+          scoringTeam,
+          eventSeq: courtState.eventSeq
+        });
       }
 
       // Celebrations and cues
-      setScoringGlow(scoringTeam);
-      setScorePop(true);
-      setFloatingPlusOne({
-        side: scoringTeam,
-        x: scoringTeam === 'teamA' ? 200 : 600,
-        y: 80,
-        text: `+1 ${courtState[scoringTeam].name}`
-      });
+      if (isScoreChanged && scoringTeam) {
+        setScoringGlow(scoringTeam);
+        setScorePop(true);
+        setFloatingPlusOne({
+          side: scoringTeam,
+          x: scoringTeam === 'teamA' ? 200 : 600,
+          y: 80,
+          text: `+1 ${courtState[scoringTeam]?.name || 'Point'}`
+        });
+      } else if (isSideOut) {
+        const curServingSide = courtState.teamSides[courtState.servingTeam] || 'LEFT';
+        setFloatingPlusOne({
+          side: courtState.servingTeam,
+          x: curServingSide === 'LEFT' ? 200 : 600,
+          y: 80,
+          text: 'SIDE OUT',
+          isSideOut: true
+        });
+      } else if (isServerChange) {
+        const curServingSide = courtState.teamSides[courtState.servingTeam] || 'LEFT';
+        setFloatingPlusOne({
+          side: courtState.servingTeam,
+          x: curServingSide === 'LEFT' ? 200 : 600,
+          y: 80,
+          text: `SERVER #${courtState.serverNumber || 2}`,
+          isServerChange: true
+        });
+      }
 
       if (isWinner) {
         setCelebrationActive(true);
@@ -436,6 +478,10 @@ export default function CourtView({
         @keyframes rippleOut {
           0% { transform: scale(0.2); opacity: 0.9; }
           100% { transform: scale(2.2); opacity: 0; }
+        }
+        @keyframes dashMove {
+          from { stroke-dashoffset: 20; }
+          to { stroke-dashoffset: 0; }
         }
         @media (prefers-reduced-motion: reduce) {
           .court-visualization-container * {
@@ -609,21 +655,29 @@ export default function CourtView({
           }} />
         )}
 
-        {/* Floating +1 Pill */}
+        {/* Floating +1 / Side Out / Server #2 Pill */}
         {floatingPlusOne && (
           <div style={{
             position: 'absolute',
             top: `${floatingPlusOne.y}px`,
             left: `${floatingPlusOne.x}px`,
             transform: 'translate(-50%, 0)',
-            background: 'rgba(16, 185, 129, 0.95)',
+            background: floatingPlusOne.isSideOut
+              ? 'rgba(245, 158, 11, 0.95)'
+              : floatingPlusOne.isServerChange
+                ? 'rgba(2, 132, 199, 0.95)'
+                : 'rgba(16, 185, 129, 0.95)',
             color: '#ffffff',
-            padding: '3px 12px',
+            padding: '4px 14px',
             borderRadius: '20px',
             fontWeight: 900,
             fontSize: '0.82rem',
-            letterSpacing: '0.04em',
-            boxShadow: '0 4px 15px rgba(16, 185, 129, 0.5)',
+            letterSpacing: '0.05em',
+            boxShadow: floatingPlusOne.isSideOut
+              ? '0 4px 18px rgba(245, 158, 11, 0.55)'
+              : floatingPlusOne.isServerChange
+                ? '0 4px 18px rgba(2, 132, 199, 0.55)'
+                : '0 4px 18px rgba(16, 185, 129, 0.55)',
             zIndex: 12,
             animation: 'floatPlusOne 1.4s ease-out forwards',
             pointerEvents: 'none'
@@ -738,6 +792,9 @@ export default function CourtView({
             <filter id="ballShadowFilter" x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
             </filter>
+            <marker id="arrowHead" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+              <polygon points="0 0, 6 3, 0 6" fill="#38bdf8" />
+            </marker>
           </defs>
 
           {/* Outer Boundary Frame (800x400: inner 740x350 from 30,25) */}
@@ -798,6 +855,21 @@ export default function CourtView({
             style={{ transition: 'all 0.4s ease' }}
           />
 
+          {/* Directional Service Arrow connecting Server Box to Diagonal Receiver Box */}
+          {courtState.arrowPath && (
+            <g opacity="0.88">
+              <path
+                d={courtState.arrowPath}
+                fill="none"
+                stroke="#38bdf8"
+                strokeWidth="2.4"
+                strokeDasharray="6 4"
+                markerEnd="url(#arrowHead)"
+                style={{ animation: 'dashMove 1.5s linear infinite' }}
+              />
+            </g>
+          )}
+
           {/* Center Net (Dashed white bar with posts) */}
           <line x1="400" y1="18" x2="400" y2="382" stroke="#ffffff" strokeWidth="6" strokeDasharray="8 4" />
           <circle cx="400" cy="20" r="6" fill="#f8fafc" stroke="#334155" strokeWidth="1.5" />
@@ -816,107 +888,185 @@ export default function CourtView({
             />
           )}
 
-          {/* ── PLAYER RACKETS / PADDLES WITH SWING MOTION ── */}
-          {/* Left Top Player */}
-          <g
-            transform={`translate(${60 + racketSwings.LEFT_TOP * 0.1}, 115) rotate(${-25 + racketSwings.LEFT_TOP})`}
-            style={{ transition: 'transform 0.18s ease' }}
-          >
-            {courtState.sport === 'badminton' ? (
-              <>
-                <ellipse cx="0" cy="0" rx="10" ry="14" fill="none" stroke="#ffffff" strokeWidth="2.2" />
-                <line x1="-7" y1="0" x2="7" y2="0" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="-10" x2="0" y2="10" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="14" x2="0" y2="34" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
-                <line x1="0" y1="26" x2="0" y2="34" stroke="#10b981" strokeWidth="3.5" strokeLinecap="round" />
-              </>
-            ) : (
-              <>
-                <rect x="-11" y="-15" width="22" height="30" rx="6" fill="none" stroke="#ffffff" strokeWidth="2.5" />
-                <line x1="0" y1="15" x2="0" y2="30" stroke="#ffffff" strokeWidth="3.2" strokeLinecap="round" />
-              </>
-            )}
-            {/* Server Glowing Halo */}
-            {(courtState.serveState?.servingBoxName === 'top-left' || (!courtState.serveState && courtState.teamSides[courtState.servingTeam] === 'LEFT' && courtState.serverBox === 'LEFT')) && (
-              <circle cx="0" cy="0" r="22" fill="rgba(16, 185, 129, 0.22)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="4 3" style={{ animation: 'shuttleHover 2s infinite' }} />
-            )}
-          </g>
+          {/* ── RULES-DRIVEN DYNAMIC PLAYERS & RACKETS WITH MOTION ── */}
+          {(courtState.players || []).map((p) => {
+            const slotKey = p.boxName.toUpperCase().replace('-', '_');
+            const swingDeg = racketSwings[slotKey] || 0;
+            const nudge = playerNudges[slotKey] || { x: 0, y: 0 };
+            const isLeft = p.side === 'LEFT';
 
-          {/* Left Bottom Player */}
-          <g
-            transform={`translate(${60 + racketSwings.LEFT_BOTTOM * 0.1}, 285) rotate(${-25 + racketSwings.LEFT_BOTTOM})`}
-            style={{ transition: 'transform 0.18s ease' }}
-          >
-            {courtState.sport === 'badminton' ? (
-              <>
-                <ellipse cx="0" cy="0" rx="10" ry="14" fill="none" stroke="#ffffff" strokeWidth="2.2" />
-                <line x1="-7" y1="0" x2="7" y2="0" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="-10" x2="0" y2="10" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="14" x2="0" y2="34" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
-                <line x1="0" y1="26" x2="0" y2="34" stroke="#10b981" strokeWidth="3.5" strokeLinecap="round" />
-              </>
-            ) : (
-              <>
-                <rect x="-11" y="-15" width="22" height="30" rx="6" fill="none" stroke="#ffffff" strokeWidth="2.5" />
-                <line x1="0" y1="15" x2="0" y2="30" stroke="#ffffff" strokeWidth="3.2" strokeLinecap="round" />
-              </>
-            )}
-            {/* Server Glowing Halo */}
-            {(courtState.serveState?.servingBoxName === 'bottom-left' || (!courtState.serveState && courtState.teamSides[courtState.servingTeam] === 'LEFT' && courtState.serverBox === 'RIGHT')) && (
-              <circle cx="0" cy="0" r="22" fill="rgba(16, 185, 129, 0.22)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="4 3" style={{ animation: 'shuttleHover 2s infinite' }} />
-            )}
-          </g>
+            // Curved partner swap glide offset when p.isMoving
+            // Top partner curves inward (+14px in x), bottom partner curves outward (-14px in x)
+            const curveOffset = p.isMoving
+              ? (p.boxName.includes('top') ? (isLeft ? 14 : -14) : (isLeft ? -14 : 14))
+              : 0;
 
-          {/* Right Top Player */}
-          <g
-            transform={`translate(${740 + racketSwings.RIGHT_TOP * 0.1}, 115) rotate(${25 + racketSwings.RIGHT_TOP})`}
-            style={{ transition: 'transform 0.18s ease' }}
-          >
-            {courtState.sport === 'badminton' ? (
-              <>
-                <ellipse cx="0" cy="0" rx="10" ry="14" fill="none" stroke="#ffffff" strokeWidth="2.2" />
-                <line x1="-7" y1="0" x2="7" y2="0" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="-10" x2="0" y2="10" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="14" x2="0" y2="34" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
-                <line x1="0" y1="26" x2="0" y2="34" stroke="#10b981" strokeWidth="3.5" strokeLinecap="round" />
-              </>
-            ) : (
-              <>
-                <rect x="-11" y="-15" width="22" height="30" rx="6" fill="none" stroke="#ffffff" strokeWidth="2.5" />
-                <line x1="0" y1="15" x2="0" y2="30" stroke="#ffffff" strokeWidth="3.2" strokeLinecap="round" />
-              </>
-            )}
-            {/* Server Glowing Halo */}
-            {(courtState.serveState?.servingBoxName === 'top-right' || (!courtState.serveState && courtState.teamSides[courtState.servingTeam] === 'RIGHT' && courtState.serverBox === 'RIGHT')) && (
-              <circle cx="0" cy="0" r="22" fill="rgba(16, 185, 129, 0.22)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="4 3" style={{ animation: 'shuttleHover 2s infinite' }} />
-            )}
-          </g>
+            const posX = p.x + nudge.x + curveOffset;
+            const posY = p.y + nudge.y;
+            const baseRot = isLeft ? -22 : 22;
 
-          {/* Right Bottom Player */}
-          <g
-            transform={`translate(${740 + racketSwings.RIGHT_BOTTOM * 0.1}, 285) rotate(${25 + racketSwings.RIGHT_BOTTOM})`}
-            style={{ transition: 'transform 0.18s ease' }}
-          >
-            {courtState.sport === 'badminton' ? (
-              <>
-                <ellipse cx="0" cy="0" rx="10" ry="14" fill="none" stroke="#ffffff" strokeWidth="2.2" />
-                <line x1="-7" y1="0" x2="7" y2="0" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="-10" x2="0" y2="10" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
-                <line x1="0" y1="14" x2="0" y2="34" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
-                <line x1="0" y1="26" x2="0" y2="34" stroke="#10b981" strokeWidth="3.5" strokeLinecap="round" />
-              </>
-            ) : (
-              <>
-                <rect x="-11" y="-15" width="22" height="30" rx="6" fill="none" stroke="#ffffff" strokeWidth="2.5" />
-                <line x1="0" y1="15" x2="0" y2="30" stroke="#ffffff" strokeWidth="3.2" strokeLinecap="round" />
-              </>
-            )}
-            {/* Server Glowing Halo */}
-            {(courtState.serveState?.servingBoxName === 'bottom-right' || (!courtState.serveState && courtState.teamSides[courtState.servingTeam] === 'RIGHT' && courtState.serverBox === 'LEFT')) && (
-              <circle cx="0" cy="0" r="22" fill="rgba(16, 185, 129, 0.22)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="4 3" style={{ animation: 'shuttleHover 2s infinite' }} />
-            )}
-          </g>
+            return (
+              <g
+                key={p.id}
+                transform={`translate(${posX}, ${posY})`}
+                style={{
+                  transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  willChange: 'transform'
+                }}
+              >
+                {/* 1. Subtle Ready-Stance Sway Idle Effect */}
+                <g style={{ animation: ambientRally ? 'shuttleHover 3s ease-in-out infinite' : 'none' }}>
+                  {/* 2. Racket / Paddle Graphics with Swing Rotation Arc */}
+                  <g
+                    transform={`translate(${isLeft ? -12 : 12}, 0) rotate(${baseRot + swingDeg})`}
+                    style={{ transition: 'transform 0.18s ease-out' }}
+                  >
+                    {courtState.sport === 'badminton' ? (
+                      <>
+                        <ellipse cx="0" cy="-6" rx="8" ry="12" fill="none" stroke="#ffffff" strokeWidth="2.2" />
+                        <line x1="-5" y1="-6" x2="5" y2="-6" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
+                        <line x1="0" y1="-15" x2="0" y2="3" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
+                        <line x1="0" y1="6" x2="0" y2="24" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
+                        <line x1="0" y1="18" x2="0" y2="24" stroke={p.team === 'teamA' ? '#10b981' : '#3b82f6'} strokeWidth="3.2" strokeLinecap="round" />
+                      </>
+                    ) : (
+                      <>
+                        <rect x="-9" y="-14" width="18" height="24" rx="5" fill="rgba(15,23,42,0.4)" stroke="#ffffff" strokeWidth="2.2" />
+                        <line x1="-7" y1="-2" x2="7" y2="-2" stroke={p.team === 'teamA' ? '#10b981' : '#3b82f6'} strokeWidth="1.8" />
+                        <line x1="0" y1="10" x2="0" y2="22" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+                      </>
+                    )}
+                  </g>
 
+                  {/* 3. Server Glow Pulse Halo */}
+                  {p.isServer && (
+                    <circle
+                      cx="0"
+                      cy="0"
+                      r="19"
+                      fill="rgba(16, 185, 129, 0.22)"
+                      stroke="#10b981"
+                      strokeWidth="2.4"
+                      strokeDasharray="4 3"
+                      style={{ animation: 'courtPulse 2s infinite' }}
+                    />
+                  )}
+
+                  {/* 4. Player Avatar Circle with Initials */}
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="13"
+                    fill={p.team === 'teamA' ? '#059669' : '#2563eb'}
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                    filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))"
+                  />
+                  <text
+                    x="0"
+                    y="3.5"
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="8.5"
+                    fontWeight="900"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                    letterSpacing="0.02em"
+                  >
+                    {p.initials}
+                  </text>
+
+                  {/* 5. Role Badge (SERVE • #1 / #2 or RECEIVE) */}
+                  {p.isServer && (
+                    <g transform={`translate(${isLeft ? 16 : -16}, -12)`}>
+                      <rect
+                        x={isLeft ? 0 : -62}
+                        y="-7"
+                        width="62"
+                        height="14"
+                        rx="7"
+                        fill="#10b981"
+                        stroke="#ffffff"
+                        strokeWidth="0.8"
+                      />
+                      <text
+                        x={isLeft ? 31 : -31}
+                        y="3"
+                        textAnchor="middle"
+                        fill="#ffffff"
+                        fontSize="7"
+                        fontWeight="900"
+                        letterSpacing="0.05em"
+                      >
+                        SERVE{courtState.sport === 'pickleball' && p.serverNumber ? ` • #${p.serverNumber}` : ''}
+                      </text>
+                    </g>
+                  )}
+
+                  {p.isReceiver && (
+                    <g transform={`translate(${isLeft ? 16 : -16}, -12)`}>
+                      <rect
+                        x={isLeft ? 0 : -48}
+                        y="-7"
+                        width="48"
+                        height="14"
+                        rx="7"
+                        fill="rgba(2, 132, 199, 0.95)"
+                        stroke="#ffffff"
+                        strokeWidth="0.8"
+                      />
+                      <text
+                        x={isLeft ? 24 : -24}
+                        y="3"
+                        textAnchor="middle"
+                        fill="#ffffff"
+                        fontSize="7"
+                        fontWeight="900"
+                        letterSpacing="0.05em"
+                      >
+                        RECEIVE
+                      </text>
+                    </g>
+                  )}
+
+                  {/* 6. Name Chip (Close to baseline, zero overlap with center score at x:200/600) */}
+                  <g transform={`translate(0, ${p.boxName.includes('top') ? -24 : 24})`}>
+                    <rect
+                      x="-44"
+                      y="-7"
+                      width="88"
+                      height={p.isTBA ? 18 : 14}
+                      rx="4"
+                      fill="rgba(15, 23, 42, 0.88)"
+                      stroke="rgba(255, 255, 255, 0.18)"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x="0"
+                      y={p.isTBA ? 1 : 3}
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="7.5"
+                      fontWeight="700"
+                    >
+                      {p.name.length > 13 ? `${p.name.slice(0, 12)}…` : p.name}
+                    </text>
+                    {p.isTBA && (
+                      <text
+                        x="0"
+                        y="8.5"
+                        textAnchor="middle"
+                        fill="#94a3b8"
+                        fontSize="5.8"
+                        fontStyle="italic"
+                      >
+                        Lineup TBA
+                      </text>
+                    )}
+                  </g>
+                </g>
+              </g>
+            );
+          })}
         </svg>
 
         {/* ── 60FPS HARDWARE-ACCELERATED BALL & SHADOW LAYER (translate3d) ── */}
@@ -1013,7 +1163,7 @@ export default function CourtView({
               width: '100%',
               height: '100%',
               pointerEvents: 'none',
-              zIndex: 4,
+              zIndex: 2,
               overflow: 'hidden'
             }}
           >
@@ -1244,7 +1394,7 @@ export default function CourtView({
             if (!players || players.length === 0) {
               return (
                 <span style={{ fontSize: 'clamp(0.55rem, 1.1vw, 0.72rem)', color: '#94a3b8', fontStyle: 'italic', fontWeight: 500 }}>
-                  Lineup not set
+                  Lineup TBA
                 </span>
               );
             }
