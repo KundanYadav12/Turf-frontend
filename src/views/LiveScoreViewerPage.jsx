@@ -250,6 +250,22 @@ export default function LiveScoreViewerPage({
 
         if (currentTournId) {
           await fetchTournamentData(currentTournId);
+        } else {
+          try {
+            const globalRes = await axios.get('/api/matches/live');
+            if (globalRes.data?.success && Array.isArray(globalRes.data.data?.items) && globalRes.data.data.items.length > 0) {
+              const gItems = globalRes.data.data.items;
+              if (mounted) setLiveMatches(gItems);
+              const firstMatch = gItems[0];
+              const fId = firstMatch.uuid || firstMatch.id;
+              if (mounted) {
+                setActiveMatchId(fId);
+                const tId = firstMatch.tournament?.id || firstMatch.tournamentId;
+                if (tId) setTournamentId(tId);
+              }
+              await fetchMatchDetails(fId);
+            }
+          } catch (_) {}
         }
         await fetchAds(currentTournId);
       } catch (err) {

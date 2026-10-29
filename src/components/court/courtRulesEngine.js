@@ -93,6 +93,7 @@ function normalizePlayer(rawPlayer, defaultId, defaultName, defaultStartCourt = 
     return {
       id: defaultId,
       name: defaultName,
+      rawName: defaultName,
       isTBA: true,
       startCourt: defaultStartCourt,
       initials: extractInitials(defaultName, defaultId)
@@ -102,16 +103,19 @@ function normalizePlayer(rawPlayer, defaultId, defaultName, defaultStartCourt = 
     return {
       id: rawPlayer || defaultId,
       name: rawPlayer,
+      rawName: rawPlayer,
       isTBA: false,
       startCourt: defaultStartCourt,
       initials: extractInitials(rawPlayer, defaultId)
     };
   }
   const name = rawPlayer.name || rawPlayer.playerName || defaultName;
-  const isTBA = Boolean(rawPlayer.isTBA || !rawPlayer.name);
+  const isTBA = Boolean(rawPlayer.isTBA || (!rawPlayer.name && !rawPlayer.playerName));
+  const id = rawPlayer.id || rawPlayer.member_id || (rawPlayer.name && !isTBA ? rawPlayer.name : defaultId);
   return {
-    id: rawPlayer.id || rawPlayer.member_id || defaultId,
-    name: name,
+    id,
+    name,
+    rawName: name,
     isTBA,
     startCourt: rawPlayer.startCourt || defaultStartCourt,
     initials: rawPlayer.initials || extractInitials(name, defaultId)
@@ -219,9 +223,10 @@ export function calculatePickleballDoublesPositions(teamScore, originalPlayerPos
 export const PickleballAdapter = {
   sport: 'pickleball',
 
-  init({ format = 'DOUBLES', scoringMode = 'SIDE_OUT', teamA, teamB, lineup, startingServingTeam = 'teamA', switchEnds = false, currentGame = 1, scores = null }) {
+  init({ format = 'DOUBLES', scoringMode = 'SIDE_OUT', rotationRule = 'OFFICIAL', teamA, teamB, lineup, startingServingTeam = 'teamA', switchEnds = false, currentGame = 1, scores = null }) {
     const isDoubles = String(format).toUpperCase() !== 'SINGLES';
-    const isSideOut = String(scoringMode).toUpperCase() !== 'RALLY';
+    const isBadmintonRule = String(rotationRule || '').toUpperCase() === 'BADMINTON' || String(rotationRule || '').toUpperCase() === 'BADMINTON_STYLE';
+    const isSideOut = !isBadmintonRule && String(scoringMode).toUpperCase() !== 'RALLY';
 
     // Normalized Lineup
     const playersA = isDoubles
@@ -246,42 +251,63 @@ export const PickleballAdapter = {
     const isLineupSetA = Boolean(lineup?.teamA && lineup.teamA.length > 0 && !playersA[0].isTBA);
     const isLineupSetB = Boolean(lineup?.teamB && lineup.teamB.length > 0 && !playersB[0].isTBA);
 
-    // Immutable Original Starting Positions (Stable reference throughout match)
+    // Immutable Original Starting Positions
     const originalPositionsA = {
       [playersA[0].id]: playersA[0].startCourt || 'RIGHT',
-      ...(isDoubles ? { [playersA[1].id]: playersA[1].startCourt || 'LEFT' } : {})
+      [playersA[0].name]: playersA[0].startCourt || 'RIGHT',
+      ...(isDoubles ? {
+        [playersA[1].id]: playersA[1].startCourt || 'LEFT',
+        [playersA[1].name]: playersA[1].startCourt || 'LEFT'
+      } : {})
     };
     const originalPositionsB = {
       [playersB[0].id]: playersB[0].startCourt || 'RIGHT',
-      ...(isDoubles ? { [playersB[1].id]: playersB[1].startCourt || 'LEFT' } : {})
+      [playersB[0].name]: playersB[0].startCourt || 'RIGHT',
+      ...(isDoubles ? {
+        [playersB[1].id]: playersB[1].startCourt || 'LEFT',
+        [playersB[1].name]: playersB[1].startCourt || 'LEFT'
+      } : {})
     };
 
     const initialScoreA = scores?.teamA ?? 0;
     const initialScoreB = scores?.teamB ?? 0;
 
+    // Initialize playerLocations keyed by both ID and Name
     let playerLocations = {};
     if (isDoubles) {
-      const posA = calculatePickleballDoublesPositions(initialScoreA, originalPositionsA);
-      const posB = calculatePickleballDoublesPositions(initialScoreB, originalPositionsB);
-      playerLocations = { ...posA, ...posB };
+      if (initialScoreA > 0 || initialScoreB > 0) {
+        const posA = calculatePickleballDoublesPositions(initialScoreA, originalPositionsA);
+        const posB = calculatePickleballDoublesPositions(initialScoreB, originalPositionsB);
+        playerLocations = { ...posA, ...posB };
+      } else {
+        playerLocations[playersA[0].id] = playersA[0].startCourt || 'RIGHT';
+        playerLocations[playersA[1].id] = playersA[1].startCourt || 'LEFT';
+        playerLocations[playersB[0].id] = playersB[0].startCourt || 'RIGHT';
+        playerLocations[playersB[1].id] = playersB[1].startCourt || 'LEFT';
+      }
+      for (const p of [...playersA, ...playersB]) {
+        if (p.name) playerLocations[p.name] = playerLocations[p.id];
+        if (p.rawName) playerLocations[p.rawName] = playerLocations[p.id];
+      }
     } else {
-      playerLocations[playersA[0].id] = (initialScoreA % 2 === 0) ? 'RIGHT' : 'LEFT';
-      playerLocations[playersB[0].id] = (initialScoreB % 2 === 0) ? 'RIGHT' : 'LEFT';
+      playerLocations[playersA[0].id] = (initialScoreA % 2 === 0) ? (playersA[0].startCourt || 'RIGHT') : (playersA[0].startCourt === 'LEFT' ? 'RIGHT' : 'LEFT');
+      playerLocations[playersB[0].id] = (initialScoreB % 2 === 0) ? (playersB[0].startCourt || 'RIGHT') : (playersB[0].startCourt === 'LEFT' ? 'RIGHT' : 'LEFT');
+      for (const p of [playersA[0], playersB[0]]) {
+        if (p.name) playerLocations[p.name] = playerLocations[p.id];
+      }
     }
 
-    // Starting Server Rule:
+    // Starting Serving Team & Server
     // Traditional Side-Out Doubles starts at "0-0-2" (USA Pickleball Rule 4.B.6)
     const servingTeam = startingServingTeam === 'teamB' ? 'teamB' : 'teamA';
     const serverNumber = isSideOut && isDoubles ? 2 : 1;
 
-    // Track active server player ID:
-    // Even score -> RIGHT court, Odd score -> LEFT court
+    // First server is the player standing in the RIGHT court of the serving team
     const sPlayers = servingTeam === 'teamA' ? playersA : playersB;
-    const sScore = servingTeam === 'teamA' ? initialScoreA : initialScoreB;
-    const expectedServingCourt = (sScore % 2 === 0) ? 'RIGHT' : 'LEFT';
-    const currentServerId = isDoubles
-      ? (sPlayers.find(p => playerLocations[p.id] === expectedServingCourt)?.id || sPlayers[0].id)
-      : sPlayers[0].id;
+    const firstServer = isDoubles
+      ? (sPlayers.find(p => (playerLocations[p.id] || playerLocations[p.name]) === 'RIGHT') || sPlayers[0])
+      : sPlayers[0];
+    const currentServerId = firstServer.id;
 
     // Determine team sides based on switchEnds
     let teamSides = { teamA: 'LEFT', teamB: 'RIGHT' };
@@ -292,7 +318,8 @@ export const PickleballAdapter = {
     return {
       sport: 'pickleball',
       format: isDoubles ? 'DOUBLES' : 'SINGLES',
-      scoringMode: isSideOut ? 'SIDE_OUT' : 'RALLY',
+      scoringMode: isBadmintonRule ? 'RALLY' : (isSideOut ? 'SIDE_OUT' : 'RALLY'),
+      rotationRule: isBadmintonRule ? 'BADMINTON' : 'OFFICIAL',
       scores: { teamA: initialScoreA, teamB: initialScoreB },
       servingTeam,
       serverNumber,
@@ -319,7 +346,8 @@ export const PickleballAdapter = {
 
   applyPoint(state, pointTo) {
     const isDoubles = state.format === 'DOUBLES';
-    const isSideOut = state.scoringMode === 'SIDE_OUT';
+    const isBadmintonRule = state.rotationRule === 'BADMINTON' || state.rotationRule === 'BADMINTON_STYLE';
+    const isSideOut = !isBadmintonRule && state.scoringMode === 'SIDE_OUT';
     const winningTeam = pointTo === 'teamB' ? 'teamB' : 'teamA';
     const isServingTeamWinner = winningTeam === state.servingTeam;
 
@@ -327,10 +355,12 @@ export const PickleballAdapter = {
     let newServingTeam = state.servingTeam;
     let newServerNumber = state.serverNumber;
     let newCurrentServerId = state.currentServerId;
+    let newPlayerLocations = { ...state.playerLocations };
     let isSideOutOccurred = false;
     let isServerChange = false;
     let isPointScored = false;
     let scoringTeam = null;
+    let movingPlayerIds = [];
 
     if (isSideOut) {
       // ───────────────────────────────────────────────────────────────────────
@@ -344,7 +374,30 @@ export const PickleballAdapter = {
         isPointScored = true;
         scoringTeam = state.servingTeam;
 
-        // Same server continues serving!
+        // 2. Serving team partners swap courts (RIGHT <-> LEFT). Receiving team NEVER swaps!
+        if (isDoubles) {
+          const sPlayers = state.servingTeam === 'teamA' ? state.playersA : state.playersB;
+          const p1 = sPlayers[0];
+          const p2 = sPlayers[1];
+          const loc1 = state.playerLocations[p1.id] || state.playerLocations[p1.name] || p1.startCourt || 'RIGHT';
+          const loc2 = state.playerLocations[p2.id] || state.playerLocations[p2.name] || p2.startCourt || 'LEFT';
+
+          newPlayerLocations[p1.id] = loc2;
+          newPlayerLocations[p1.name] = loc2;
+          newPlayerLocations[p2.id] = loc1;
+          newPlayerLocations[p2.name] = loc1;
+          movingPlayerIds = [p1.id, p2.id];
+        } else {
+          // Singles: server moves to court matching score parity
+          const sPlayers = state.servingTeam === 'teamA' ? state.playersA : state.playersB;
+          const p1 = sPlayers[0];
+          const targetCourt = (newScores[state.servingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
+          newPlayerLocations[p1.id] = targetCourt;
+          newPlayerLocations[p1.name] = targetCourt;
+          movingPlayerIds = [p1.id];
+        }
+
+        // Same server continues serving from their new court!
         newCurrentServerId = state.currentServerId;
       } else {
         // Receiving team wins the rally:
@@ -355,7 +408,7 @@ export const PickleballAdapter = {
             newServerNumber = 2;
             isServerChange = true;
             const sPlayers = state.servingTeam === 'teamA' ? state.playersA : state.playersB;
-            const partner = sPlayers.find(p => p.id !== state.currentServerId);
+            const partner = sPlayers.find(p => p.id !== state.currentServerId && p.name !== state.currentServerId) || sPlayers[1];
             newCurrentServerId = partner ? partner.id : sPlayers[1]?.id;
           } else {
             // Server #2 (or 0-0-2 starting turn) lost rally -> SIDE-OUT to other team!
@@ -363,6 +416,10 @@ export const PickleballAdapter = {
             isServerChange = true;
             newServingTeam = state.servingTeam === 'teamA' ? 'teamB' : 'teamA';
             newServerNumber = 1;
+            // Rule 4.B.8: New Server #1 is the player of the new serving team currently standing in the RIGHT court!
+            const newSPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
+            const rightCourtPlayer = newSPlayers.find(p => (newPlayerLocations[p.id] || newPlayerLocations[p.name]) === 'RIGHT') || newSPlayers[0];
+            newCurrentServerId = rightCourtPlayer.id;
           }
         } else {
           // Singles Side-out: immediate side-out to other team
@@ -370,6 +427,11 @@ export const PickleballAdapter = {
           isServerChange = true;
           newServingTeam = state.servingTeam === 'teamA' ? 'teamB' : 'teamA';
           newServerNumber = 1;
+          const newSPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
+          const targetCourt = (newScores[newServingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
+          newPlayerLocations[newSPlayers[0].id] = targetCourt;
+          newPlayerLocations[newSPlayers[0].name] = targetCourt;
+          newCurrentServerId = newSPlayers[0].id;
         }
       }
     } else {
@@ -380,71 +442,57 @@ export const PickleballAdapter = {
       newScores[winningTeam] += 1;
       isPointScored = true;
       scoringTeam = winningTeam;
+      newServerNumber = 1;
 
       if (isServingTeamWinner) {
-        newCurrentServerId = state.currentServerId;
+        // Serving team won rally:
+        // Serving team partners swap courts (RIGHT <-> LEFT). Receiving team NEVER swaps!
+        if (isDoubles) {
+          const sPlayers = state.servingTeam === 'teamA' ? state.playersA : state.playersB;
+          const p1 = sPlayers[0];
+          const p2 = sPlayers[1];
+          const loc1 = state.playerLocations[p1.id] || state.playerLocations[p1.name] || p1.startCourt || 'RIGHT';
+          const loc2 = state.playerLocations[p2.id] || state.playerLocations[p2.name] || p2.startCourt || 'LEFT';
+
+          newPlayerLocations[p1.id] = loc2;
+          newPlayerLocations[p1.name] = loc2;
+          newPlayerLocations[p2.id] = loc1;
+          newPlayerLocations[p2.name] = loc1;
+          movingPlayerIds = [p1.id, p2.id];
+
+          // Server stands in right court when score even, left when odd
+          newCurrentServerId = state.currentServerId;
+        } else {
+          const sPlayers = state.servingTeam === 'teamA' ? state.playersA : state.playersB;
+          const p1 = sPlayers[0];
+          const targetCourt = (newScores[state.servingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
+          newPlayerLocations[p1.id] = targetCourt;
+          newPlayerLocations[p1.name] = targetCourt;
+          movingPlayerIds = [p1.id];
+          newCurrentServerId = p1.id;
+        }
       } else {
+        // Receiving team won rally:
+        // Service changes to receiving team. NEITHER TEAM SWAPS!
         newServingTeam = winningTeam;
         isSideOutOccurred = true;
         isServerChange = true;
-      }
-      newServerNumber = 1;
-    }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // SINGLE SOURCE OF TRUTH: Deterministic Court Positions from Score Parity
-    // ─────────────────────────────────────────────────────────────────────────
-    const originalA = state.originalPlayerPositions?.teamA || {
-      [state.playersA[0].id]: 'RIGHT',
-      ...(isDoubles ? { [state.playersA[1].id]: 'LEFT' } : {})
-    };
-    const originalB = state.originalPlayerPositions?.teamB || {
-      [state.playersB[0].id]: 'RIGHT',
-      ...(isDoubles ? { [state.playersB[1].id]: 'LEFT' } : {})
-    };
-
-    let newPlayerLocations = {};
-    if (isDoubles) {
-      const posA = calculatePickleballDoublesPositions(newScores.teamA, originalA);
-      const posB = calculatePickleballDoublesPositions(newScores.teamB, originalB);
-      newPlayerLocations = { ...state.playerLocations, ...posA, ...posB };
-    } else {
-      newPlayerLocations = {
-        ...state.playerLocations,
-        [state.playersA[0].id]: (newScores.teamA % 2 === 0) ? 'RIGHT' : 'LEFT',
-        [state.playersB[0].id]: (newScores.teamB % 2 === 0) ? 'RIGHT' : 'LEFT'
-      };
-    }
-
-    // Resolve active server ID when side-out or rally service change occurs
-    if (isSideOut && isDoubles && isSideOutOccurred) {
-      // Rule 4.B.8: New Server #1 is the player of the new serving team in the court
-      // corresponding to their score parity at this moment (even -> RIGHT, odd -> LEFT)
-      const targetCourt = (newScores[newServingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
-      const newSPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
-      const matchingPlayer = newSPlayers.find(p => newPlayerLocations[p.id] === targetCourt) || newSPlayers[0];
-      newCurrentServerId = matchingPlayer.id;
-    } else if (!isSideOut && isDoubles) {
-      const targetCourt = (newScores[newServingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
-      const newSPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
-      const matchingPlayer = newSPlayers.find(p => newPlayerLocations[p.id] === targetCourt) || newSPlayers[0];
-      newCurrentServerId = matchingPlayer.id;
-    } else if (!isDoubles) {
-      const sPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
-      newCurrentServerId = sPlayers[0].id;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Animate only players whose actual court position changed
-    // ─────────────────────────────────────────────────────────────────────────
-    const movingPlayerIds = [];
-    const allPlayers = isDoubles
-      ? [...state.playersA, ...state.playersB]
-      : [state.playersA[0], state.playersB[0]];
-
-    for (const p of allPlayers) {
-      if (state.playerLocations[p.id] && newPlayerLocations[p.id] !== state.playerLocations[p.id]) {
-        movingPlayerIds.push(p.id);
+        if (isDoubles) {
+          // The server stands in the right court when the serving team's score is even and the left court when odd.
+          const targetCourt = (newScores[newServingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
+          const newSPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
+          const matchingPlayer = newSPlayers.find(p => (newPlayerLocations[p.id] || newPlayerLocations[p.name]) === targetCourt) || newSPlayers[0];
+          newCurrentServerId = matchingPlayer.id;
+        } else {
+          const sPlayers = newServingTeam === 'teamA' ? state.playersA : state.playersB;
+          const p1 = sPlayers[0];
+          const targetCourt = (newScores[newServingTeam] % 2 === 0) ? 'RIGHT' : 'LEFT';
+          newPlayerLocations[p1.id] = targetCourt;
+          newPlayerLocations[p1.name] = targetCourt;
+          movingPlayerIds = [p1.id];
+          newCurrentServerId = p1.id;
+        }
       }
     }
 
@@ -453,7 +501,6 @@ export const PickleballAdapter = {
     if (state.switchEnds && state.currentGame >= 3) {
       const leader = Math.max(newScores.teamA, newScores.teamB);
       if (leader >= 6 && (state.scores.teamA < 6 && state.scores.teamB < 6)) {
-        // Swap ends at 6 in deciding game
         newTeamSides = {
           teamA: state.teamSides.teamA === 'LEFT' ? 'RIGHT' : 'LEFT',
           teamB: state.teamSides.teamB === 'RIGHT' ? 'LEFT' : 'RIGHT'
@@ -479,7 +526,8 @@ export const PickleballAdapter = {
 
   deriveGeometry(state) {
     const isDoubles = state.format === 'DOUBLES';
-    const isSideOut = state.scoringMode === 'SIDE_OUT';
+    const isBadmintonRule = state.rotationRule === 'BADMINTON' || state.rotationRule === 'BADMINTON_STYLE';
+    const isSideOut = !isBadmintonRule && state.scoringMode === 'SIDE_OUT';
     const sTeam = state.servingTeam;
     const rTeam = sTeam === 'teamA' ? 'teamB' : 'teamA';
     const sSide = state.teamSides[sTeam]; // 'LEFT' or 'RIGHT'
@@ -492,28 +540,20 @@ export const PickleballAdapter = {
     let serviceCourt = 'RIGHT'; // 'RIGHT' or 'LEFT'
     let receiverCourt = 'RIGHT';
 
-    if (isSideOut && isDoubles) {
-      // In Side-Out Doubles:
-      // Active server is tracked by currentServerId
-      servingPlayer = sPlayers.find(p => p.id === state.currentServerId) || sPlayers[0];
-      serviceCourt = state.playerLocations[servingPlayer.id] || 'RIGHT';
+    if (isDoubles) {
+      servingPlayer = sPlayers.find(p => p.id === state.currentServerId || p.name === state.currentServerId) || sPlayers[0];
+      serviceCourt = state.playerLocations[servingPlayer.id] || state.playerLocations[servingPlayer.name] || servingPlayer.startCourt || 'RIGHT';
     } else {
-      // Rally Scoring or Singles: Parity Determines Service Court!
-      // Score Even -> RIGHT court. Score Odd -> LEFT court.
+      servingPlayer = sPlayers[0];
       const sScore = state.scores[sTeam];
-      serviceCourt = sScore % 2 === 0 ? 'RIGHT' : 'LEFT';
-      if (isDoubles) {
-        servingPlayer = sPlayers.find(p => state.playerLocations[p.id] === serviceCourt) || sPlayers[0];
-      } else {
-        servingPlayer = sPlayers[0];
-      }
+      serviceCourt = (sScore % 2 === 0) ? 'RIGHT' : 'LEFT';
     }
 
     // Diagonal Cross-court Receiver (Cross-court diagonal has matching court name from receiver perspective)
     receiverCourt = serviceCourt;
     let receivingPlayer = null;
     if (isDoubles) {
-      receivingPlayer = rPlayers.find(p => state.playerLocations[p.id] === receiverCourt) || rPlayers[0];
+      receivingPlayer = rPlayers.find(p => (state.playerLocations[p.id] || state.playerLocations[p.name]) === receiverCourt) || rPlayers[0];
     } else {
       receivingPlayer = rPlayers[0];
     }
@@ -936,15 +976,15 @@ export function finalizeCourtState(state, adapter, config = {}) {
   const allPlayerObjs = [...state.playersA, ...state.playersB];
 
   for (const p of allPlayerObjs) {
-    const isTeamA = state.playersA.some(pa => pa.id === p.id);
+    const isTeamA = state.playersA.some(pa => pa.id === p.id || pa.name === p.name);
     const pTeamKey = isTeamA ? 'teamA' : 'teamB';
     const pTeamSide = state.teamSides[pTeamKey]; // 'LEFT' or 'RIGHT'
-    const court = state.playerLocations[p.id] || p.startCourt || 'RIGHT'; // 'RIGHT' or 'LEFT'
+    const court = state.playerLocations[p.id] || state.playerLocations[p.name] || state.playerLocations[p.rawName] || p.startCourt || 'RIGHT'; // 'RIGHT' or 'LEFT'
     const boxName = getScreenBox(pTeamSide, court);
     const coords = PLAYER_REST_COORDINATES[boxName] || { x: 75, y: 115 };
 
-    const isServer = derived.servingPlayer?.id === p.id;
-    const isReceiver = derived.receivingPlayer?.id === p.id;
+    const isServer = (derived.servingPlayer?.id === p.id) || (derived.servingPlayer?.name && derived.servingPlayer.name === p.name);
+    const isReceiver = (derived.receivingPlayer?.id === p.id) || (derived.receivingPlayer?.name && derived.receivingPlayer.name === p.name);
 
     const isLineupSet = isTeamA ? state.isLineupSetA : state.isLineupSetB;
     const teamName = isTeamA ? teamA.name : teamB.name;
@@ -1024,6 +1064,7 @@ export function finalizeCourtState(state, adapter, config = {}) {
     receiverTeamName: receiverTeamObj.name,
     serverCoords,
     receiverCoords,
+    defaultBallCoords: ballCoords,
     ballCoords,
     arrowPath: `M ${serverCoords.x} ${serverCoords.y} Q 400 200 ${receiverCoords.x} ${receiverCoords.y}`,
     arrowStart: serverCoords,

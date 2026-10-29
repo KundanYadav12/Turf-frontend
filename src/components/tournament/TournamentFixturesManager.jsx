@@ -198,16 +198,27 @@ export default function TournamentFixturesManager({
     courtName: '',
     scorerId: '',
     countsInStandings: true,
+    startingServingTeam: 'teamA',
+    rotationRule: 'OFFICIAL',
     allowConflictOverride: false
   });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [conflictWarning, setConflictWarning] = useState(null);
 
+  const getInitialTournamentDate = (t) => {
+    const raw = t?.dates?.start || t?.startDate || t?.start_date;
+    if (raw) {
+      const formatted = formatDateForInput(raw);
+      if (formatted) return formatted;
+    }
+    return new Date().toISOString().slice(0, 10);
+  };
+
   // Auto-League Modal
   const [showAutoLeagueModal, setShowAutoLeagueModal] = useState(false);
   const [autoLeagueForm, setAutoLeagueForm] = useState({
     groupName: 'ALL',
-    startDate: tournament?.startDate ? formatDateForInput(tournament.startDate) : new Date().toISOString().slice(0, 10),
+    startDate: getInitialTournamentDate(tournament),
     dailyStartTime: '09:00:00',
     matchDurationMinutes: 60
   });
@@ -217,7 +228,7 @@ export default function TournamentFixturesManager({
   const [showAutoKnockoutModal, setShowAutoKnockoutModal] = useState(false);
   const [autoKnockoutForm, setAutoKnockoutForm] = useState({
     seedFromStandings: true,
-    startDate: tournament?.startDate ? formatDateForInput(tournament.startDate) : new Date().toISOString().slice(0, 10)
+    startDate: getInitialTournamentDate(tournament)
   });
   const [autoKnockoutSubmitting, setAutoKnockoutSubmitting] = useState(false);
 
@@ -236,6 +247,16 @@ export default function TournamentFixturesManager({
       }).catch(() => {});
     }
   }, [tournament]);
+
+  const selectedTeamAName = useMemo(() => {
+    const t = internalTeams.find(item => String(item.internalId || item.team_id || item.id || item.uuid) === String(fixtureForm.teamAId));
+    return t ? (t.name || t.teamName) : '';
+  }, [internalTeams, fixtureForm.teamAId]);
+
+  const selectedTeamBName = useMemo(() => {
+    const t = internalTeams.find(item => String(item.internalId || item.team_id || item.id || item.uuid) === String(fixtureForm.teamBId));
+    return t ? (t.name || t.teamName) : '';
+  }, [internalTeams, fixtureForm.teamBId]);
 
   // Load Bracket Data
   const fetchBracket = useCallback(async () => {
@@ -323,6 +344,8 @@ export default function TournamentFixturesManager({
       courtName: courts[0]?.name || '',
       scorerId: '',
       countsInStandings: (categoryFilter !== 'ALL' ? categoryFilter : 'League') === 'League',
+      startingServingTeam: 'teamA',
+      rotationRule: tournament?.sport_config?.rotationRule || 'OFFICIAL',
       allowConflictOverride: false
     });
     setShowFixtureModal(true);
@@ -337,8 +360,8 @@ export default function TournamentFixturesManager({
       status: fixture.status || 'SCHEDULED',
       matchNumber: fixture.matchNumber || '',
       roundNumber: fixture.roundNumber || 1,
-      teamAId: fixture.teamA?.internalId || fixture.teamA?.id || fixture.teamAId || fixture.team_a_id || '',
-      teamBId: fixture.teamB?.internalId || fixture.teamB?.id || fixture.teamBId || fixture.team_b_id || '',
+      teamAId: fixture.teamA?.internalId || fixture.team_a_id || fixture.teamAId || fixture.teamA?.id || '',
+      teamBId: fixture.teamB?.internalId || fixture.team_b_id || fixture.teamBId || fixture.teamB?.id || '',
       groupName: fixture.groupName || fixture.group_name || 'Group 1',
       matchDate: formatDateForInput(fixture.date || fixture.match_date || fixture.matchDate),
       startTime: fixture.startTime || fixture.start_time || '09:00:00',
@@ -347,9 +370,20 @@ export default function TournamentFixturesManager({
       courtName: fixture.courtName || fixture.court_name || '',
       scorerId: fixture.scorerId || fixture.scorer_id || '',
       countsInStandings: fixture.countsInStandings !== undefined ? fixture.countsInStandings : (fixture.category === 'League'),
+      startingServingTeam: fixture.sport_state?.startingServingTeam || fixture.sport_state?.servingTeam || 'teamA',
+      rotationRule: fixture.sport_state?.rotationRule || fixture.sport_config?.rotationRule || tournament?.sport_config?.rotationRule || 'OFFICIAL',
       allowConflictOverride: false
     });
     setShowFixtureModal(true);
+  };
+
+  const resolveFormTeamId = (val) => {
+    if (!val) return null;
+    if (typeof val === 'number') return val;
+    const str = String(val).trim();
+    if (!str || str === 'null' || str === 'undefined') return null;
+    if (/^\d+$/.test(str)) return parseInt(str, 10);
+    return str; // Return UUID string directly for backend resolution
   };
 
   // Submit Fixture Form (Create or Edit)
@@ -363,8 +397,8 @@ export default function TournamentFixturesManager({
         status: fixtureForm.status,
         matchNumber: fixtureForm.matchNumber ? parseInt(fixtureForm.matchNumber, 10) : undefined,
         roundNumber: fixtureForm.roundNumber ? parseInt(fixtureForm.roundNumber, 10) : 1,
-        teamAId: fixtureForm.teamAId ? parseInt(fixtureForm.teamAId, 10) : null,
-        teamBId: fixtureForm.teamBId ? parseInt(fixtureForm.teamBId, 10) : null,
+        teamAId: resolveFormTeamId(fixtureForm.teamAId),
+        teamBId: resolveFormTeamId(fixtureForm.teamBId),
         groupName: fixtureForm.groupName,
         matchDate: fixtureForm.matchDate,
         startTime: fixtureForm.startTime,
@@ -373,6 +407,8 @@ export default function TournamentFixturesManager({
         courtName: fixtureForm.courtName,
         scorerId: fixtureForm.scorerId ? parseInt(fixtureForm.scorerId, 10) : null,
         countsInStandings: fixtureForm.countsInStandings,
+        startingServingTeam: fixtureForm.startingServingTeam || 'teamA',
+        rotationRule: fixtureForm.rotationRule || 'OFFICIAL',
         allowConflictOverride: fixtureForm.allowConflictOverride
       };
 
@@ -441,9 +477,14 @@ export default function TournamentFixturesManager({
     setAutoLeagueSubmitting(true);
     setErrorMsg('');
     try {
+      const payload = {
+        ...autoLeagueForm,
+        startDate: autoLeagueForm.startDate || getInitialTournamentDate(tournament),
+        dailyStartTime: autoLeagueForm.dailyStartTime || '09:00:00'
+      };
       const res = await axios.post(
         `/api/tournaments/${tournamentId}/fixtures/auto-league`,
-        autoLeagueForm,
+        payload,
         { headers: getAuthHeaders() }
       );
       if (res.data?.success) {
@@ -465,9 +506,13 @@ export default function TournamentFixturesManager({
     setAutoKnockoutSubmitting(true);
     setErrorMsg('');
     try {
+      const payload = {
+        ...autoKnockoutForm,
+        startDate: autoKnockoutForm.startDate || getInitialTournamentDate(tournament)
+      };
       const res = await axios.post(
         `/api/tournaments/${tournamentId}/fixtures/auto-knockout`,
-        autoKnockoutForm,
+        payload,
         { headers: getAuthHeaders() }
       );
       if (res.data?.success) {
@@ -1278,11 +1323,14 @@ export default function TournamentFixturesManager({
                     }}
                   >
                     <option value="">-- Select Team A / TBD --</option>
-                    {internalTeams.map(t => (
-                      <option key={t.id || t.team_id || t.uuid} value={t.id || t.team_id}>
-                        {t.name || t.teamName}
-                      </option>
-                    ))}
+                    {internalTeams.map(t => {
+                      const teamVal = t.internalId || t.team_id || t.id;
+                      return (
+                        <option key={t.internalId || t.team_id || t.id || t.uuid} value={teamVal}>
+                          {t.name || t.teamName}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -1307,14 +1355,172 @@ export default function TournamentFixturesManager({
                     }}
                   >
                     <option value="">-- Select Team B / TBD --</option>
-                    {internalTeams.map(t => (
-                      <option key={t.id || t.team_id || t.uuid} value={t.id || t.team_id}>
-                        {t.name || t.teamName}
-                      </option>
-                    ))}
+                    {internalTeams.map(t => {
+                      const teamVal = t.internalId || t.team_id || t.id;
+                      return (
+                        <option key={t.internalId || t.team_id || t.id || t.uuid} value={teamVal}>
+                          {t.name || t.teamName}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
+
+              {/* First Serve Selection (Court Sides & Preview) */}
+              <div style={{
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                background: 'var(--bg-elevated, rgba(255, 255, 255, 0.04))',
+                border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem'
+              }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-heading, #ffffff)' }}>
+                  First Serve (Required) *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    background: fixtureForm.startingServingTeam === 'teamA' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    border: fixtureForm.startingServingTeam === 'teamA' ? '1.5px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
+                    cursor: 'pointer',
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    color: fixtureForm.startingServingTeam === 'teamA' ? '#10b981' : '#cbd5e1'
+                  }}>
+                    <input
+                      type="radio"
+                      name="startingServingTeam"
+                      value="teamA"
+                      checked={fixtureForm.startingServingTeam !== 'teamB'}
+                      onChange={() => setFixtureForm(prev => ({ ...prev, startingServingTeam: 'teamA' }))}
+                      style={{ accentColor: '#10b981' }}
+                    />
+                    <span>Left side: {selectedTeamAName || 'Team A'}</span>
+                  </label>
+
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    background: fixtureForm.startingServingTeam === 'teamB' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    border: fixtureForm.startingServingTeam === 'teamB' ? '1.5px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.1)',
+                    cursor: 'pointer',
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    color: fixtureForm.startingServingTeam === 'teamB' ? '#3b82f6' : '#cbd5e1'
+                  }}>
+                    <input
+                      type="radio"
+                      name="startingServingTeam"
+                      value="teamB"
+                      checked={fixtureForm.startingServingTeam === 'teamB'}
+                      onChange={() => setFixtureForm(prev => ({ ...prev, startingServingTeam: 'teamB' }))}
+                      style={{ accentColor: '#3b82f6' }}
+                    />
+                    <span>Right side: {selectedTeamBName || 'Team B'}</span>
+                  </label>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>
+                  👉 First server: <strong>{fixtureForm.startingServingTeam === 'teamB' ? (selectedTeamBName || 'Right side') : (selectedTeamAName || 'Left side')}</strong> from the right court ({fixtureForm.startingServingTeam === 'teamB' ? 'top-right' : 'bottom-left'})
+                </div>
+              </div>
+
+              {/* Pickleball Playing / Rotation Rule */}
+              {isPickleball && (
+                <div style={{
+                  padding: '0.9rem',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-heading, #ffffff)' }}>
+                      Pickleball Playing / Rotation Rule
+                    </label>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      color: fixtureForm.rotationRule === 'BADMINTON' ? '#38bdf8' : '#10b981',
+                      background: fixtureForm.rotationRule === 'BADMINTON' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontWeight: 700
+                    }}>
+                      {fixtureForm.rotationRule === 'BADMINTON' ? '🏸 Badminton Style' : '🏆 Official Pickleball (Default)'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                    <label style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem',
+                      padding: '0.6rem 0.75rem',
+                      borderRadius: '8px',
+                      background: (fixtureForm.rotationRule !== 'BADMINTON') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: (fixtureForm.rotationRule !== 'BADMINTON') ? '1.5px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      color: (fixtureForm.rotationRule !== 'BADMINTON') ? '#10b981' : '#cbd5e1'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input
+                          type="radio"
+                          name="fixtureRotationRule"
+                          value="OFFICIAL"
+                          checked={fixtureForm.rotationRule !== 'BADMINTON'}
+                          onChange={() => setFixtureForm(prev => ({ ...prev, rotationRule: 'OFFICIAL' }))}
+                          style={{ accentColor: '#10b981' }}
+                        />
+                        <span>🏆 Official USA Pickleball (Default)</span>
+                      </div>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 400, color: '#94a3b8', paddingLeft: '1.4rem' }}>
+                        Side-Out with Server 1 &amp; Server 2 (0-0-2 start). Partners swap only on point won while serving.
+                      </span>
+                    </label>
+
+                    <label style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem',
+                      padding: '0.6rem 0.75rem',
+                      borderRadius: '8px',
+                      background: fixtureForm.rotationRule === 'BADMINTON' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: fixtureForm.rotationRule === 'BADMINTON' ? '1.5px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      color: fixtureForm.rotationRule === 'BADMINTON' ? '#38bdf8' : '#cbd5e1'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input
+                          type="radio"
+                          name="fixtureRotationRule"
+                          value="BADMINTON"
+                          checked={fixtureForm.rotationRule === 'BADMINTON'}
+                          onChange={() => setFixtureForm(prev => ({ ...prev, rotationRule: 'BADMINTON' }))}
+                          style={{ accentColor: '#38bdf8' }}
+                        />
+                        <span>🏸 Badminton Style (BWF Doubles)</span>
+                      </div>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 400, color: '#94a3b8', paddingLeft: '1.4rem' }}>
+                        Rally scoring. On turnover: NO player swap. Server determined by score parity (Even=Right, Odd=Left).
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* 3. Date & Times */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>

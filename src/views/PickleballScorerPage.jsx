@@ -6,9 +6,10 @@ import { socket } from '../services/socket';
 import {
   Trophy, ArrowLeft, Users, Zap, RotateCcw, Edit3, CheckCircle,
   AlertCircle, Play, Shield, Clock, Award, Sparkles, ChevronRight,
-  Coffee
+  Coffee, BookOpen
 } from 'lucide-react';
 import CourtView, { getServeState } from '../components/court/CourtView';
+import PickleballRulesTab from '../components/court/PickleballRulesTab';
 import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi } from '../services/advertisementService';
 
 export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
@@ -23,6 +24,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const [success, setSuccess] = useState('');
   const [lastEventType, setLastEventType] = useState(null);
   const [pointEvent, setPointEvent] = useState(null);
+  const [activeViewTab, setActiveViewTab] = useState('court'); // 'court' | 'rules'
 
   // Match Break State
   const [breakState, setBreakState] = useState({ isBreak: false, reason: 'Interval', durationMinutes: null });
@@ -39,6 +41,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const [playerB1, setPlayerB1] = useState('');
   const [playerB2, setPlayerB2] = useState('');
   const [startingServingTeam, setStartingServingTeam] = useState('teamA');
+  const [rotationRule, setRotationRule] = useState('OFFICIAL');
   const [showLineupSetup, setShowLineupSetup] = useState(false);
 
   // Score correction modal
@@ -54,6 +57,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       if (res.data.success) {
         const d = res.data.data;
         setState(d);
+        const resolvedRule = d?.sportState?.rotationRule || d?.rules?.rotationRule || d?.sport_state?.rotationRule || 'OFFICIAL';
+        setRotationRule(resolvedRule);
         if (d.lineup) {
           if (Array.isArray(d.lineup.teamA) && d.lineup.teamA.length > 0) {
             setSelectedLineupA(d.lineup.teamA);
@@ -201,6 +206,27 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   };
 
 
+  // Rule toggle handler (switches between OFFICIAL USA Pickleball and BADMINTON style rotation)
+  const handleRuleToggle = async (newRule) => {
+    if (!newRule || newRule === rotationRule) return;
+    setRotationRule(newRule);
+    setActionLoading(true);
+    setError('');
+    try {
+      const res = await axios.post(`/api/matches/${id}/pickleball/rule`, {
+        rotationRule: newRule
+      });
+      if (res.data?.success) {
+        setState(res.data.data);
+        setSuccess(`Pickleball rule set to ${newRule === 'BADMINTON' ? 'Badminton Style (BWF Doubles Rotation)' : 'Official USA Pickleball'}.`);
+      }
+    } catch (err) {
+      console.warn('Could not update rotation rule on server:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Set Lineup handler
   const handleSaveLineup = async () => {
     setActionLoading(true);
@@ -229,7 +255,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       const res = await axios.post(`/api/matches/${id}/pickleball/lineup`, {
         teamALineup: lineupA,
         teamBLineup: lineupB,
-        startingServingTeam
+        startingServingTeam,
+        rotationRule
       });
       if (res.data.success) {
         setState(res.data.data);
@@ -248,7 +275,9 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     setActionLoading(true);
     setError('');
     try {
-      const res = await axios.post(`/api/matches/${id}/pickleball/start`);
+      const res = await axios.post(`/api/matches/${id}/pickleball/start`, {
+        startingServingTeam
+      });
       if (res.data.success) {
         setState(res.data.data);
         setSuccess('Match is now LIVE! Ready for live scoring.');
@@ -421,6 +450,16 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const isSingles = rules.matchFormat === 'SINGLES';
   const expectedLineupCount = isSingles ? 1 : 2;
 
+  const firstServerPreview = startingServingTeam === 'teamA'
+    ? {
+        name: playerA1.trim() || (typeof selectedLineupA[0] === 'string' ? selectedLineupA[0] : selectedLineupA[0]?.name) || `${teamA?.name || 'Team A'} 1`,
+        box: 'bottom-left'
+      }
+    : {
+        name: playerB1.trim() || (typeof selectedLineupB[0] === 'string' ? selectedLineupB[0] : selectedLineupB[0]?.name) || `${teamB?.name || 'Team B'} 1`,
+        box: 'top-right'
+      };
+
   const formatLineup = (teamLineup) => {
     if (!teamLineup || !Array.isArray(teamLineup) || teamLineup.length === 0) return 'Lineup TBA';
     return teamLineup.map(p => typeof p === 'string' ? p : (p.name || p.id)).join(' & ');
@@ -484,6 +523,125 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         </div>
       )}
 
+      {/* ONE-TIME "SET FIRST SERVE & RULE" PROMPT FOR SCORER (Never shown to viewers/TV) */}
+      {scores.teamA === 0 && scores.teamB === 0 && (!logs || logs.length === 0) && !state?.sportState?.firstServeConfirmed && !state?.sport_state?.firstServeConfirmed && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(16, 185, 129, 0.12))',
+          border: '1.5px solid rgba(245, 158, 11, 0.5)',
+          borderRadius: '14px',
+          padding: '1rem 1.25rem',
+          marginBottom: '1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.85rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f59e0b', fontWeight: 800, fontSize: '0.92rem' }}>
+              <Zap size={18} />
+              <span>Match Setup: Choose rule method and which team serves first before scoring the first point</span>
+            </div>
+          </div>
+
+          {/* Rule Selection Toggle */}
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '10px',
+            padding: '0.65rem 0.85rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#e2e8f0' }}>Pickleball Playing / Rotation Rule:</span>
+              <span style={{
+                fontSize: '0.72rem',
+                color: rotationRule === 'BADMINTON' ? '#38bdf8' : '#10b981',
+                background: rotationRule === 'BADMINTON' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontWeight: 700
+              }}>
+                {rotationRule === 'BADMINTON' ? '🏸 Badminton Style Active' : '🏆 Official Pickleball (Default)'}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => handleRuleToggle('OFFICIAL')}
+                className={`btn ${rotationRule !== 'BADMINTON' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  padding: '0.5rem 0.75rem',
+                  gap: '2px',
+                  background: rotationRule !== 'BADMINTON' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                  borderColor: rotationRule !== 'BADMINTON' ? '#10b981' : 'rgba(255, 255, 255, 0.2)',
+                  color: rotationRule !== 'BADMINTON' ? '#10b981' : '#cbd5e1',
+                  textAlign: 'left'
+                }}
+              >
+                <span style={{ fontWeight: 800, fontSize: '0.82rem' }}>🏆 Official USA Pickleball (Default)</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 400, opacity: 0.85 }}>Server 1/Server 2 side-out. Partners swap on point won serving.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRuleToggle('BADMINTON')}
+                className={`btn ${rotationRule === 'BADMINTON' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  padding: '0.5rem 0.75rem',
+                  gap: '2px',
+                  background: rotationRule === 'BADMINTON' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                  borderColor: rotationRule === 'BADMINTON' ? '#38bdf8' : 'rgba(255, 255, 255, 0.2)',
+                  color: rotationRule === 'BADMINTON' ? '#38bdf8' : '#cbd5e1',
+                  textAlign: 'left'
+                }}
+              >
+                <span style={{ fontWeight: 800, fontSize: '0.82rem' }}>🏸 Badminton Style (BWF Doubles)</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 400, opacity: 0.85 }}>Rally scoring. On turnover: NO player swap. Server by score parity.</span>
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flex: 1, minWidth: '260px' }}>
+              <button
+                type="button"
+                onClick={() => setStartingServingTeam('teamA')}
+                className={`btn ${startingServingTeam === 'teamA' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                style={{ flex: 1, fontWeight: 800 }}
+              >
+                Left side: {teamA.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStartingServingTeam('teamB')}
+                className={`btn ${startingServingTeam === 'teamB' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                style={{ flex: 1, fontWeight: 800 }}
+              >
+                Right side: {teamB.name}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveLineup}
+              disabled={actionLoading}
+              className="btn btn-primary btn-sm"
+              style={{ background: '#10b981', border: 'none', fontWeight: 800, padding: '0.5rem 1.2rem' }}
+            >
+              Confirm Setup
+            </button>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>
+            👉 First server: <strong>{firstServerPreview.name}</strong> from the right court ({firstServerPreview.box})
+          </div>
+        </div>
+      )}
+
       {/* Match Header / Header Card */}
       <div className="scorer-header-card" style={{ padding: '1.25rem 1rem', borderRadius: '16px', marginBottom: '1.5rem', boxSizing: 'border-box', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
@@ -499,6 +657,18 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
               <span className="scorer-meta-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', padding: '0.25rem 0.6rem', borderRadius: '8px' }}>
                 <span className="scorer-meta-chip-label" style={{ fontWeight: 700 }}>Tournament:</span> {tournament.name}
+              </span>
+              <span className="scorer-meta-chip" style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.78rem',
+                padding: '0.25rem 0.6rem',
+                borderRadius: '8px',
+                border: rotationRule === 'BADMINTON' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
+                color: rotationRule === 'BADMINTON' ? '#38bdf8' : '#10b981'
+              }}>
+                <span className="scorer-meta-chip-label" style={{ fontWeight: 700, color: 'var(--text-muted)' }}>Rule:</span> {rotationRule === 'BADMINTON' ? '🏸 Badminton Style' : '🏆 USA Pickleball'}
               </span>
               <span className="scorer-meta-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', padding: '0.25rem 0.6rem', borderRadius: '8px' }}>
                 <span className="scorer-meta-chip-label" style={{ fontWeight: 700 }}>Target:</span> {rules.targetScore} pts {rules.winByTwo ? '(Win by 2)' : ''}
@@ -594,14 +764,47 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         </div>
       </div>
 
-      {/* Main Scoreboard Arena */}
-      <div className="scorer-arena-card" style={{ padding: 'clamp(1rem, 2.5vw, 2.25rem)', borderRadius: '20px', marginBottom: '1.75rem', textAlign: 'center', boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
-        {status === 'COMPLETED' && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1.25rem', background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: '30px', color: '#059669', fontWeight: 800, fontSize: '0.95rem', marginBottom: '1.5rem', maxWidth: '100%', boxSizing: 'border-box' }}>
-            <Trophy size={20} style={{ flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>MATCH CONCLUDED • {resultSummary}</span>
-          </div>
-        )}
+      {/* View Switcher: Live Court vs Dedicated Rules Tab */}
+      <div style={{ display: 'flex', gap: '0.65rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.1))', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => setActiveViewTab('court')}
+          className={`btn ${activeViewTab === 'court' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontWeight: 800, borderRadius: '8px', padding: '0.5rem 1rem' }}
+        >
+          <span>🏓</span> Live Court & Scoring Console
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveViewTab('rules')}
+          className={`btn ${activeViewTab === 'rules' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontWeight: 800, borderRadius: '8px', padding: '0.5rem 1rem' }}
+        >
+          <BookOpen size={16} /> Tournament Rules ({rules.scoringMode === 'SIDE_OUT' ? 'Side-Out' : `Rally Scoring ${rules.targetScore || 15} Pts`})
+        </button>
+      </div>
+
+      {activeViewTab === 'rules' ? (
+        <PickleballRulesTab
+          rules={rules}
+          scores={scores}
+          sportState={state.sportState}
+          courtState={state.courtState}
+          teamA={teamA}
+          teamB={teamB}
+          lineup={lineup}
+          status={status}
+        />
+      ) : (
+        <div className="scorer-console-view">
+          {/* Main Scoreboard Arena */}
+          <div className="scorer-arena-card" style={{ padding: 'clamp(1rem, 2.5vw, 2.25rem)', borderRadius: '20px', marginBottom: '1.75rem', textAlign: 'center', boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
+            {status === 'COMPLETED' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1.25rem', background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: '30px', color: '#059669', fontWeight: 800, fontSize: '0.95rem', marginBottom: '1.5rem', maxWidth: '100%', boxSizing: 'border-box' }}>
+                <Trophy size={20} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>MATCH CONCLUDED • {resultSummary}</span>
+              </div>
+            )}
 
         <div className="scorer-arena-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 'clamp(0.4rem, 1.5vw, 1.5rem)', width: '100%', boxSizing: 'border-box' }}>
           {/* Team A Card */}
@@ -850,11 +1053,16 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
             eventSeq={logs?.length || 1}
             pointEvent={pointEvent}
             ambientRally={false}
+            sportState={state?.sportState || state?.sport_state}
+            servingTeam={state?.sportState?.servingTeam || state?.sport_state?.servingTeam}
+            serverNumber={state?.sportState?.serverNumber || state?.sport_state?.serverNumber}
+            scoringMode={rules?.scoringMode || state?.sportState?.scoringMode || 'RALLY'}
             match={{
               id,
               uuid: id,
               sportSlug: 'pickleball',
               matchFormat: rules?.matchFormat || 'DOUBLES',
+              scoringMode: rules?.scoringMode || state?.sportState?.scoringMode || 'RALLY',
               teamA: courtTeamA,
               teamB: courtTeamB,
               scores,
@@ -864,6 +1072,10 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               courtColor: tournament?.courtColor || '#0d5c3a',
               lineup,
               logs: logs || state?.logs || [],
+              sport_state: state?.sportState || state?.sport_state,
+              sportState: state?.sportState || state?.sport_state,
+              servingTeam: state?.sportState?.servingTeam || state?.sport_state?.servingTeam,
+              serverNumber: state?.sportState?.serverNumber || state?.sport_state?.serverNumber,
               _pointEvent: pointEvent,
               _lastEventType: lastEventType,
               _eventSeq: logs?.length || 1
@@ -898,28 +1110,88 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
 
         {(showLineupSetup || (!lineup?.teamA || lineup.teamA.length === 0) || status === 'SCHEDULED' || status === 'READY') && (
           <div style={{ marginTop: '0.75rem' }}>
-            {/* First Serving Team Toggle */}
-            <div style={{ marginBottom: '1.25rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'var(--bg-secondary, rgba(0,0,0,0.03))', border: '1px solid var(--border-color, #e2e8f0)' }}>
-              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '0.5rem' }}>
-                First Serving Team (Starts 0-0-2):
+            {/* Playing / Rotation Rule Selector */}
+            <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '12px', background: 'var(--bg-secondary, rgba(0,0,0,0.03))', border: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Playing / Rotation Rule:</span>
+                <span style={{
+                  fontSize: '0.74rem',
+                  color: rotationRule === 'BADMINTON' ? '#38bdf8' : '#10b981',
+                  fontWeight: 700
+                }}>
+                  {rotationRule === 'BADMINTON' ? '🏸 Badminton Style (BWF Doubles)' : '🏆 USA Pickleball (Default)'}
+                </span>
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.65rem' }}>
+                <button
+                  type="button"
+                  onClick={() => handleRuleToggle('OFFICIAL')}
+                  className={`btn ${rotationRule !== 'BADMINTON' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    padding: '0.5rem 0.75rem',
+                    gap: '2px',
+                    textAlign: 'left',
+                    background: rotationRule !== 'BADMINTON' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                    borderColor: rotationRule !== 'BADMINTON' ? '#10b981' : 'var(--border-color, #cbd5e1)',
+                    color: rotationRule !== 'BADMINTON' ? '#10b981' : 'inherit'
+                  }}
+                >
+                  <span style={{ fontWeight: 800, fontSize: '0.82rem' }}>🏆 Official USA Pickleball (Default)</span>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 400, opacity: 0.8 }}>Server 1/Server 2 side-out. Partners swap only when serving side wins point.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRuleToggle('BADMINTON')}
+                  className={`btn ${rotationRule === 'BADMINTON' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    padding: '0.5rem 0.75rem',
+                    gap: '2px',
+                    textAlign: 'left',
+                    background: rotationRule === 'BADMINTON' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                    borderColor: rotationRule === 'BADMINTON' ? '#38bdf8' : 'var(--border-color, #cbd5e1)',
+                    color: rotationRule === 'BADMINTON' ? '#38bdf8' : 'inherit'
+                  }}
+                >
+                  <span style={{ fontWeight: 800, fontSize: '0.82rem' }}>🏸 Badminton Style (BWF Doubles)</span>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 400, opacity: 0.8 }}>Rally scoring. On turnover: zero partner swap. Server by team score parity.</span>
+                </button>
+              </div>
+            </div>
+
+            {/* First Serving Team Toggle */}
+            <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', borderRadius: '12px', background: 'var(--bg-secondary, rgba(0,0,0,0.03))', border: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>First serve (Required):</span>
+                <span style={{ fontSize: '0.74rem', color: '#10b981', fontWeight: 700 }}>
+                  Starts at {rules?.scoringMode === 'SIDE_OUT' && rules?.matchFormat !== 'SINGLES' ? '0-0-2' : '0-0'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.6rem' }}>
                 <button
                   type="button"
                   onClick={() => setStartingServingTeam('teamA')}
                   className={`btn ${startingServingTeam === 'teamA' ? 'btn-primary' : 'btn-outline'} btn-sm`}
-                  style={{ flex: 1, fontWeight: 800 }}
+                  style={{ fontWeight: 800, padding: '0.55rem 0.75rem', textAlign: 'center' }}
                 >
-                  🏸 {teamA.name} Serves First
+                  Left side: {teamA.name}
                 </button>
                 <button
                   type="button"
                   onClick={() => setStartingServingTeam('teamB')}
                   className={`btn ${startingServingTeam === 'teamB' ? 'btn-primary' : 'btn-outline'} btn-sm`}
-                  style={{ flex: 1, fontWeight: 800 }}
+                  style={{ fontWeight: 800, padding: '0.55rem 0.75rem', textAlign: 'center' }}
                 >
-                  🏸 {teamB.name} Serves First
+                  Right side: {teamB.name}
                 </button>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>👉 First server: <strong>{firstServerPreview.name}</strong> from the right court ({firstServerPreview.box})</span>
               </div>
             </div>
 
@@ -1122,6 +1394,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
           </div>
         )}
       </div>
+      </div>
+      )}
 
       {/* Score Correction Modal */}
       {showCorrectionModal && (

@@ -16,13 +16,14 @@ import {
   Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft,
   Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv,
   ChevronRight, Trash2, Search, Check, Filter, X, ClipboardList, Settings, AlertTriangle, Info, Clock, ExternalLink,
-  Eye, Activity, Video, Lock
+  Eye, Activity, Video, Lock, BookOpen
 } from 'lucide-react';
 import TeamRosterDrawer from '../../../components/tournament/TeamRosterDrawer';
 import PlayerRegistrationsManager from '../../../components/tournament/PlayerRegistrationsManager';
 import OfficialScorersManager from '../../../components/tournament/OfficialScorersManager';
 import TournamentFixturesManager from '../../../components/tournament/TournamentFixturesManager';
 import TournamentStreamingPermissionsManager from '../../../components/streaming/TournamentStreamingPermissionsManager';
+import PickleballRulesTab from '../../../components/court/PickleballRulesTab';
 
 const EMPTY_ARRAY = [];
 
@@ -1026,7 +1027,10 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           { key: 'scorers', label: 'Official Scorers', icon: <ClipboardList size={15} /> },
           { key: 'streaming', label: 'Live Streaming Access', icon: <Video size={15} /> },
           { key: 'awards', label: 'Awards & Leaders', icon: <Award size={15} /> },
-          ...(isPickleball ? [{ key: 'groups', label: 'Groups & Squads', icon: <Users size={15} /> }] : []),
+          ...(isPickleball ? [
+            { key: 'groups', label: 'Groups & Squads', icon: <Users size={15} /> },
+            { key: 'rules', label: 'Tournament Rules', icon: <BookOpen size={15} /> }
+          ] : []),
           ...(tournament.hasAuction ? [{ key: 'auction', label: 'Player Auction', icon: <Gavel size={15} /> }] : []),
           ...(canManage ? [{ key: 'settings', label: 'Settings & Management', icon: <Settings size={15} /> }] : [])
         ].map((tab) => (
@@ -1851,6 +1855,26 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Pickleball Rules Tab ── */}
+        {activeTab === 'rules' && isPickleball && (
+          <div style={{ marginTop: '0.5rem', marginBottom: '2rem' }}>
+            <PickleballRulesTab
+              rules={{
+                matchFormat: tournament.matchFormat || 'DOUBLES',
+                scoringMode: tournament.scoringMode || 'RALLY',
+                targetScore: tournament.targetScore != null ? tournament.targetScore : 15,
+                winByTwo: tournament.winByTwo !== false,
+                maxScore: tournament.maxScore || null,
+                tournamentRules: tournament.rules || null
+              }}
+              scores={{ teamA: 0, teamB: 0 }}
+              teamA={{ name: 'Team A' }}
+              teamB={{ name: 'Team B' }}
+              status="OFFICIAL CONFIG"
+            />
           </div>
         )}
 

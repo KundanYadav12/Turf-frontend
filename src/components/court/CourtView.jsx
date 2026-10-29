@@ -403,37 +403,15 @@ export default function CourtView({
   }), []);
 
   const activeServerBox = useMemo(() => {
-    if (courtState.serveState?.servingBoxName) {
-      return BOX_MAP[courtState.serveState.servingBoxName] || BOX_MAP['bottom-left'];
-    }
-    const isLeft = courtState.teamSides[courtState.servingTeam] === 'LEFT';
-    if (isLeft) {
-      return courtState.serverBox === 'RIGHT'
-        ? BOX_MAP['bottom-left']
-        : BOX_MAP['top-left'];
-    } else {
-      return courtState.serverBox === 'RIGHT'
-        ? BOX_MAP['top-right']
-        : BOX_MAP['bottom-right'];
-    }
-  }, [courtState, BOX_MAP]);
+    const boxName = courtState.servingBoxName || courtState.serveState?.servingBoxName || 'bottom-left';
+    return BOX_MAP[boxName] || BOX_MAP['bottom-left'];
+  }, [courtState.servingBoxName, courtState.serveState?.servingBoxName, BOX_MAP]);
 
   // Diagonal Receiver Box
   const activeReceiverBox = useMemo(() => {
-    if (courtState.serveState?.targetBoxName) {
-      return BOX_MAP[courtState.serveState.targetBoxName] || BOX_MAP['top-right'];
-    }
-    const isReceiverLeft = courtState.teamSides[courtState.servingTeam] !== 'LEFT';
-    if (isReceiverLeft) {
-      return courtState.receiverBox === 'RIGHT'
-        ? BOX_MAP['bottom-left']
-        : BOX_MAP['top-left'];
-    } else {
-      return courtState.receiverBox === 'RIGHT'
-        ? BOX_MAP['top-right']
-        : BOX_MAP['bottom-right'];
-    }
-  }, [courtState, BOX_MAP]);
+    const boxName = courtState.targetBoxName || courtState.serveState?.targetBoxName || 'top-right';
+    return BOX_MAP[boxName] || BOX_MAP['top-right'];
+  }, [courtState.targetBoxName, courtState.serveState?.targetBoxName, BOX_MAP]);
 
   return (
     <div

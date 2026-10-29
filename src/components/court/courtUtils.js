@@ -88,7 +88,7 @@ export function getServeState(match) {
   const sport = (match.sportSlug || match.sport?.slug || match.sport || 'badminton').toLowerCase();
 
   // 2. Extract underlying state
-  let state = match.score?.details || match.sport_state || match.state || {};
+  let state = match.sport_state || match.sportState || match.score?.details || match.state || {};
   if (typeof state === 'string') {
     try {
       state = JSON.parse(state);
@@ -248,8 +248,8 @@ export function getServeState(match) {
     box: targetBoxChoice
   };
 
-  const servingBoxName = `${serviceBox}-${serverSide}`;
-  const targetBoxName = `${targetBox.box}-${targetBox.side}`;
+  const servingBoxName = state.servingBoxName || `${serviceBox}-${serverSide}`;
+  const targetBoxName = state.targetBoxName || `${targetBox.box}-${targetBox.side}`;
 
   const serverTeam = isTeamAServing ? teamA : teamB;
   const receiverTeam = isTeamAServing ? teamB : teamA;
@@ -354,10 +354,38 @@ export function getCourtState(match) {
   };
 
   // 5. Config object for Rules Engine
+  const resolvedScoringMode =
+    match?.sportState?.scoringMode ||
+    match?.sport_state?.scoringMode ||
+    state?.scoringMode ||
+    match?.scoringMode ||
+    match?.rules?.scoringMode ||
+    match?.sportConfig?.scoringMode ||
+    match?.sport_config?.scoringMode ||
+    'RALLY';
+
+  const startingServingTeam =
+    match?.sportState?.servingTeam ||
+    match?.sport_state?.servingTeam ||
+    state?.servingTeam ||
+    match?.servingTeam ||
+    (serveState.isTeamAServing ? 'teamA' : 'teamB');
+
+  const resolvedRotationRule =
+    match?.sportState?.rotationRule ||
+    match?.sport_state?.rotationRule ||
+    state?.rotationRule ||
+    match?.rotationRule ||
+    match?.rules?.rotationRule ||
+    match?.sportConfig?.rotationRule ||
+    match?.sport_config?.rotationRule ||
+    'OFFICIAL';
+
   const engineConfig = {
     sport,
     format,
-    scoringMode: match?.scoringMode || match?.rules?.scoringMode || (isPickleball ? 'SIDE_OUT' : 'RALLY'),
+    scoringMode: resolvedScoringMode,
+    rotationRule: resolvedRotationRule,
     teamA,
     teamB,
     scores: { teamA: scoreA, teamB: scoreB },
@@ -367,7 +395,7 @@ export function getCourtState(match) {
     },
     targetScore: match?.targetScore || match?.rules?.targetScore || (isBadminton ? 21 : 15),
     winByTwo: match?.winByTwo ?? match?.rules?.winByTwo ?? true,
-    startingServingTeam: serveState.isTeamAServing ? 'teamA' : 'teamB'
+    startingServingTeam
   };
 
   // 6. Check for Point History Logs
@@ -378,7 +406,7 @@ export function getCourtState(match) {
     // Deterministic recomputation from full point history
     engineState = computeCourtStateFromHistory(engineConfig, historyLogs);
   } else {
-    // Snapshot initialization with current score
+    // Snapshot initialization with current score and existing state if available
     engineConfig.scores = { teamA: scoreA, teamB: scoreB };
     engineState = getInitialCourtState(engineConfig);
     engineState.scores.teamA = scoreA;
@@ -386,26 +414,18 @@ export function getCourtState(match) {
     engineState.scoreA = scoreA;
     engineState.scoreB = scoreB;
 
-    if (isPickleball) {
-      if (!isSingles) {
-        const originalA = engineState.originalPlayerPositions?.teamA || {
-          [engineState.playersA[0].id]: 'RIGHT',
-          [engineState.playersA[1].id]: 'LEFT'
-        };
-        const originalB = engineState.originalPlayerPositions?.teamB || {
-          [engineState.playersB[0].id]: 'RIGHT',
-          [engineState.playersB[1].id]: 'LEFT'
-        };
-        const posA = calculatePickleballDoublesPositions(scoreA, originalA);
-        const posB = calculatePickleballDoublesPositions(scoreB, originalB);
-        engineState.playerLocations = { ...engineState.playerLocations, ...posA, ...posB };
-      } else {
-        engineState.playerLocations[engineState.playersA[0].id] = (scoreA % 2 === 0) ? 'RIGHT' : 'LEFT';
-        engineState.playerLocations[engineState.playersB[0].id] = (scoreB % 2 === 0) ? 'RIGHT' : 'LEFT';
-      }
-      const adapter = getSportAdapter('pickleball');
-      engineState = finalizeCourtState(engineState, adapter, engineConfig);
+    if (state.servingTeam) {
+      engineState.servingTeam = state.servingTeam === 'teamB' || state.servingTeam === 'team_b' ? 'teamB' : 'teamA';
     }
+    if (state.serverNumber) {
+      engineState.serverNumber = parseInt(state.serverNumber, 10) || engineState.serverNumber;
+    }
+    if (state.playerLocations && typeof state.playerLocations === 'object') {
+      engineState.playerLocations = { ...engineState.playerLocations, ...state.playerLocations };
+    }
+
+    const adapter = getSportAdapter(sport);
+    engineState = finalizeCourtState(engineState, adapter, engineConfig);
   }
 
   // 7. Server Number for Pickleball (1 or 2)
@@ -425,28 +445,37 @@ export function getCourtState(match) {
   const leftIsServing = serveState.serverSide === 'left';
   const rightIsServing = serveState.serverSide === 'right';
 
-  const servingTeam = serveState.isTeamAServing ? 'teamA' : 'teamB';
-  const servingSide = serveState.isTeamAServing ? 'team_a' : 'team_b';
-  const serverBox = serveState.serverCourt;
-  const receiverBox = serveState.receiverCourt;
+  const servingTeam = engineState.servingTeam || (serveState.isTeamAServing ? 'teamA' : 'teamB');
+  const servingSide = servingTeam === 'teamA' ? 'team_a' : 'team_b';
+  const serverBox = engineState.serviceCourt || serveState.serverCourt;
+  const receiverBox = engineState.receiverCourt || serveState.receiverCourt;
   const teamSides = {
     teamA: teamA.side,
     teamB: teamB.side
   };
-  const servingTeamSide = serveState.serverSide.toUpperCase();
-  const receivingTeamSide = serveState.receiverSide.toUpperCase();
+  const servingTeamSide = (engineState.teamSides?.[servingTeam] || serveState.serverSide).toUpperCase();
+  const receivingTeamSide = (engineState.teamSides?.[servingTeam === 'teamA' ? 'teamB' : 'teamA'] || serveState.receiverSide).toUpperCase();
 
-  // 9. Coordinates on 800x400 SVG Court ViewBox
-  const servingBoxName = serveState.servingBoxName || engineState.servingBoxName || 'bottom-left';
-  const targetBoxName = serveState.targetBoxName || engineState.targetBoxName || 'top-right';
+  // 9. Coordinates on 800x400 SVG Court ViewBox: Derived from ONE computed state object
+  const servingBoxName = engineState.servingBoxName || serveState.servingBoxName || 'bottom-left';
+  const targetBoxName = engineState.targetBoxName || serveState.targetBoxName || 'top-right';
 
-  const serverCoords = BOX_COORDINATES[servingBoxName] || { x: 75, y: 285 };
-  const receiverCoords = BOX_COORDINATES[targetBoxName] || { x: 725, y: 115 };
+  const serverCoords = engineState.serverCoords || BOX_COORDINATES[servingBoxName] || { x: 75, y: 285 };
+  const receiverCoords = engineState.receiverCoords || BOX_COORDINATES[targetBoxName] || { x: 725, y: 115 };
 
-  const defaultBallCoords = {
-    x: serveState.serverSide === 'left' ? 95 : 705,
+  const defaultBallCoords = engineState.ballCoords || {
+    x: servingBoxName.includes('left') ? 95 : 705,
     y: serverCoords.y
   };
+
+  // Synchronize serveState completely so activeServerBox, ball, and badges NEVER disagree!
+  serveState.servingBoxName = servingBoxName;
+  serveState.targetBoxName = targetBoxName;
+  serveState.serverSide = (engineState.teamSides?.[servingTeam] || 'LEFT').toLowerCase();
+  serveState.receiverSide = (engineState.teamSides?.[servingTeam === 'teamA' ? 'teamB' : 'teamA'] || 'RIGHT').toLowerCase();
+  serveState.serverCourt = serverBox;
+  serveState.receiverCourt = receiverBox;
+  serveState.isTeamAServing = servingTeam === 'teamA';
 
   // 10. Engine-Derived Players with Accurate Lineup / TBA Status
   const players = engineState.players && engineState.players.length > 0
@@ -561,9 +590,14 @@ export function getCourtState(match) {
     receivingTeamName,
     servingStatusText,
     teamSides,
+    servingBoxName,
+    targetBoxName,
     serverCoords,
     receiverCoords,
     defaultBallCoords,
+    ballCoords: defaultBallCoords,
+    arrowPath: engineState?.arrowPath,
+    callText: engineState?.callText || servingStatusText,
     players,
     isGamePoint,
     isMatchPoint,

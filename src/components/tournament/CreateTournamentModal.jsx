@@ -27,6 +27,8 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     status: 'PUBLISHED',
     // Pickleball configuration
     matchFormat: 'DOUBLES',
+    scoringMode: 'RALLY',
+    rotationRule: 'OFFICIAL',
     targetScore: 15,
     winByTwo: true,
     maxScore: '',
@@ -164,6 +166,8 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
 
       if (isPickleball) {
         data.append('matchFormat', formData.matchFormat);
+        data.append('scoringMode', formData.scoringMode || 'RALLY');
+        data.append('rotationRule', formData.rotationRule || 'OFFICIAL');
         data.append('targetScore', formData.targetScore);
         data.append('winByTwo', formData.winByTwo ? 'true' : 'false');
         if (formData.maxScore) data.append('maxScore', formData.maxScore);
@@ -472,6 +476,36 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   >
                     <option value="DOUBLES" style={optionStyle}>Doubles (2 Players on Court)</option>
                     <option value="SINGLES" style={optionStyle}>Singles (1 Player on Court)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>
+                    Scoring Format *
+                  </label>
+                  <select
+                    name="scoringMode"
+                    value={formData.scoringMode}
+                    onChange={handleChange}
+                    style={selectStyle}
+                  >
+                    <option value="RALLY" style={optionStyle}>Rally Scoring — 15 Pts (Default)</option>
+                    <option value="SIDE_OUT" style={optionStyle}>Traditional Side-Out</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>
+                    Playing / Rotation Rule *
+                  </label>
+                  <select
+                    name="rotationRule"
+                    value={formData.rotationRule || 'OFFICIAL'}
+                    onChange={handleChange}
+                    style={selectStyle}
+                  >
+                    <option value="OFFICIAL" style={optionStyle}>Official USA Pickleball (Default)</option>
+                    <option value="BADMINTON" style={optionStyle}>Badminton Style (BWF Doubles Rotation)</option>
                   </select>
                 </div>
 
