@@ -7,8 +7,10 @@ import {
   Shield, Users, Trophy, Calendar, MapPin, ArrowLeft,
   UserPlus, Trash2, CheckCircle2, AlertCircle, Phone,
   User, Award, ChevronRight, Activity, Clock, Search,
-  Camera, Upload, Sparkles, Loader2, AtSign, Check
+  Camera, Upload, Sparkles, Loader2, AtSign, Check,
+  Share2, Copy, LogOut, RefreshCw, Ban, QrCode, X
 } from 'lucide-react';
+import QRCode from 'qrcode.react';
 import { compressAndOptimizeImage } from '../lib/imageOptimizer';
 
 export default function TeamDetailPage({ teamId }) {
@@ -44,6 +46,13 @@ export default function TeamDetailPage({ teamId }) {
   const [newPlayerJersey, setNewPlayerJersey] = useState('');
   const [newPlayerPosition, setNewPlayerPosition] = useState('Player');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Invite / Share Modal State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [isRegeneratingLink, setIsRegeneratingLink] = useState(false);
+  const [isRevokingLink, setIsRevokingLink] = useState(false);
+  const [isLeavingTeam, setIsLeavingTeam] = useState(false);
 
   // Active Tab: 'roster', 'matches', 'fixtures'
   const [activeTab, setActiveTab] = useState('roster');
@@ -258,6 +267,95 @@ export default function TeamDetailPage({ teamId }) {
     }
   };
 
+  const inviteUrl = team?.inviteUrl || (typeof window !== 'undefined' && team?.inviteCode ? `${window.location.origin}/teams/join/${team.inviteCode}` : '');
+
+  // Handle Share Team Link
+  const handleShareTeamLink = async () => {
+    if (!inviteUrl) return;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Join ${team.name} on TurfSpot`,
+          text: `You have been invited to join ${team.name} on TurfSpot!`,
+          url: inviteUrl
+        });
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Share error:', err);
+        }
+      }
+    }
+    handleCopyLink();
+  };
+
+  // Handle Copy Link
+  const handleCopyLink = () => {
+    if (!inviteUrl) return;
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(inviteUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
+  // Handle Regenerate Invite Link (Owner/Admin)
+  const handleRegenerateInviteLink = async () => {
+    if (!confirm('Regenerate this team\'s joining link? Any link previously shared will become invalid immediately.')) return;
+    setIsRegeneratingLink(true);
+    setErrorMsg('');
+    try {
+      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+      const res = await axios.post(`/api/teams/${teamId}/regenerate-invite-link`, {}, config);
+      if (res.data.success) {
+        setSuccessMsg('Team joining link regenerated successfully! Old links invalidated.');
+        fetchTeam();
+      }
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || 'Failed to regenerate invite link.');
+    } finally {
+      setIsRegeneratingLink(false);
+    }
+  };
+
+  // Handle Revoke Invite Link (Owner/Admin)
+  const handleRevokeInviteLink = async () => {
+    if (!confirm('Revoke this joining link? New players will not be able to join using links until you generate a new one.')) return;
+    setIsRevokingLink(true);
+    setErrorMsg('');
+    try {
+      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+      const res = await axios.post(`/api/teams/${teamId}/revoke-invite-link`, {}, config);
+      if (res.data.success) {
+        setSuccessMsg('Team joining link revoked.');
+        fetchTeam();
+      }
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || 'Failed to revoke invite link.');
+    } finally {
+      setIsRevokingLink(false);
+    }
+  };
+
+  // Handle Leave Team (Ordinary member)
+  const handleLeaveTeam = async () => {
+    if (!confirm(`Are you sure you want to leave ${team.name}? Your match history and tournament records will remain intact.`)) return;
+    setIsLeavingTeam(true);
+    setErrorMsg('');
+    try {
+      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+      const res = await axios.post(`/api/teams/${teamId}/leave`, {}, config);
+      if (res.data.success) {
+        setSuccessMsg('You have left the team.');
+        fetchTeam();
+      }
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || 'Failed to leave team.');
+    } finally {
+      setIsLeavingTeam(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container" style={{ padding: '4rem 1rem', textAlign: 'center', color: '#94a3b8' }}>
@@ -393,16 +491,49 @@ export default function TeamDetailPage({ teamId }) {
             </div>
           </div>
 
-          {/* Organizer Manage Actions */}
-          {team.canManage && (
+          {/* Team Action Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* Share Team Link */}
             <button
-              onClick={() => setShowAddPlayerModal(true)}
-              className="btn btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              id="share-team-link-btn"
+              onClick={() => setShowShareModal(true)}
+              className="btn btn-outline"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
             >
-              <UserPlus size={16} /> Add Player to Roster
+              <Share2 size={16} /> Share Team Link
             </button>
-          )}
+
+            {/* Organizer Manage Actions */}
+            {team.canManage && (
+              <button
+                id="add-player-btn"
+                onClick={() => setShowAddPlayerModal(true)}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+              >
+                <UserPlus size={16} /> Add Player
+              </button>
+            )}
+
+            {/* Leave Team for ordinary members */}
+            {team.isMember && !team.isOwner && (
+              <button
+                id="leave-team-btn"
+                onClick={handleLeaveTeam}
+                disabled={isLeavingTeam}
+                className="btn btn-outline"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  borderColor: 'rgba(239, 68, 68, 0.4)',
+                  color: '#f87171'
+                }}
+              >
+                <LogOut size={16} /> {isLeavingTeam ? 'Leaving…' : 'Leave Team'}
+              </button>
+            )}
+          </div>
         </div>
 
         {team.description && (
@@ -582,20 +713,26 @@ export default function TeamDetailPage({ teamId }) {
                       </span>
                     </div>
 
-                    {team.canManage && (
-                      <button
-                        onClick={() => handleRemovePlayer(member.memberId, member.name)}
-                        title="Remove Player from Squad"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          padding: 4
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                    {member.userId && member.userId === team.ownerId ? (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '0.15rem 0.45rem', borderRadius: 4 }}>
+                        OWNER
+                      </span>
+                    ) : (
+                      team.canManage && (
+                        <button
+                          onClick={() => handleRemovePlayer(member.memberId, member.name)}
+                          title="Remove Player from Squad"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            padding: 4
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -1084,6 +1221,205 @@ export default function TeamDetailPage({ teamId }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 2. SHARE TEAM LINK MODAL                                 */}
+      {/* ========================================================= */}
+      {showShareModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+          onClick={() => setShowShareModal(false)}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              borderRadius: '20px',
+              padding: 'clamp(1.5rem, 3.5vw, 2rem)',
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 58, 138, 0.45))',
+              border: '1px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(56, 189, 248, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+                  <Share2 size={18} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                    Invite Players to Squad
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0 }}>
+                    {team.name} &bull; {team.sport?.name || 'Sports'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowShareModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.86rem', color: '#cbd5e1', lineHeight: '1.5', marginBottom: '1.25rem' }}>
+              Share this invite link with players. Anyone who clicks the link can preview the squad and join the roster instantly.
+            </p>
+
+            {team.inviteCode ? (
+              <>
+                {/* Link Box */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#94a3b8', marginBottom: '0.4rem', textTransform: 'uppercase' }}>
+                    Shareable Joining Link
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      id="team-invite-link-input"
+                      type="text"
+                      readOnly
+                      value={inviteUrl}
+                      style={{
+                        flex: 1,
+                        padding: '0.75rem 0.85rem',
+                        borderRadius: '10px',
+                        background: 'rgba(0,0,0,0.4)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        color: '#38bdf8',
+                        fontFamily: 'monospace',
+                        fontSize: '0.82rem'
+                      }}
+                      onClick={(e) => e.target.select()}
+                    />
+                    <button
+                      id="copy-invite-link-btn"
+                      onClick={handleCopyLink}
+                      className="btn btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}
+                    >
+                      {copiedLink ? <Check size={16} /> : <Copy size={16} />}
+                      {copiedLink ? 'Copied!' : 'Copy Link'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Share Via Native Sheet */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <button
+                    id="native-share-btn"
+                    onClick={handleShareTeamLink}
+                    className="btn btn-outline"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
+                  >
+                    <Share2 size={16} /> Share via Apps / Device
+                  </button>
+                </div>
+
+                {/* QR Code Section */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    padding: '1.25rem',
+                    background: 'rgba(255,255,255,0.03)',
+                    borderRadius: '14px',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    marginBottom: '1.5rem'
+                  }}
+                >
+                  <div style={{ background: '#fff', padding: '10px', borderRadius: '12px', display: 'inline-block', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }}>
+                    <QRCode value={inviteUrl} size={140} renderAs="svg" />
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.75rem' }}>
+                    Scan with smartphone camera to open join link
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div
+                style={{
+                  padding: '1.5rem',
+                  borderRadius: '14px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px dashed rgba(239, 68, 68, 0.3)',
+                  textAlign: 'center',
+                  marginBottom: '1.5rem',
+                  color: '#f87171'
+                }}
+              >
+                <Ban size={28} style={{ margin: '0 auto 0.5rem auto' }} />
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.25rem' }}>Joining Link is Currently Revoked</div>
+                <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+                  No one can join using shared links. Click "Generate New Link" below to re-enable link invitations.
+                </div>
+              </div>
+            )}
+
+            {/* Link Security & Management (Owner/Admin only) */}
+            {team.canManage && (
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.25rem' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+                  Security &amp; Access Controls
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <button
+                    id="regenerate-invite-link-btn"
+                    onClick={handleRegenerateInviteLink}
+                    disabled={isRegeneratingLink}
+                    className="btn btn-outline"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', fontSize: '0.82rem' }}
+                  >
+                    <RefreshCw size={14} className={isRegeneratingLink ? 'spin' : ''} />
+                    {isRegeneratingLink ? 'Updating…' : team.inviteCode ? 'Regenerate Link' : 'Generate New Link'}
+                  </button>
+
+                  {team.inviteCode && (
+                    <button
+                      id="revoke-invite-link-btn"
+                      onClick={handleRevokeInviteLink}
+                      disabled={isRevokingLink}
+                      className="btn btn-outline"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.4rem',
+                        fontSize: '0.82rem',
+                        borderColor: 'rgba(239, 68, 68, 0.4)',
+                        color: '#f87171'
+                      }}
+                    >
+                      <Ban size={14} />
+                      {isRevokingLink ? 'Revoking…' : 'Revoke Link'}
+                    </button>
+                  )}
+                </div>
+                <p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.5rem', margin: '0.5rem 0 0 0' }}>
+                  Regenerating or revoking invalidates previously shared links immediately.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -26,8 +26,15 @@ const RegisterPage = () => {
       const res = await registerApi({ fullName, email, phone, password, role });
       if (res.success) {
         dispatch(setCredentials(res.data));
-        if (role === 'VENUE_OWNER') navigate('/owner/dashboard');
-        else navigate('/');
+        const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const redirect = searchParams ? searchParams.get('redirect') : null;
+        if (redirect) {
+          navigate(redirect);
+        } else if (role === 'VENUE_OWNER') {
+          navigate('/owner/dashboard');
+        } else {
+          navigate('/');
+        }
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed.');
@@ -162,7 +169,10 @@ const RegisterPage = () => {
 
         <p style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
           Already registered?{' '}
-          <Link to="/login" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+          <Link
+            to={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('redirect') ? `/login?redirect=${encodeURIComponent(new URLSearchParams(window.location.search).get('redirect'))}` : '/login'}
+            style={{ color: 'var(--accent-primary)', fontWeight: 600 }}
+          >
             Login
           </Link>
         </p>

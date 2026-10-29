@@ -131,7 +131,10 @@ const LoginPage = () => {
 
         <p style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
           Don't have an account?{' '}
-          <Link to="/register" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+          <Link
+            to={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('redirect') ? `/register?redirect=${encodeURIComponent(new URLSearchParams(window.location.search).get('redirect'))}` : '/register'}
+            style={{ color: 'var(--accent-primary)', fontWeight: 600 }}
+          >
             Create One
           </Link>
         </p>

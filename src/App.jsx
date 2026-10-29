@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 
 import Navbar from './components/common/Navbar';
@@ -24,6 +24,12 @@ import SignageDisplayPage from './views/SignageDisplayPage';
 import TeamsPage from './views/TeamsPage';
 import LiveAuctionPage from './views/LiveAuctionPage';
 import LiveScoreViewerPage from './views/LiveScoreViewerPage';
+import TeamJoinPage from './views/TeamJoinPage';
+
+function TeamJoinRouteWrapper() {
+  const { code } = useParams();
+  return <TeamJoinPage code={code} />;
+}
 
 // Protected Route Wrapper for Owner/Admin
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -68,6 +74,7 @@ function AppContent() {
           <Route path="/display/match/:id" element={<MatchDetailPage />} />
           <Route path="/display/tournament/:id" element={<SignageDisplayPage />} />
           <Route path="/teams" element={<TeamsPage />} />
+          <Route path="/teams/join/:code" element={<TeamJoinRouteWrapper />} />
 
           {/* Authenticated Player Routes */}
           <Route
