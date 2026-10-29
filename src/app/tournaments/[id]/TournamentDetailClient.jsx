@@ -243,9 +243,14 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           }));
         }
       } else if (activeTab === 'standings') {
-        const res = await axios.get(`/api/tournaments/${tournamentId}/standings`);
-        if (res.data.success) {
-          setStandings(res.data.data);
+        try {
+          const res = await axios.get(`/api/tournaments/${tournamentId}/standings`);
+          if (res.data.success) {
+            setStandings(res.data.data);
+          }
+        } catch (standingsErr) {
+          console.error('Failed to load tab standings:', standingsErr);
+          setStandings({ groups: {}, standings: {} });
         }
       } else if (activeTab === 'groups') {
         const res = await axios.get(`/api/tournaments/${tournamentId}/groups`);
