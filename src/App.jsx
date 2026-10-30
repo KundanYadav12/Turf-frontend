@@ -60,6 +60,8 @@ function AppContent() {
           <Route path="/search" element={<SearchPage />} />
           <Route path="/venue/:idOrSlug" element={<VenueDetailPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<LoginPage />} />
+          <Route path="/reset-password" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
           {/* Tournaments & Live Multi-Match Routes */}
