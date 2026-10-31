@@ -116,7 +116,12 @@ export default function CourtView({
   const courtState = useMemo(() => {
     const cs = getCourtState(unifiedMatch);
     if (propServeState) {
-      cs.serveState = propServeState;
+      cs.serveState = {
+        ...cs.serveState,
+        ...propServeState,
+        servingBoxName: propServeState.servingBoxName || cs.servingBoxName || cs.serveState?.servingBoxName,
+        targetBoxName: propServeState.targetBoxName || cs.targetBoxName || cs.serveState?.targetBoxName
+      };
     }
     return cs;
   }, [unifiedMatch, propServeState]);
@@ -245,7 +250,11 @@ export default function CourtView({
     playPointRally,
     playUndoSnap
   } = useBallAnimation({
-    serveState: courtState.serveState,
+    serveState: {
+      ...courtState.serveState,
+      servingBoxName: courtState.servingBoxName || courtState.serveState?.servingBoxName,
+      targetBoxName: courtState.targetBoxName || courtState.serveState?.targetBoxName
+    },
     sport: unifiedMatch.sportSlug || sport,
     containerRef: courtCanvasRef,
     pointEvent: pointEvent || unifiedMatch._pointEvent,
@@ -323,7 +332,7 @@ export default function CourtView({
       const prevServerBox = prev.serverBox || 'RIGHT';
       const fromBoxName = prev.serveState?.servingBoxName || (prevServerSide === 'LEFT' ? (prevServerBox === 'RIGHT' ? 'bottom-left' : 'top-left') : (prevServerBox === 'RIGHT' ? 'top-right' : 'bottom-right'));
       const toBoxName = prev.serveState?.targetBoxName || (fromBoxName === 'bottom-left' ? 'top-right' : fromBoxName === 'top-left' ? 'bottom-right' : fromBoxName === 'top-right' ? 'bottom-left' : 'top-left');
-      const newServingBoxName = courtState.serveState?.servingBoxName || 'bottom-left';
+      const newServingBoxName = courtState.servingBoxName || courtState.serveState?.servingBoxName || 'bottom-left';
 
       // Did the serving team win the rally?
       // In rally scoring, winning team is scoringTeam.

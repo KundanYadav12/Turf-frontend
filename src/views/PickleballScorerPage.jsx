@@ -24,7 +24,13 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const [success, setSuccess] = useState('');
   const [lastEventType, setLastEventType] = useState(null);
   const [pointEvent, setPointEvent] = useState(null);
-  const [activeViewTab, setActiveViewTab] = useState('court'); // 'court' | 'rules'
+  const [activeViewTab, setActiveViewTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'rules') return 'rules';
+    }
+    return 'court';
+  });
 
   // Match Break State
   const [breakState, setBreakState] = useState({ isBreak: false, reason: 'Interval', durationMinutes: null });

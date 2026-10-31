@@ -327,12 +327,14 @@ export function useBallAnimation({
       }
     }
 
-    // Point concluded! Settle ball smoothly to rest at new server's racket
+    // Point concluded! Settle ball smoothly to rest at latest authoritative server's racket
+    const activeBox = serveStateRef.current?.servingBoxName || newServingBoxName || 'bottom-left';
+    const finalServerCoords = getBoxCoords(activeBox);
     const settleDuration = Math.min(380, perShotMs * 0.8);
-    const finalRot = newServerCoords.x < 50 ? 35 : -145;
-    await flySegment(currentPos, newServerCoords, settleDuration, finalRot, finalRot, 15);
+    const finalRot = finalServerCoords.x < 50 ? 35 : -145;
+    await flySegment(currentPos, finalServerCoords, settleDuration, finalRot, finalRot, 15);
 
-    applyTransforms(newServerCoords.x, newServerCoords.y, 0, finalRot);
+    applyTransforms(finalServerCoords.x, finalServerCoords.y, 0, finalRot);
     isAnimatingRef.current = false;
     setIsAnimatingState(false);
   }, [
@@ -365,6 +367,17 @@ export function useBallAnimation({
     setIsAnimatingState(false);
   }, [cancelAnimation, getBoxCoords, reducedMotion, applyTransforms, flySegment]);
 
+  // Keep ref synchronized with current serveState
+  const serveStateRef = useRef(serveState);
+  useEffect(() => {
+    serveStateRef.current = serveState;
+    if (!isAnimatingRef.current) {
+      const currentBox = serveState?.servingBoxName || 'bottom-left';
+      const coords = getBoxCoords(currentBox);
+      applyTransforms(coords.x, coords.y, 0, coords.x < 50 ? 35 : -145);
+    }
+  }, [serveState, getBoxCoords, applyTransforms]);
+
   // Initial Placement on Mount & Resize Observer for Responsiveness
   useEffect(() => {
     const defaultBox = serveState?.servingBoxName || 'bottom-left';
@@ -375,7 +388,7 @@ export function useBallAnimation({
     if (containerRef && containerRef.current && typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => {
         if (!isAnimatingRef.current) {
-          const currentBox = serveState?.servingBoxName || 'bottom-left';
+          const currentBox = serveStateRef.current?.servingBoxName || serveState?.servingBoxName || 'bottom-left';
           const coords = getBoxCoords(currentBox);
           applyTransforms(coords.x, coords.y, 0, coords.x < 50 ? 35 : -145);
         }

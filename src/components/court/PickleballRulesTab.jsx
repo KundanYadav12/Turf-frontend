@@ -52,10 +52,19 @@ export default function PickleballRulesTab({
   const pB1 = typeof rawB[0] === 'string' ? rawB[0] : (rawB[0]?.name || `${teamB.name || 'Team B'} 1`);
   const pB2 = typeof rawB[1] === 'string' ? rawB[1] : (rawB[1]?.name || `${teamB.name || 'Team B'} 2`);
 
-  const pA1Pos = locations[pA1] || (scoreA % 2 === 0 ? 'RIGHT' : 'LEFT');
-  const pA2Pos = locations[pA2] || (scoreA % 2 === 0 ? 'LEFT' : 'RIGHT');
-  const pB1Pos = locations[pB1] || (scoreB % 2 === 0 ? 'RIGHT' : 'LEFT');
-  const pB2Pos = locations[pB2] || (scoreB % 2 === 0 ? 'LEFT' : 'RIGHT');
+  const pA1Id = typeof rawA[0] === 'object' ? (rawA[0]?._id || rawA[0]?.id) : null;
+  const pA2Id = typeof rawA[1] === 'object' ? (rawA[1]?._id || rawA[1]?.id) : null;
+  const pB1Id = typeof rawB[0] === 'object' ? (rawB[0]?._id || rawB[0]?.id) : null;
+  const pB2Id = typeof rawB[1] === 'object' ? (rawB[1]?._id || rawB[1]?.id) : null;
+
+  const servePoints = sportState?.servePoints || courtState?.servePoints || null;
+  const spA = servePoints?.teamA ?? (isRally ? 0 : scoreA);
+  const spB = servePoints?.teamB ?? (isRally ? 0 : scoreB);
+
+  const pA1Pos = (pA1Id && locations[pA1Id]) || locations[pA1] || (spA % 2 === 0 ? 'RIGHT' : 'LEFT');
+  const pA2Pos = (pA2Id && locations[pA2Id]) || locations[pA2] || (pA1Pos === 'RIGHT' ? 'LEFT' : 'RIGHT');
+  const pB1Pos = (pB1Id && locations[pB1Id]) || locations[pB1] || (spB % 2 === 0 ? 'RIGHT' : 'LEFT');
+  const pB2Pos = (pB2Id && locations[pB2Id]) || locations[pB2] || (pB1Pos === 'RIGHT' ? 'LEFT' : 'RIGHT');
 
   const cardStyle = {
     background: 'var(--bg-card, rgba(15, 23, 42, 0.75))',
@@ -198,11 +207,11 @@ export default function PickleballRulesTab({
         {isDoubles && (
           <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '0.85rem 1rem', borderRadius: '10px' }}>
             <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#34d399', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Current Player Court Positions (Derived From Scores):
+              Current Player Court Positions (Live Placement):
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                <span style={{ fontWeight: 800, color: '#34d399', fontSize: '0.82rem' }}>{teamA.name} ({scoreA % 2 === 0 ? 'Even' : 'Odd'} Score):</span>
+                <span style={{ fontWeight: 800, color: '#34d399', fontSize: '0.82rem' }}>{teamA.name}:</span>
                 <div style={{ fontSize: '0.8rem', marginTop: '0.2rem', color: 'var(--text-main, #f8fafc)' }}>
                   &bull; <strong>{pA1}</strong>: <span style={{ color: pA1Pos === 'RIGHT' ? '#34d399' : '#fbbf24' }}>{pA1Pos} Box</span>
                   <br />
@@ -211,7 +220,7 @@ export default function PickleballRulesTab({
               </div>
 
               <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                <span style={{ fontWeight: 800, color: '#60a5fa', fontSize: '0.82rem' }}>{teamB.name} ({scoreB % 2 === 0 ? 'Even' : 'Odd'} Score):</span>
+                <span style={{ fontWeight: 800, color: '#60a5fa', fontSize: '0.82rem' }}>{teamB.name}:</span>
                 <div style={{ fontSize: '0.8rem', marginTop: '0.2rem', color: 'var(--text-main, #f8fafc)' }}>
                   &bull; <strong>{pB1}</strong>: <span style={{ color: pB1Pos === 'RIGHT' ? '#34d399' : '#fbbf24' }}>{pB1Pos} Box</span>
                   <br />
@@ -326,14 +335,14 @@ export default function PickleballRulesTab({
 
         <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary, #cbd5e1)', lineHeight: 1.6 }}>
           <p style={{ marginTop: 0 }}>
-            In this tournament format, doubles partners switch sides deterministically based on their team's score parity:
+            In this tournament format, doubles partners switch sides strictly according to rally scoring swap rules:
           </p>
           <ul style={{ paddingLeft: '1.25rem', margin: '0.5rem 0' }}>
-            <li><strong>Stable Identity:</strong> Player 1 (P1) and Player 2 (P2) maintain their immutable starting identities throughout the entire match.</li>
-            <li><strong>Even Score:</strong> When the team's score is Even, P1 is on their original Right side, and P2 is on their original Left side.</li>
-            <li><strong>Odd Score:</strong> When the team's score changes to Odd, P1 and P2 switch sides (P1 occupies Left, P2 occupies Right).</li>
-            <li><strong>Independent Calculation:</strong> Team A and Team B player positions are calculated completely independently from their own scores.</li>
-            <li><strong>No Random Swapping:</strong> If a team loses a rally and its score does not change, its players do not switch sides.</li>
+            <li><strong>Serving team wins the rally:</strong> ONLY the serving team's two players swap sides. The same player keeps serving from the new court. The receiving team does NOT swap.</li>
+            <li><strong>Receiving team wins the rally:</strong> NO player on either team swaps. Everyone stays where they are. The winning team becomes the serving team, and the server is the player standing in the court matching that team's score parity (Even &rarr; Right court, Odd &rarr; Left court).</li>
+            <li><strong>Never swap players of a team that scored while receiving:</strong> E.g. When {teamB?.name || 'Mumbai Warriors'} (or any receiving team) wins a rally while receiving, NO player on either team swaps.</li>
+            <li><strong>Stable Identity:</strong> Player 1 (P1) and Player 2 (P2) maintain their immutable starting identities (P1 started Right, P2 started Left) throughout the entire match.</li>
+            <li><strong>State &amp; Idempotency:</strong> Positions are derived strictly from each team's count of points won while serving (Even &rarr; original sides, Odd &rarr; swapped). Points won while receiving never count toward swaps.</li>
           </ul>
 
           <div style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
@@ -341,11 +350,11 @@ export default function PickleballRulesTab({
               <thead>
                 <tr style={{ background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.1))' }}>
                   <th style={{ padding: '6px 10px' }}>Rally Event</th>
-                  <th style={{ padding: '6px 10px' }}>Team A</th>
-                  <th style={{ padding: '6px 10px' }}>Team B</th>
+                  <th style={{ padding: '6px 10px' }}>{teamA?.name || 'Team A'}</th>
+                  <th style={{ padding: '6px 10px' }}>{teamB?.name || 'Team B'}</th>
                   <th style={{ padding: '6px 10px' }}>Serving Team</th>
-                  <th style={{ padding: '6px 10px' }}>Team A Positions</th>
-                  <th style={{ padding: '6px 10px' }}>Team B Positions</th>
+                  <th style={{ padding: '6px 10px' }}>{teamA?.name ? `${teamA.name} Positions` : 'Team A Positions'}</th>
+                  <th style={{ padding: '6px 10px' }}>{teamB?.name ? `${teamB.name} Positions` : 'Team B Positions'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -353,41 +362,49 @@ export default function PickleballRulesTab({
                   <td style={{ padding: '6px 10px' }}>Match Start</td>
                   <td style={{ padding: '6px 10px' }}>0</td>
                   <td style={{ padding: '6px 10px' }}>0</td>
-                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>Team A (Right Box)</td>
+                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>{teamA?.name || 'Team A'} (Right Box)</td>
                   <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left</td>
                   <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left</td>
                 </tr>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '6px 10px' }}>Team A wins rally</td>
+                  <td style={{ padding: '6px 10px' }}>{teamA?.name || 'Team A'} wins rally (Serving team scores)</td>
                   <td style={{ padding: '6px 10px', fontWeight: 700 }}>1</td>
                   <td style={{ padding: '6px 10px' }}>0</td>
-                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>Team A (Left Box)</td>
+                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>{teamA?.name || 'Team A'} (Left Box)</td>
                   <td style={{ padding: '6px 10px', color: '#fbbf24' }}>P1 Left, P2 Right (Swapped)</td>
-                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left</td>
+                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left (No swap)</td>
                 </tr>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '6px 10px' }}>Team A wins rally</td>
+                  <td style={{ padding: '6px 10px' }}>{teamA?.name || 'Team A'} wins rally (Serving team scores)</td>
                   <td style={{ padding: '6px 10px', fontWeight: 700 }}>2</td>
                   <td style={{ padding: '6px 10px' }}>0</td>
-                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>Team A (Right Box)</td>
+                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>{teamA?.name || 'Team A'} (Right Box)</td>
                   <td style={{ padding: '6px 10px', color: '#34d399' }}>P1 Right, P2 Left (Returned)</td>
-                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left</td>
+                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left (No swap)</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(59, 130, 246, 0.08)' }}>
+                  <td style={{ padding: '6px 10px', fontWeight: 700 }}>{teamB?.name || 'Team B'} wins rally (Receiving team scores &bull; Turnover)</td>
+                  <td style={{ padding: '6px 10px' }}>2</td>
+                  <td style={{ padding: '6px 10px', fontWeight: 700, color: '#60a5fa' }}>1</td>
+                  <td style={{ padding: '6px 10px', color: '#60a5fa', fontWeight: 700 }}>{teamB?.name || 'Team B'} (Left Box)</td>
+                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left (No swap)</td>
+                  <td style={{ padding: '6px 10px', color: '#34d399', fontWeight: 700 }}>P1 Right, P2 Left (NO SWAP - Won while receiving)</td>
                 </tr>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '6px 10px' }}>Team B wins rally</td>
+                  <td style={{ padding: '6px 10px' }}>{teamB?.name || 'Team B'} wins rally (Serving team scores)</td>
                   <td style={{ padding: '6px 10px' }}>2</td>
-                  <td style={{ padding: '6px 10px', fontWeight: 700 }}>1</td>
-                  <td style={{ padding: '6px 10px', color: '#60a5fa', fontWeight: 700 }}>Team B (Left Box)</td>
-                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left</td>
-                  <td style={{ padding: '6px 10px', color: '#fbbf24' }}>P1 Left, P2 Right (Swapped)</td>
+                  <td style={{ padding: '6px 10px', fontWeight: 700, color: '#60a5fa' }}>2</td>
+                  <td style={{ padding: '6px 10px', color: '#60a5fa', fontWeight: 700 }}>{teamB?.name || 'Team B'} (Right Box)</td>
+                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left (No swap)</td>
+                  <td style={{ padding: '6px 10px', color: '#fbbf24' }}>P1 Left, P2 Right (Swapped - Won while serving)</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: '6px 10px' }}>Team B wins rally</td>
+                  <td style={{ padding: '6px 10px' }}>{teamA?.name || 'Team A'} wins rally (Receiving team scores &bull; Turnover)</td>
+                  <td style={{ padding: '6px 10px', fontWeight: 700, color: '#10b981' }}>3</td>
                   <td style={{ padding: '6px 10px' }}>2</td>
-                  <td style={{ padding: '6px 10px', fontWeight: 700 }}>2</td>
-                  <td style={{ padding: '6px 10px', color: '#60a5fa', fontWeight: 700 }}>Team B (Right Box)</td>
-                  <td style={{ padding: '6px 10px' }}>P1 Right, P2 Left</td>
-                  <td style={{ padding: '6px 10px', color: '#34d399' }}>P1 Right, P2 Left (Returned)</td>
+                  <td style={{ padding: '6px 10px', color: '#10b981', fontWeight: 700 }}>{teamA?.name || 'Team A'} (Left Box)</td>
+                  <td style={{ padding: '6px 10px', color: '#34d399', fontWeight: 700 }}>P1 Right, P2 Left (NO SWAP - Won while receiving)</td>
+                  <td style={{ padding: '6px 10px' }}>P1 Left, P2 Right (No swap)</td>
                 </tr>
               </tbody>
             </table>

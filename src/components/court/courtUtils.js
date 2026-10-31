@@ -68,11 +68,11 @@ export function getServeState(match) {
       receiverTeamName: 'Team B',
       receiverSide: 'right',
       targetBox: { side: 'right', box: 'top' },
-      label: 'Serving: Team A (RIGHT Box) → Target: Team B (LEFT Box)',
+      label: 'Serving: Team A (RIGHT Box) → Target: Team B (RIGHT Box)',
       serverScore: 0,
       receiverScore: 0,
       serverCourt: 'RIGHT',
-      receiverCourt: 'LEFT',
+      receiverCourt: 'RIGHT',
       servingBoxName: 'bottom-left',
       targetBoxName: 'top-right',
       teamSides: { teamA: 'left', teamB: 'right' },
@@ -230,7 +230,7 @@ export function getServeState(match) {
   // Even -> RIGHT, Odd -> LEFT
   const isEven = serverScore % 2 === 0;
   const serverCourt = isEven ? 'RIGHT' : 'LEFT';
-  const receiverCourt = isEven ? 'LEFT' : 'RIGHT'; // diagonal cross-court
+  const receiverCourt = serverCourt; // diagonal cross-court matches court parity (Right serve -> opponent's Right court, Left serve -> opponent's Left court)
 
   // 9. Screen Service Box Mapping (Facing Net)
   let serviceBox = 'bottom'; // 'top' | 'bottom'
@@ -365,6 +365,11 @@ export function getCourtState(match) {
     'RALLY';
 
   const startingServingTeam =
+    match?.startingServingTeam ||
+    match?.sportState?.startingServingTeam ||
+    match?.sport_state?.startingServingTeam ||
+    state?.startingServingTeam ||
+    state?.sportState?.startingServingTeam ||
     match?.sportState?.servingTeam ||
     match?.sport_state?.servingTeam ||
     state?.servingTeam ||
@@ -381,6 +386,9 @@ export function getCourtState(match) {
     match?.sport_config?.rotationRule ||
     'OFFICIAL';
 
+  const servePointsA = state.servePoints?.teamA ?? state.servePointsA ?? match?.servePoints?.teamA ?? match?.servePointsA ?? (match?.sport_state?.servePointsA ?? match?.sportState?.servePointsA ?? 0);
+  const servePointsB = state.servePoints?.teamB ?? state.servePointsB ?? match?.servePoints?.teamB ?? match?.servePointsB ?? (match?.sport_state?.servePointsB ?? match?.sportState?.servePointsB ?? 0);
+
   const engineConfig = {
     sport,
     format,
@@ -389,6 +397,8 @@ export function getCourtState(match) {
     teamA,
     teamB,
     scores: { teamA: scoreA, teamB: scoreB },
+    servePoints: { teamA: servePointsA, teamB: servePointsB },
+    playerLocations: state?.playerLocations || match?.sport_state?.playerLocations || match?.sportState?.playerLocations || null,
     lineup: {
       teamA: lineupRawA,
       teamB: lineupRawB
