@@ -155,6 +155,29 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     setIsConnected(socket.connected);
   }, []);
 
+  // Enforce fixed full-viewport frame on html & body so page itself never scrolls
+  useEffect(() => {
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevHtmlHeight = document.documentElement.style.height;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyHeight = document.body.style.height;
+    const prevBodyMargin = document.body.style.margin;
+
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100dvh';
+    document.body.style.overflow = 'hidden';
+    document.body.style.height = '100dvh';
+    document.body.style.margin = '0';
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.documentElement.style.height = prevHtmlHeight;
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.height = prevBodyHeight;
+      document.body.style.margin = prevBodyMargin;
+    };
+  }, []);
+
   // Scene Rotation State
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
   const [isRotationPaused, setIsRotationPaused] = useState(false);
@@ -583,22 +606,29 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
   return (
     <div
       onMouseMove={handleMouseMove}
+      className="tv-display-fixed-frame"
       style={{
         position: 'fixed',
         inset: 0,
         width: '100vw',
         height: '100vh',
+        height: '100dvh',
+        maxHeight: '100dvh',
         overflow: 'hidden',
         background: theme === 'dark' ? '#090d16' : '#f8fafc',
         color: theme === 'dark' ? '#f8fafc' : '#0f172a',
         fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-        display: 'flex',
-        flexDirection: 'column',
+        display: 'grid',
+        gridTemplateRows: `${resolvedTopHeight} auto 1fr ${resolvedBottomHeight}`,
+        gridTemplateColumns: '100%',
+        margin: 0,
+        padding: 0,
+        boxSizing: 'border-box',
         userSelect: 'none'
       }}
     >
-      {/* ── TOP ADVERTISEMENT BANNER (Full-width, pushes content down, collapses to 0 when inactive) ── */}
-      {isTopAdActive && (
+      {/* ── TOP ADVERTISEMENT BANNER (Row 1) ── */}
+      {isTopAdActive ? (
         <div style={{
           height: resolvedTopHeight,
           width: '100%',
@@ -612,7 +642,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         }}>
           <SignageAdSlot placement="TOP" ads={ads.topAds} isPaused={false} style={{ height: '100%', marginBottom: 0 }} />
         </div>
-      )}
+      ) : <div style={{ height: 0, overflow: 'hidden' }} />}
 
       {/* ── TV HEADER BAR ── */}
       <header
@@ -890,12 +920,23 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         </div>
       </header>
 
-      {/* ── MAIN WORKSPACE AREA WITH DYNAMIC SIDEBAR ADS & AUTO-EXPANDING GRID ── */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+      {/* ── MIDDLE ROW: LEFT SIDEBAR | MAIN CONTENT | RIGHT SIDEBAR (Row 3) ── */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${resolvedLeftWidth} 1fr ${resolvedRightWidth}`,
+          gridTemplateRows: '100%',
+          width: '100%',
+          height: '100%',
+          minHeight: 0,
+          minWidth: 0,
+          overflow: 'hidden'
+        }}
+      >
         {/* Left Sidebar Ad (collapses to 0 width when inactive/hidden, giving space back to grid) */}
-        {isLeftAdActive && (
+        {isLeftAdActive ? (
           <aside style={{
-            width: resolvedLeftWidth,
+            width: '100%',
             height: '100%',
             flexShrink: 0,
             background: 'rgba(10, 15, 26, 0.98)',
@@ -908,19 +949,23 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
           }}>
             <SignageAdSlot placement="LEFT" ads={ads.leftAds} isPaused={playbackState.leftSidebarPaused} />
           </aside>
-        )}
+        ) : <div style={{ width: 0, overflow: 'hidden' }} />}
 
-        {/* Center Canvas: Active Scene Rendering */}
+        {/* Center Canvas: Active Scene Rendering (ONLY this container scrolls) */}
         <main
+          className="tv-scrollable-main-area"
           style={{
-            flex: 1,
+            width: '100%',
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
             padding: 'clamp(0.4rem, 0.75vw, 0.75rem)',
-            overflow: 'hidden',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0,
             minWidth: 0,
-            position: 'relative'
+            position: 'relative',
+            overscrollBehavior: 'contain'
           }}
         >
           {loading && matches.length === 0 ? (
@@ -988,9 +1033,9 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         </main>
 
         {/* Right Sidebar Ad (collapses to 0 width when inactive/hidden, giving space back to grid) */}
-        {isRightAdActive && (
+        {isRightAdActive ? (
           <aside style={{
-            width: resolvedRightWidth,
+            width: '100%',
             height: '100%',
             flexShrink: 0,
             background: 'rgba(10, 15, 26, 0.98)',
@@ -1003,11 +1048,11 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
           }}>
             <SignageAdSlot placement="RIGHT" ads={ads.rightAds} isPaused={playbackState.rightSidebarPaused} />
           </aside>
-        )}
+        ) : <div style={{ width: 0, overflow: 'hidden' }} />}
       </div>
 
-      {/* ── BOTTOM MOVING TICKER STRIP (Scales to set height, collapses when inactive) ── */}
-      {isBottomAdActive && (
+      {/* ── BOTTOM MOVING TICKER STRIP (Row 4, collapses when inactive) ── */}
+      {isBottomAdActive ? (
         <div style={{
           height: resolvedBottomHeight,
           width: '100%',
@@ -1021,7 +1066,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         }}>
           <SignageAdSlot placement="BOTTOM" ads={ads.bottomAds} isPaused={playbackState.bottomAdPaused} style={{ marginTop: 0, height: '100%', minHeight: 0, borderRadius: 0, border: 'none' }} />
         </div>
-      )}
+      ) : <div style={{ height: 0, overflow: 'hidden' }} />}
     </div>
   );
 }
@@ -1098,11 +1143,11 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     );
   }
 
-  // 4 Matches -> 2x2 Balanced Grid (stretches full height)
+  // 4 Matches -> 2x2 Balanced Grid (stretches full height, scrolls inside main if overflow)
   if (layoutType === '4_GRID' || (layoutType === 'AUTO' && count === 4)) {
     return (
-      <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'clamp(0.45rem, 0.8vw, 0.85rem)' }}>
-        <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.5rem, 0.9vw, 0.95rem)' }}>
+      <div style={{ flex: 1, minHeight: '100%', display: 'flex', flexDirection: 'column', gap: 'clamp(0.45rem, 0.8vw, 0.85rem)' }}>
+        <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(240px, 1fr))', gap: 'clamp(0.5rem, 0.9vw, 0.95rem)' }}>
           {matches.slice(0, 4).map(m => (
             <TVMatchCardGrid key={m.id} match={m} theme={theme} size="medium" courtMiddleAds={courtMiddleAds} />
           ))}
@@ -1116,10 +1161,10 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     );
   }
 
-  // 5–6 Matches -> 3 Columns x 2 Rows (stretches full height)
+  // 5–6 Matches -> 3 Columns x 2 Rows (stretches full height, scrolls inside main if overflow)
   if (layoutType === '6_GRID' || (layoutType === 'AUTO' && (count === 5 || count === 6))) {
     return (
-      <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.4rem, 0.75vw, 0.8rem)' }}>
+      <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(200px, 1fr))', gap: 'clamp(0.4rem, 0.75vw, 0.8rem)' }}>
         {matches.slice(0, 6).map(m => (
           <TVMatchCardGrid key={m.id} match={m} theme={theme} size="compact" courtMiddleAds={courtMiddleAds} />
         ))}
@@ -1127,10 +1172,10 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     );
   }
 
-  // 7–8 Matches -> 4 Columns x 2 Rows (stretches full height)
+  // 7–8 Matches -> 4 Columns x 2 Rows (stretches full height, scrolls inside main if overflow)
   if (layoutType === '8_GRID' || (layoutType === 'AUTO' && (count === 7 || count === 8))) {
     return (
-      <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(0, 1fr))', gap: 'clamp(0.35rem, 0.65vw, 0.7rem)' }}>
+      <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gridTemplateRows: 'repeat(2, minmax(180px, 1fr))', gap: 'clamp(0.35rem, 0.65vw, 0.7rem)' }}>
         {matches.slice(0, 8).map(m => (
           <TVMatchCardGrid key={m.id} match={m} theme={theme} size="mini" courtMiddleAds={courtMiddleAds} />
         ))}
@@ -1138,11 +1183,11 @@ function ScoreboardScene({ matches, layoutType, theme, centerAdEnabled, centerAd
     );
   }
 
-  // 9+ Matches -> Auto-adjusted grid
+  // 9+ Matches -> Auto-adjusted grid (scrolls inside main if overflow)
   const cols = count > 10 ? 5 : 4;
   const rows = Math.ceil(Math.min(count, 12) / cols);
   return (
-    <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`, gap: 'clamp(0.35rem, 0.6vw, 0.65rem)' }}>
+    <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(170px, 1fr))`, gap: 'clamp(0.35rem, 0.6vw, 0.65rem)' }}>
       {matches.slice(0, cols * rows).map(m => (
         <TVMatchCardGrid key={m.id} match={m} theme={theme} size="mini" courtMiddleAds={courtMiddleAds} />
       ))}
@@ -2393,15 +2438,15 @@ const TVMatchCardGrid = React.memo(function TVMatchCardGrid({ match, theme, size
    ══════════════════════════════════════════════════════════════════════ */
 function FixturesScene({ fixtures, theme }) {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
         <Calendar size={22} color="#10b981" />
         <h2 style={{ fontSize: 'clamp(1.3rem, 2vw, 1.8rem)', fontWeight: 900, margin: 0 }}>
           Upcoming Fixtures &amp; Arena Schedule
         </h2>
       </div>
 
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
         {fixtures && fixtures.length > 0 ? (
           fixtures.slice(0, 8).map(f => (
             <div
@@ -2445,8 +2490,8 @@ function FixturesScene({ fixtures, theme }) {
    ══════════════════════════════════════════════════════════════════════ */
 function StandingsScene({ standings, theme }) {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
         <Table size={22} color="#10b981" />
         <h2 style={{ fontSize: 'clamp(1.3rem, 2vw, 1.8rem)', fontWeight: 900, margin: 0 }}>
           Tournament Standings &amp; Points Table
@@ -2456,10 +2501,11 @@ function StandingsScene({ standings, theme }) {
       <div
         style={{
           flex: 1,
+          minHeight: 'fit-content',
           background: theme === 'dark' ? 'rgba(30, 41, 59, 0.65)' : '#ffffff',
           borderRadius: 16,
           border: theme === 'dark' ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)',
-          overflow: 'hidden',
+          overflowX: 'auto',
           display: 'flex',
           flexDirection: 'column'
         }}
@@ -2549,8 +2595,8 @@ function LeaderboardScene({ leaderboard, theme }) {
   const items = leaderboard?.items || [];
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
         <Flame size={24} color="#f59e0b" />
         <div>
           <h2 style={{ fontSize: 'clamp(1.3rem, 2vw, 1.8rem)', fontWeight: 900, margin: 0 }}>
@@ -2560,7 +2606,7 @@ function LeaderboardScene({ leaderboard, theme }) {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
         {items.length > 0 ? (
           items.map((player, idx) => (
             <div
@@ -2694,15 +2740,15 @@ function SponsorsScene({ ads, theme }) {
    ══════════════════════════════════════════════════════════════════════ */
 function ResultsScene({ results, theme }) {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
         <Award size={22} color="#10b981" />
         <h2 style={{ fontSize: 'clamp(1.3rem, 2vw, 1.8rem)', fontWeight: 900, margin: 0 }}>
           Recent Match Results &amp; Final Scores
         </h2>
       </div>
 
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 'fit-content', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
         {results && results.length > 0 ? (
           results.slice(0, 8).map(r => (
             <div

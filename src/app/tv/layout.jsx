@@ -11,7 +11,7 @@ export const metadata = {
 
 export default function TVLayout({ children }) {
   return (
-    <div style={{ margin: 0, padding: 0, overflow: 'hidden', background: '#090d16', minHeight: '100vh', height: '100vh', width: '100vw', maxHeight: '100dvh' }}>
+    <div style={{ margin: 0, padding: 0, overflow: 'hidden', background: '#090d16', minHeight: 0, height: '100dvh', width: '100vw', maxHeight: '100dvh', overscrollBehavior: 'none' }}>
       {children}
     </div>
   );

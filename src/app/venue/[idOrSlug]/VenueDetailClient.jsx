@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { Link } from '../../../lib/routerCompat';
 import { getCourtSlotsApi } from '../../../services/bookingService';
 import CheckoutModal from '../../../components/player/CheckoutModal';
 import { MapPin, Star, Clock, ShieldCheck, CheckCircle, ChevronRight } from 'lucide-react';

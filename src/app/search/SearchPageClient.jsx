@@ -1,7 +1,7 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import { Link } from '../../lib/routerCompat';
 import { getVenuesApi } from '../../services/venueService';
 import { Search, MapPin, Filter, Star, ChevronDown, ChevronUp } from 'lucide-react';
 

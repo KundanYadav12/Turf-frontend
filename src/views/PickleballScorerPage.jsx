@@ -463,29 +463,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     score: state?.scores?.teamB || 0
   }), [state?.teamB?.id, state?.teamB?.name, state?.scores?.teamB]);
 
-  if (loading) {
-    return (
-      <div className="container" style={{ textAlign: 'center', padding: '6rem 1rem', color: 'var(--text-muted)' }}>
-        <Zap size={48} className="animate-spin" color="var(--accent-primary, #10b981)" style={{ margin: '0 auto 1rem auto' }} />
-        <h2>Loading Pickleball Live Scorer Console…</h2>
-      </div>
-    );
-  }
-
-  if (!state) {
-    return (
-      <div className="container" style={{ padding: '3rem 1rem', textAlign: 'center' }}>
-        <AlertCircle size={48} color="#ef4444" style={{ margin: '0 auto 1rem auto' }} />
-        <h2>Match Not Found</h2>
-        <p style={{ color: 'var(--text-muted)' }}>{error || 'Unable to retrieve match details.'}</p>
-        <Link href="/tournaments" className="btn btn-primary" style={{ marginTop: '1rem' }}>
-          Back to Tournaments
-        </Link>
-      </div>
-    );
-  }
-
-  const { tournament, rules, teamA, teamB, scores, status, winner, resultSummary, lineup, logs } = state;
+  const { tournament, rules, teamA, teamB, scores, status, winner, resultSummary, lineup, logs } = state || {};
   const isSingles = rules?.matchFormat === 'SINGLES';
   const expectedLineupCount = isSingles ? 1 : 2;
   const isDoubles = !isSingles;
@@ -567,6 +545,28 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         name: playerB1.trim() || (typeof selectedLineupB[0] === 'string' ? selectedLineupB[0] : selectedLineupB[0]?.name) || `${teamB?.name || 'Team B'} 1`,
         box: 'top-right'
       };
+
+  if (loading) {
+    return (
+      <div className="container" style={{ textAlign: 'center', padding: '6rem 1rem', color: 'var(--text-muted)' }}>
+        <Zap size={48} className="animate-spin" color="var(--accent-primary, #10b981)" style={{ margin: '0 auto 1rem auto' }} />
+        <h2>Loading Pickleball Live Scorer Console…</h2>
+      </div>
+    );
+  }
+
+  if (!state) {
+    return (
+      <div className="container" style={{ padding: '3rem 1rem', textAlign: 'center' }}>
+        <AlertCircle size={48} color="#ef4444" style={{ margin: '0 auto 1rem auto' }} />
+        <h2>Match Not Found</h2>
+        <p style={{ color: 'var(--text-muted)' }}>{error || 'Unable to retrieve match details.'}</p>
+        <Link href="/tournaments" className="btn btn-primary" style={{ marginTop: '1rem' }}>
+          Back to Tournaments
+        </Link>
+      </div>
+    );
+  }
 
   const formatLineup = (teamLineup) => {
     if (!teamLineup || !Array.isArray(teamLineup) || teamLineup.length === 0) return 'Lineup TBA';

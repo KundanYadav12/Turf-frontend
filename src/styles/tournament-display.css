@@ -129,24 +129,94 @@
 }
 
 /* ==========================================================================
-   DISPLAY ROOT CONTAINER & SMOOTH THEME TRANSITION
+   DISPLAY ROOT CONTAINER & FIXED FULL-VIEWPORT FRAME
+   html, body and root container use height: 100dvh (with 100vh fallback), margin 0, overflow: hidden.
+   The browser page itself never scrolls; ONLY the middle content area scrolls.
    ========================================================================== */
+html:has(.display-page-container),
+body:has(.display-page-container),
+html:has(.tv-display-fixed-frame),
+body:has(.tv-display-fixed-frame) {
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overscroll-behavior: none !important;
+}
+
 .display-page-container {
   background-color: var(--display-background);
   color: var(--display-text-primary);
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   width: 100%;
+  max-width: 100vw;
   box-sizing: border-box;
-  overflow-x: hidden;
+  overflow: hidden !important;
+  margin: 0;
   display: flex;
   flex-direction: column;
   transition: background-color 0.3s ease, color 0.3s ease;
-  padding-top: max(0.5rem, env(safe-area-inset-top));
-  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-  padding-left: max(0.75rem, env(safe-area-inset-left));
-  padding-right: max(0.75rem, env(safe-area-inset-right));
+  padding-top: max(0.4rem, env(safe-area-inset-top));
+  padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
+  padding-left: max(0.6rem, env(safe-area-inset-left));
+  padding-right: max(0.6rem, env(safe-area-inset-right));
+  overscroll-behavior: none;
   font-family: var(--font-body, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif);
+}
+
+.tv-display-fixed-frame {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  width: 100vw;
+  max-width: 100vw;
+  box-sizing: border-box;
+  overflow: hidden !important;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: none;
+}
+
+/* Slim, clean scrollbar for TV & Signage middle content */
+.signage-main-arena-content,
+.tv-scrollable-main-area,
+.signage-scroll-container {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  overscroll-behavior: contain !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.45) transparent;
+}
+
+.signage-main-arena-content::-webkit-scrollbar,
+.tv-scrollable-main-area::-webkit-scrollbar,
+.signage-scroll-container::-webkit-scrollbar {
+  width: 5px;
+}
+
+.signage-main-arena-content::-webkit-scrollbar-track,
+.tv-scrollable-main-area::-webkit-scrollbar-track,
+.signage-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.signage-main-arena-content::-webkit-scrollbar-thumb,
+.tv-scrollable-main-area::-webkit-scrollbar-thumb,
+.signage-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.35);
+  border-radius: 4px;
+}
+
+.signage-main-arena-content::-webkit-scrollbar-thumb:hover,
+.tv-scrollable-main-area::-webkit-scrollbar-thumb:hover,
+.signage-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.7);
 }
 
 /* Smooth transitions for surfaces and borders without layout thrashing */
@@ -172,12 +242,16 @@
 .display-inner-wrapper {
   width: 100%;
   max-width: 1280px;
+  height: 100%;
+  max-height: 100%;
   margin-left: auto;
   margin-right: auto;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   box-sizing: border-box;
 }
 

@@ -485,11 +485,6 @@ export default function LiveStreamPlayer({
     return () => clearInterval(interval);
   }, [isLive, isYouTube, webrtcConnected, matchId]);
 
-  // If stream is not live, do NOT render an empty player or play button
-  if (!isLive) {
-    return null;
-  }
-
   const teamAName = currentMatch?.teamA?.name || currentMatch?.team_a_name || currentMatch?.teamAName || activeMatch?.teamA?.name || activeMatch?.team_a_name || activeMatch?.teamAName || 'Team A';
   const teamBName = currentMatch?.teamB?.name || currentMatch?.team_b_name || currentMatch?.teamBName || activeMatch?.teamB?.name || activeMatch?.team_b_name || activeMatch?.teamBName || 'Team B';
 
@@ -549,6 +544,11 @@ export default function LiveStreamPlayer({
     const m = currentMatch || activeMatch;
     return m?.pickleball?.currentServer || serveState?.currentServer || null;
   }, [currentMatch, activeMatch, serveState]);
+
+  // If stream is not live, do NOT render an empty player or play button
+  if (!isLive) {
+    return null;
+  }
 
   return (
     <div

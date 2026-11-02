@@ -8,10 +8,10 @@ import {
   useParams as useNextParams,
 } from 'next/navigation';
 
-export function Link({ to, href, children, ...props }) {
+export function Link({ to, href, children, prefetch = false, ...props }) {
   const destination = to || href || '#';
   return (
-    <NextLink href={destination} {...props}>
+    <NextLink href={destination} prefetch={prefetch} {...props}>
       {children}
     </NextLink>
   );
@@ -59,10 +59,7 @@ export function useLocation() {
 export function useSearchParams() {
   const router = useNextRouter();
   const pathname = useNextPathname() || '/';
-  let searchParams = null;
-  try {
-    searchParams = useNextSearchParams();
-  } catch (e) {}
+  const searchParams = useNextSearchParams();
 
   const setSearchParams = useCallback((nextParams) => {
     let queryStr = '';

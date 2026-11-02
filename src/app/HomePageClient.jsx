@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
-import Link from 'next/link';
+import { Link } from '../lib/routerCompat';
 import { setSelectedSport, setSelectedCity } from '../features/venue/venueSlice';
 import { Search, MapPin, Star, ChevronRight, ShieldCheck, Zap, Award, Sparkles } from 'lucide-react';
 

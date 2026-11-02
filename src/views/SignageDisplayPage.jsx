@@ -33,12 +33,7 @@ import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
  * Dual Theme (Dark & Light) via pure CSS tokens with live ball-event animations.
  */
 const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
-  let routeParams = {};
-  try {
-    routeParams = useParams() || {};
-  } catch (e) {
-    routeParams = {};
-  }
+  const routeParams = useParams() || {};
   const idFromUrl = typeof window !== 'undefined' ? (window.location.pathname.match(/\/display\/tournament\/([^/]+)/)?.[1] || window.location.pathname.match(/\/tournaments\/([^/]+)/)?.[1]) : null;
   const id = propsTournamentId || routeParams?.id || idFromUrl;
   const tournamentId = id;
@@ -64,6 +59,29 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
     });
     return () => observer.disconnect();
   }, [reduxTheme]);
+
+  // Enforce fixed full-viewport frame on html & body so page itself never scrolls
+  useEffect(() => {
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevHtmlHeight = document.documentElement.style.height;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyHeight = document.body.style.height;
+    const prevBodyMargin = document.body.style.margin;
+
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100dvh';
+    document.body.style.overflow = 'hidden';
+    document.body.style.height = '100dvh';
+    document.body.style.margin = '0';
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.documentElement.style.height = prevHtmlHeight;
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.height = prevBodyHeight;
+      document.body.style.margin = prevBodyMargin;
+    };
+  }, []);
 
   // Superadmin authorization guard
   const authUser = useSelector((state) => state.auth?.user);
@@ -515,6 +533,8 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
 
   const resolvedStripHeight = resolveZoneDimension(activeZoneSettings?.sidebarStripHeight, 90);
   const sidebarsMode = activeZoneSettings?.sidebarsMode || 'STRIP';
+  const hasTopStrip = isSidebarEnabled && sidebarsMode === 'STRIP' && (adsData.leftAds?.length > 0 || adsData.rightAds?.length > 0);
+  const hasBottomStrip = isSidebarEnabled && sidebarsMode === 'STRIP' && adsData.leftAds?.length > 0 && adsData.rightAds?.length > 0;
 
   if (isSuperAdminAuthorized === false) {
     return (
@@ -564,18 +584,24 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
         style={{
           maxWidth: isPortrait ? '100%' : undefined,
           width: '100%',
-          flex: 1
+          height: '100%',
+          display: 'grid',
+          gridTemplateRows: `${resolvedTopHeight} auto 1fr ${resolvedBottomHeight}`,
+          gridTemplateColumns: '100%',
+          overflow: 'hidden',
+          minHeight: 0,
+          boxSizing: 'border-box'
         }}
       >
-        {/* ── TOP AD BANNER WITH REAL-TIME CONFIGURABLE HEIGHT ── */}
-        {showTopAd && (
+        {/* ── ROW 1: TOP AD BANNER WITH REAL-TIME CONFIGURABLE HEIGHT ── */}
+        {showTopAd ? (
           <div
             style={{
               height: resolvedTopHeight,
               width: '100%',
               overflow: 'hidden',
               flexShrink: 0,
-              marginBottom: 'clamp(0.6rem, 1.2vh, 1rem)',
+              marginBottom: 'clamp(0.4rem, 0.8vh, 0.65rem)',
               borderRadius: 12,
               transition: 'height 0.25s ease'
             }}
@@ -587,303 +613,28 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
               style={{ height: '100%', width: '100%', marginBottom: 0 }}
             />
           </div>
-        )}
+        ) : <div style={{ height: 0, overflow: 'hidden' }} />}
 
-        {/* ── SIDEBARS + ARENA SCOREBOARD CONTAINER (LANDSCAPE VS PORTRAIT) ── */}
-        {!isPortrait ? (
-          /* LANDSCAPE: Left Sidebar + Central Content + Right Sidebar */
-          <div
-            className="signage-layout-with-sidebars"
+        {/* ── ROW 2: FIXED HEADER BAR (outside scrolling area) ── */}
+        <div style={{ flexShrink: 0, width: '100%', marginBottom: 'clamp(0.4rem, 0.8vh, 0.65rem)' }}>
+          {/* 1. Desktop Header (>=1024px: One Tidy Row with No Wrapping) */}
+          <header
+            className="display-header-desktop display-theme-transition"
             style={{
-              display: 'flex',
-              alignItems: 'stretch',
-              gap: 'clamp(0.75rem, 1.5vw, 1.25rem)',
-              width: '100%',
-              flex: 1
-            }}
-          >
-            {/* Left Sidebar Ad Slot */}
-            {isLeftAdActive && (
-              <div
-                style={{
-                  width: resolvedLeftWidth,
-                  minWidth: resolvedLeftWidth,
-                  maxWidth: resolvedLeftWidth,
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                  transition: 'width 0.25s ease'
-                }}
-              >
-                <SignageAdSlot
-                  placement="LEFT"
-                  ads={adsData.leftAds}
-                  isPaused={adsData.state?.leftSidebarPaused}
-                  style={{ width: '100%', height: '100%' }}
-                />
-              </div>
-            )}
-
-            {/* Main Central Arena Content */}
-            <div className="signage-main-arena-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-
-        {/* ── HEADER: ONE TIDY ROW ON DESKTOP, TWO-ROW ON MOBILE (<1024px) ── */}
-        {/* 1. Desktop Header (>=1024px: One Tidy Row with No Wrapping) */}
-        <header
-          className="display-header-desktop display-theme-transition"
-          style={{
-            background: 'var(--display-surface)',
-            border: '1px solid var(--display-border)',
-            borderRadius: 16,
-            padding: '8px 16px',
-            marginBottom: 'clamp(0.6rem, 1.2vh, 1rem)',
-            boxShadow: 'var(--display-shadow-subtle)',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          {/* Left: Back, Trophy, Title, Subtitle */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-            <Link
-              to={`/tournaments/${id}`}
-              title="Back to Tournament"
-              aria-label="Back to Tournament"
-              style={{
-                width: 44,
-                height: 44,
-                minWidth: 44,
-                minHeight: 44,
-                borderRadius: 12,
-                background: 'var(--display-surface-elevated)',
-                border: '1px solid var(--display-border)',
-                color: 'var(--display-text-secondary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                textDecoration: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <ArrowLeft size={18} />
-            </Link>
-
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                minWidth: 38,
-                borderRadius: 10,
-                background: 'linear-gradient(135deg, var(--display-accent) 0%, #047857 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-                boxShadow: 'var(--display-glow-accent, none)'
-              }}
-            >
-              <Trophy size={18} />
-            </div>
-
-            <div style={{ minWidth: 0 }}>
-              <h1
-                style={{
-                  fontSize: 'clamp(1rem, 1.4vw, 1.35rem)',
-                  fontWeight: 900,
-                  color: 'var(--display-text-primary)',
-                  margin: 0,
-                  lineHeight: 1.2,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}
-              >
-                {tournament?.name || 'Tournament Arena Live Display'}
-              </h1>
-              <div
-                style={{
-                  fontSize: '0.78rem',
-                  color: 'var(--display-text-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}
-              >
-                {tournament?.city || 'Sports Arena'} • Official Live Match Broadcast
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Active Match Info, LIVE Pill, Clock, Theme, Fullscreen */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--display-text-muted)', fontWeight: 600 }}>
-              {matchCount > 0 ? `${matchCount} Active Match${matchCount > 1 ? 'es' : ''}` : 'Arena Live'}
-            </span>
-
-            {/* LIVE Pill */}
-            <div
-              suppressHydrationWarning
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                background: isConnected
-                  ? 'var(--display-live-red-subtle)'
-                  : 'var(--display-warning-amber-subtle)',
-                border: `1px solid ${isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)'}`,
-                color: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
-                padding: '4px 12px',
-                borderRadius: 20,
-                fontSize: '0.75rem',
-                fontWeight: 900,
-                letterSpacing: '0.5px'
-              }}
-            >
-              <span
-                suppressHydrationWarning
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
-                  display: 'inline-block'
-                }}
-                className={isConnected ? 'animate-pulse' : ''}
-              />
-              {isConnected ? 'LIVE' : 'RECONNECTING'}
-            </div>
-
-            {/* Stadium Digital Clock */}
-            <div
-              suppressHydrationWarning
-              style={{
-                fontSize: '0.88rem',
-                fontWeight: 800,
-                color: 'var(--display-accent)',
-                fontVariantNumeric: 'tabular-nums',
-                background: 'var(--display-accent-subtle)',
-                border: '1px solid var(--display-accent)',
-                padding: '4px 10px',
-                borderRadius: 8,
-                letterSpacing: '0.5px'
-              }}
-            >
-              {currentTime}
-            </div>
-
-            {/* Orientation Toggle Button */}
-            <button
-              onClick={() => {
-                setDisplayOrientation(prev => {
-                  if (prev === 'AUTO') return 'LANDSCAPE';
-                  if (prev === 'LANDSCAPE') return 'PORTRAIT';
-                  return 'AUTO';
-                });
-              }}
-              aria-label={`Orientation: ${displayOrientation}`}
-              title={`Orientation Mode: ${displayOrientation} (${isPortrait ? 'Portrait 9:16' : 'Landscape 16:9'}) - Click to toggle`}
-              style={{
-                height: 44,
-                padding: '0 12px',
-                borderRadius: 12,
-                background: 'var(--display-surface-elevated)',
-                border: isPortrait ? '1px solid var(--display-accent)' : '1px solid var(--display-border)',
-                color: isPortrait ? 'var(--display-accent)' : 'var(--display-text-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              <RotateCw size={16} />
-              <span>{displayOrientation === 'AUTO' ? (isPortrait ? 'Auto (Portrait)' : 'Auto (Landscape)') : displayOrientation}</span>
-            </button>
-
-            {/* Theme Toggle Button (44px) */}
-            <button
-              onClick={() => dispatch(toggleTheme())}
-              aria-label={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
-              title={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
-              suppressHydrationWarning
-              style={{
-                width: 44,
-                height: 44,
-                minWidth: 44,
-                minHeight: 44,
-                borderRadius: 12,
-                background: 'var(--display-surface-elevated)',
-                border: '1px solid var(--display-border)',
-                color: 'var(--display-text-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer'
-              }}
-            >
-              {mounted && currentTheme === 'light' ? (
-                <Moon size={18} color="var(--display-boundary-purple)" />
-              ) : (
-                <Sun size={18} color="var(--display-warning-amber)" />
-              )}
-            </button>
-
-            {/* Fullscreen Button (44px) */}
-            <button
-              onClick={toggleFullscreen}
-              title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
-              aria-label={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
-              style={{
-                width: 44,
-                height: 44,
-                minWidth: 44,
-                minHeight: 44,
-                borderRadius: 12,
-                background: 'var(--display-surface-elevated)',
-                border: '1px solid var(--display-border)',
-                color: 'var(--display-text-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer'
-              }}
-            >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
-          </div>
-        </header>
-
-        {/* 2. Mobile/Tablet Header (<1024px: Two-Row Clean Layout) */}
-        <header
-          className="display-header-mobile display-theme-transition"
-          style={{
-            background: 'var(--display-surface)',
-            border: '1px solid var(--display-border)',
-            borderRadius: 16,
-            padding: 'clamp(0.4rem, 0.8vh, 0.65rem) clamp(0.6rem, 1.2vw, 1rem)',
-            marginBottom: 'clamp(0.5rem, 1vh, 0.8rem)',
-            boxShadow: 'var(--display-shadow-subtle)',
-            flexDirection: 'column',
-            gap: 'clamp(0.3rem, 0.6vh, 0.5rem)'
-          }}
-        >
-          {/* Row 1: Back Button, Title, Controls */}
-          <div
-            style={{
-              display: 'flex',
+              background: 'var(--display-surface)',
+              border: '1px solid var(--display-border)',
+              borderRadius: 16,
+              padding: '8px 16px',
+              marginBottom: 0,
+              boxShadow: 'var(--display-shadow-subtle)',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '0.6rem'
+              gap: '1rem',
+              whiteSpace: 'nowrap'
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.6rem',
-                flex: 1,
-                minWidth: 0
-              }}
-            >
+            {/* Left: Back, Trophy, Title, Subtitle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
               <Link
                 to={`/tournaments/${id}`}
                 title="Back to Tournament"
@@ -909,9 +660,9 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
 
               <div
                 style={{
-                  width: 'clamp(32px, 3.8vw, 38px)',
-                  height: 'clamp(32px, 3.8vw, 38px)',
-                  minWidth: 'clamp(32px, 3.8vw, 38px)',
+                  width: 38,
+                  height: 38,
+                  minWidth: 38,
                   borderRadius: 10,
                   background: 'linear-gradient(135deg, var(--display-accent) 0%, #047857 100%)',
                   display: 'flex',
@@ -924,15 +675,14 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                 <Trophy size={18} />
               </div>
 
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ minWidth: 0 }}>
                 <h1
                   style={{
-                    fontSize: 'clamp(0.95rem, 1.5vw, 1.35rem)',
+                    fontSize: 'clamp(1rem, 1.4vw, 1.35rem)',
                     fontWeight: 900,
                     color: 'var(--display-text-primary)',
                     margin: 0,
                     lineHeight: 1.2,
-                    whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'
                   }}
@@ -941,12 +691,10 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                 </h1>
                 <div
                   style={{
-                    fontSize: 'clamp(0.68rem, 0.85vw, 0.78rem)',
+                    fontSize: '0.78rem',
                     color: 'var(--display-text-secondary)',
-                    whiteSpace: 'nowrap',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    marginTop: 1
+                    textOverflow: 'ellipsis'
                   }}
                 >
                   {tournament?.city || 'Sports Arena'} • Official Live Match Broadcast
@@ -954,8 +702,64 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-              {/* Mobile Orientation Toggle Button */}
+            {/* Right: Active Match Info, LIVE Pill, Clock, Theme, Fullscreen */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--display-text-muted)', fontWeight: 600 }}>
+                {matchCount > 0 ? `${matchCount} Active Match${matchCount > 1 ? 'es' : ''}` : 'Arena Live'}
+              </span>
+
+              {/* LIVE Pill */}
+              <div
+                suppressHydrationWarning
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: isConnected
+                    ? 'var(--display-live-red-subtle)'
+                    : 'var(--display-warning-amber-subtle)',
+                  border: `1px solid ${isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)'}`,
+                  color: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: '0.75rem',
+                  fontWeight: 900,
+                  letterSpacing: '0.5px'
+                }}
+              >
+                <span
+                  suppressHydrationWarning
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
+                    display: 'inline-block'
+                  }}
+                  className={isConnected ? 'animate-pulse' : ''}
+                />
+                {isConnected ? 'LIVE' : 'RECONNECTING'}
+              </div>
+
+              {/* Stadium Digital Clock */}
+              <div
+                suppressHydrationWarning
+                style={{
+                  fontSize: '0.88rem',
+                  fontWeight: 800,
+                  color: 'var(--display-accent)',
+                  fontVariantNumeric: 'tabular-nums',
+                  background: 'var(--display-accent-subtle)',
+                  border: '1px solid var(--display-accent)',
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  letterSpacing: '0.5px'
+                }}
+              >
+                {currentTime}
+              </div>
+
+              {/* Orientation Toggle Button */}
               <button
                 onClick={() => {
                   setDisplayOrientation(prev => {
@@ -965,25 +769,27 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                   });
                 }}
                 aria-label={`Orientation: ${displayOrientation}`}
-                title={`Orientation: ${displayOrientation}`}
+                title={`Orientation Mode: ${displayOrientation} (${isPortrait ? 'Portrait 9:16' : 'Landscape 16:9'}) - Click to toggle`}
                 style={{
-                  width: 44,
                   height: 44,
-                  minWidth: 44,
-                  minHeight: 44,
+                  padding: '0 12px',
                   borderRadius: 12,
                   background: 'var(--display-surface-elevated)',
                   border: isPortrait ? '1px solid var(--display-accent)' : '1px solid var(--display-border)',
                   color: isPortrait ? 'var(--display-accent)' : 'var(--display-text-primary)',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  gap: 6,
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
                   cursor: 'pointer'
                 }}
               >
-                <RotateCw size={18} />
+                <RotateCw size={16} />
+                <span>{displayOrientation === 'AUTO' ? (isPortrait ? 'Auto (Portrait)' : 'Auto (Landscape)') : displayOrientation}</span>
               </button>
 
+              {/* Theme Toggle Button (44px) */}
               <button
                 onClick={() => dispatch(toggleTheme())}
                 aria-label={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
@@ -1011,6 +817,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                 )}
               </button>
 
+              {/* Fullscreen Button (44px) */}
               <button
                 onClick={toggleFullscreen}
                 title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
@@ -1032,223 +839,456 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
               >
                 {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
               </button>
-
-              {/* Live Stream Mode Toggle Button */}
-              {(activeStreamData || matches.some((m) => m.has_live_stream)) && (
-                <button
-                  type="button"
-                  onClick={() => setSignageStreamMode((prev) => !prev)}
-                  title={signageStreamMode ? 'Exit Live Stream View' : 'Watch Arena Live Broadcast'}
-                  style={{
-                    height: 44,
-                    padding: '0 0.85rem',
-                    borderRadius: 12,
-                    background: signageStreamMode ? '#ef4444' : 'rgba(239, 68, 68, 0.15)',
-                    border: signageStreamMode ? '1px solid #ef4444' : '1px solid rgba(239, 68, 68, 0.4)',
-                    color: signageStreamMode ? '#ffffff' : '#ef4444',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.45rem',
-                    cursor: 'pointer',
-                    fontWeight: 800,
-                    fontSize: '0.8rem'
-                  }}
-                >
-                  <Video size={16} className={signageStreamMode ? '' : 'animate-pulse'} />
-                  <span>{signageStreamMode ? 'SCOREBOARD' : '🔴 STREAM'}</span>
-                </button>
-              )}
             </div>
-          </div>
+          </header>
 
-          {/* Row 2: Subtitle on Left + LIVE Pill & Clock on Right */}
-          <div
+          {/* 2. Mobile/Tablet Header (<1024px: Two-Row Clean Layout) */}
+          <header
+            className="display-header-mobile display-theme-transition"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '0.5rem',
-              paddingTop: 'clamp(0.2rem, 0.4vh, 0.4rem)',
-              borderTop: '1px solid var(--display-border-subtle)'
+              background: 'var(--display-surface)',
+              border: '1px solid var(--display-border)',
+              borderRadius: 16,
+              padding: 'clamp(0.4rem, 0.8vh, 0.65rem) clamp(0.6rem, 1.2vw, 1rem)',
+              marginBottom: 0,
+              boxShadow: 'var(--display-shadow-subtle)',
+              flexDirection: 'column',
+              gap: 'clamp(0.3rem, 0.6vh, 0.5rem)'
             }}
           >
-            <div
-              style={{
-                fontSize: 'clamp(0.68rem, 0.85vw, 0.78rem)',
-                color: 'var(--display-text-muted)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}
-            >
-              {matchCount > 0
-                ? `${matchCount} Active Match${matchCount > 1 ? 'es' : ''} on Court`
-                : 'Arena Live Feed'}
-            </div>
-
+            {/* Row 1: Back Button, Title, Controls */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.5rem',
-                flexShrink: 0,
-                whiteSpace: 'nowrap'
+                justifyContent: 'space-between',
+                gap: '0.6rem'
               }}
             >
               <div
-                suppressHydrationWarning
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  background: isConnected
-                    ? 'var(--display-live-red-subtle)'
-                    : 'var(--display-warning-amber-subtle)',
-                  border: `1px solid ${isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)'}`,
-                  color: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
-                  padding: '2px 9px',
-                  borderRadius: 20,
-                  fontSize: 'clamp(0.66rem, 0.85vw, 0.75rem)',
-                  fontWeight: 900,
-                  letterSpacing: '0.5px'
+                  gap: '0.6rem',
+                  flex: 1,
+                  minWidth: 0
                 }}
               >
-                <span
+                <Link
+                  to={`/tournaments/${id}`}
+                  title="Back to Tournament"
+                  aria-label="Back to Tournament"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 12,
+                    background: 'var(--display-surface-elevated)',
+                    border: '1px solid var(--display-border)',
+                    color: 'var(--display-text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textDecoration: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <ArrowLeft size={18} />
+                </Link>
+
+                <div
+                  style={{
+                    width: 'clamp(32px, 3.8vw, 38px)',
+                    height: 'clamp(32px, 3.8vw, 38px)',
+                    minWidth: 'clamp(32px, 3.8vw, 38px)',
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, var(--display-accent) 0%, #047857 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ffffff',
+                    boxShadow: 'var(--display-glow-accent, none)'
+                  }}
+                >
+                  <Trophy size={18} />
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h1
+                    style={{
+                      fontSize: 'clamp(0.95rem, 1.5vw, 1.35rem)',
+                      fontWeight: 900,
+                      color: 'var(--display-text-primary)',
+                      margin: 0,
+                      lineHeight: 1.2,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                  >
+                    {tournament?.name || 'Tournament Arena Live Display'}
+                  </h1>
+                  <div
+                    style={{
+                      fontSize: 'clamp(0.68rem, 0.85vw, 0.78rem)',
+                      color: 'var(--display-text-secondary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      marginTop: 1
+                    }}
+                  >
+                    {tournament?.city || 'Sports Arena'} • Official Live Match Broadcast
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                {/* Mobile Orientation Toggle Button */}
+                <button
+                  onClick={() => {
+                    setDisplayOrientation(prev => {
+                      if (prev === 'AUTO') return 'LANDSCAPE';
+                      if (prev === 'LANDSCAPE') return 'PORTRAIT';
+                      return 'AUTO';
+                    });
+                  }}
+                  aria-label={`Orientation: ${displayOrientation}`}
+                  title={`Orientation: ${displayOrientation}`}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 12,
+                    background: 'var(--display-surface-elevated)',
+                    border: isPortrait ? '1px solid var(--display-accent)' : '1px solid var(--display-border)',
+                    color: isPortrait ? 'var(--display-accent)' : 'var(--display-text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <RotateCw size={18} />
+                </button>
+
+                <button
+                  onClick={() => dispatch(toggleTheme())}
+                  aria-label={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
+                  title={`Switch to ${mounted && currentTheme === 'light' ? 'dark' : 'light'} mode`}
                   suppressHydrationWarning
                   style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
-                    display: 'inline-block'
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 12,
+                    background: 'var(--display-surface-elevated)',
+                    border: '1px solid var(--display-border)',
+                    color: 'var(--display-text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
                   }}
-                  className={isConnected ? 'animate-pulse' : ''}
-                />
-                {isConnected ? 'LIVE' : 'RECONNECTING'}
+                >
+                  {mounted && currentTheme === 'light' ? (
+                    <Moon size={18} color="var(--display-boundary-purple)" />
+                  ) : (
+                    <Sun size={18} color="var(--display-warning-amber)" />
+                  )}
+                </button>
+
+                <button
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+                  aria-label={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 12,
+                    background: 'var(--display-surface-elevated)',
+                    border: '1px solid var(--display-border)',
+                    color: 'var(--display-text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                </button>
+
+                {/* Live Stream Mode Toggle Button */}
+                {(activeStreamData || matches.some((m) => m.has_live_stream)) && (
+                  <button
+                    type="button"
+                    onClick={() => setSignageStreamMode((prev) => !prev)}
+                    title={signageStreamMode ? 'Exit Live Stream View' : 'Watch Arena Live Broadcast'}
+                    style={{
+                      height: 44,
+                      padding: '0 0.85rem',
+                      borderRadius: 12,
+                      background: signageStreamMode ? '#ef4444' : 'rgba(239, 68, 68, 0.15)',
+                      border: signageStreamMode ? '1px solid #ef4444' : '1px solid rgba(239, 68, 68, 0.4)',
+                      color: signageStreamMode ? '#ffffff' : '#ef4444',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      cursor: 'pointer',
+                      fontWeight: 800,
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    <Video size={16} className={signageStreamMode ? '' : 'animate-pulse'} />
+                    <span>{signageStreamMode ? 'SCOREBOARD' : '🔴 STREAM'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Row 2: Subtitle on Left + LIVE Pill & Clock on Right */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.5rem',
+                paddingTop: 'clamp(0.2rem, 0.4vh, 0.4rem)',
+                borderTop: '1px solid var(--display-border-subtle)'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 'clamp(0.68rem, 0.85vw, 0.78rem)',
+                  color: 'var(--display-text-muted)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
+              >
+                {matchCount > 0
+                  ? `${matchCount} Active Match${matchCount > 1 ? 'es' : ''} on Court`
+                  : 'Arena Live Feed'}
               </div>
 
               <div
-                suppressHydrationWarning
                 style={{
-                  fontSize: 'clamp(0.75rem, 0.95vw, 0.88rem)',
-                  fontWeight: 800,
-                  color: 'var(--display-accent)',
-                  fontVariantNumeric: 'tabular-nums',
-                  background: 'var(--display-accent-subtle)',
-                  border: '1px solid var(--display-accent)',
-                  padding: '2px 8px',
-                  borderRadius: 8,
-                  letterSpacing: '0.5px'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }}
               >
-                {currentTime}
-              </div>
-            </div>
-          </div>
-        </header>
+                <div
+                  suppressHydrationWarning
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: isConnected
+                      ? 'var(--display-live-red-subtle)'
+                      : 'var(--display-warning-amber-subtle)',
+                    border: `1px solid ${isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)'}`,
+                    color: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
+                    padding: '2px 9px',
+                    borderRadius: 20,
+                    fontSize: 'clamp(0.66rem, 0.85vw, 0.75rem)',
+                    fontWeight: 900,
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  <span
+                    suppressHydrationWarning
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: isConnected ? 'var(--display-live-red)' : 'var(--display-warning-amber)',
+                      display: 'inline-block'
+                    }}
+                    className={isConnected ? 'animate-pulse' : ''}
+                  />
+                  {isConnected ? 'LIVE' : 'RECONNECTING'}
+                </div>
 
-        {/* ── MAIN CONTENT ZONE ── */}
-        <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {loading ? (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--display-text-secondary)',
-                gap: 12,
-                background: 'var(--display-surface)',
-                borderRadius: 18,
-                border: '1px solid var(--display-border)'
-              }}
-            >
-              <Radio size={36} className="animate-pulse" color="var(--display-accent)" />
-              <div style={{ fontSize: 'clamp(1rem, 1.8vw, 1.35rem)', fontWeight: 800 }}>
-                Connecting to Stadium Live Feed...
+                <div
+                  suppressHydrationWarning
+                  style={{
+                    fontSize: 'clamp(0.75rem, 0.95vw, 0.88rem)',
+                    fontWeight: 800,
+                    color: 'var(--display-accent)',
+                    fontVariantNumeric: 'tabular-nums',
+                    background: 'var(--display-accent-subtle)',
+                    border: '1px solid var(--display-accent)',
+                    padding: '2px 8px',
+                    borderRadius: 8,
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  {currentTime}
+                </div>
               </div>
             </div>
-          ) : signageStreamMode && activeStreamData ? (
-            /* ── SCENE: SIGNAGE LIVE ARENA STREAMING BROADCAST ── */
-            <div style={{ flex: 1, minHeight: 0, height: '100%', borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
-              <LiveStreamPlayer
-                matchId={activeStreamData.matchId}
-                streamData={activeStreamData}
-                match={displayMatches.find((m) => m.id === activeStreamData.matchId || m.uuid === activeStreamData.matchId) || displayMatches[0] || null}
-                showOverlay={true}
-                autoPlay={true}
-              />
-            </div>
-          ) : matchCount === 0 ? (
-            <div
+          </header>
+        </div>
+
+        {/* ── ROW 3: MIDDLE ROW (SIDEBARS + ARENA SCOREBOARD CONTAINER) ── */}
+        {!isPortrait ? (
+          /* LANDSCAPE: Left Sidebar + Central Content + Right Sidebar */
+          <div
+            className="signage-layout-with-sidebars"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `${resolvedLeftWidth} 1fr ${resolvedRightWidth}`,
+              gridTemplateRows: '100%',
+              columnGap: (isLeftAdActive || isRightAdActive) ? 'clamp(0.6rem, 1.2vw, 1rem)' : 0,
+              width: '100%',
+              height: '100%',
+              minHeight: 0,
+              minWidth: 0,
+              overflow: 'hidden'
+            }}
+          >
+            {/* Left Sidebar Ad Slot */}
+            {isLeftAdActive ? (
+              <aside
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  transition: 'width 0.25s ease'
+                }}
+              >
+                <SignageAdSlot
+                  placement="LEFT"
+                  ads={adsData.leftAds}
+                  isPaused={adsData.state?.leftSidebarPaused}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </aside>
+            ) : <div style={{ width: 0, overflow: 'hidden' }} />}
+
+            {/* Main Central Arena Content (ONLY this container scrolls) */}
+            <main
+              className="signage-main-arena-content signage-scroll-container"
               style={{
+                width: '100%',
+                height: '100%',
                 flex: 1,
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                overscrollBehavior: 'contain',
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'var(--display-surface)',
-                borderRadius: 18,
-                border: '1px dashed var(--display-border)',
-                padding: '2rem',
-                textAlign: 'center'
+                flexDirection: 'column'
               }}
             >
-              <Radio size={44} color="var(--display-text-muted)" style={{ marginBottom: '1rem' }} />
-              <h2
-                style={{
-                  fontSize: 'clamp(1.3rem, 2.2vw, 1.8rem)',
-                  margin: 0,
-                  fontWeight: 900,
-                  color: 'var(--display-text-primary)'
-                }}
-              >
-                No matches selected for display
-              </h2>
-              <p
-                style={{
-                  color: 'var(--display-text-secondary)',
-                  fontSize: 'clamp(0.85rem, 1.1vw, 1rem)',
-                  marginTop: '0.5rem',
-                  maxWidth: 480
-                }}
-              >
-                No matches are currently selected for Signage TV display. Organizers can select matches in the Live Matches tab.
-              </p>
-            </div>
-          ) : matchCount === 1 ? (
-            /* ── 1 MATCH: STADIUM HERO PRESENTATION ── */
-            <MatchCardHero match={displayMatches[0]} />
-          ) : (
-            /* ── 2, 3, or 4+ MATCHES: MULTI-MATCH GRID ── */
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  matchCount === 2
-                    ? 'repeat(auto-fit, minmax(320px, 1fr))'
-                    : 'repeat(auto-fit, minmax(300px, 1fr))',
-                gap: 'clamp(0.6rem, 1.2vw, 1rem)',
-                flex: 1,
-                minHeight: 0
-              }}
-            >
-              {displayMatches.map((m) => (
-                <MatchCardGrid key={m.id} match={m} matchCount={matchCount} />
-              ))}
-            </div>
-          )}
-        </main>
-            </div>
+              {loading ? (
+                <div
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--display-text-secondary)',
+                    gap: 12,
+                    background: 'var(--display-surface)',
+                    borderRadius: 18,
+                    border: '1px solid var(--display-border)'
+                  }}
+                >
+                  <Radio size={36} className="animate-pulse" color="var(--display-accent)" />
+                  <div style={{ fontSize: 'clamp(1rem, 1.8vw, 1.35rem)', fontWeight: 800 }}>
+                    Connecting to Stadium Live Feed...
+                  </div>
+                </div>
+              ) : signageStreamMode && activeStreamData ? (
+                /* ── SCENE: SIGNAGE LIVE ARENA STREAMING BROADCAST ── */
+                <div style={{ flex: 1, minHeight: 0, height: '100%', borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
+                  <LiveStreamPlayer
+                    matchId={activeStreamData.matchId}
+                    streamData={activeStreamData}
+                    match={displayMatches.find((m) => m.id === activeStreamData.matchId || m.uuid === activeStreamData.matchId) || displayMatches[0] || null}
+                    showOverlay={true}
+                    autoPlay={true}
+                  />
+                </div>
+              ) : matchCount === 0 ? (
+                <div
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'var(--display-surface)',
+                    borderRadius: 18,
+                    border: '1px dashed var(--display-border)',
+                    padding: '2rem',
+                    textAlign: 'center'
+                  }}
+                >
+                  <Radio size={44} color="var(--display-text-muted)" style={{ marginBottom: '1rem' }} />
+                  <h2
+                    style={{
+                      fontSize: 'clamp(1.3rem, 2.2vw, 1.8rem)',
+                      margin: 0,
+                      fontWeight: 900,
+                      color: 'var(--display-text-primary)'
+                    }}
+                  >
+                    No matches selected for display
+                  </h2>
+                  <p
+                    style={{
+                      color: 'var(--display-text-secondary)',
+                      fontSize: 'clamp(0.85rem, 1.1vw, 1rem)',
+                      marginTop: '0.5rem',
+                      maxWidth: 480
+                    }}
+                  >
+                    No matches are currently selected for Signage TV display. Organizers can select matches in the Live Matches tab.
+                  </p>
+                </div>
+              ) : matchCount === 1 ? (
+                /* ── 1 MATCH: STADIUM HERO PRESENTATION ── */
+                <MatchCardHero match={displayMatches[0]} />
+              ) : (
+                /* ── 2, 3, or 4+ MATCHES: MULTI-MATCH GRID ── */
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      matchCount === 2
+                        ? 'repeat(auto-fit, minmax(320px, 1fr))'
+                        : 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gap: 'clamp(0.6rem, 1.2vw, 1rem)',
+                    width: '100%',
+                    minHeight: 'fit-content'
+                  }}
+                >
+                  {displayMatches.map((m) => (
+                    <MatchCardGrid key={m.id} match={m} matchCount={matchCount} />
+                  ))}
+                </div>
+              )}
+            </main>
 
             {/* Right Sidebar Ad Slot */}
-            {isRightAdActive && (
-              <div
+            {isRightAdActive ? (
+              <aside
                 style={{
-                  width: resolvedRightWidth,
-                  minWidth: resolvedRightWidth,
-                  maxWidth: resolvedRightWidth,
+                  width: '100%',
+                  height: '100%',
                   overflow: 'hidden',
                   flexShrink: 0,
                   transition: 'width 0.25s ease'
@@ -1260,23 +1300,27 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                   isPaused={adsData.state?.rightSidebarPaused}
                   style={{ width: '100%', height: '100%' }}
                 />
-              </div>
-            )}
+              </aside>
+            ) : <div style={{ width: 0, overflow: 'hidden' }} />}
           </div>
         ) : (
           /* PORTRAIT: Vertically Stacked Content with Optional Slim Horizontal Sponsor Strips */
           <div
             className="signage-layout-portrait"
             style={{
-              display: 'flex',
-              flexDirection: 'column',
+              display: 'grid',
+              gridTemplateRows: `${hasTopStrip ? resolvedStripHeight : '0px'} 1fr ${hasBottomStrip ? resolvedStripHeight : '0px'}`,
+              gridTemplateColumns: '100%',
+              rowGap: hasTopStrip || hasBottomStrip ? 'clamp(0.4rem, 0.8vh, 0.65rem)' : 0,
               width: '100%',
-              flex: 1,
-              gap: 'clamp(0.6rem, 1.2vh, 1rem)'
+              height: '100%',
+              minHeight: 0,
+              minWidth: 0,
+              overflow: 'hidden'
             }}
           >
             {/* Slim Horizontal Sponsor Strip Above Content */}
-            {isSidebarEnabled && sidebarsMode === 'STRIP' && (adsData.leftAds?.length > 0 || adsData.rightAds?.length > 0) && (
+            {hasTopStrip ? (
               <div
                 style={{
                   height: resolvedStripHeight,
@@ -1293,148 +1337,48 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                   style={{ height: '100%', width: '100%' }}
                 />
               </div>
-            )}
+            ) : <div style={{ height: 0, overflow: 'hidden' }} />}
 
-            {/* Main Arena Content in Portrait */}
-            <div className="signage-main-arena-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              {/* Header inside portrait */}
-              <header
-                className="display-header-desktop display-theme-transition"
-                style={{
-                  background: 'var(--display-surface)',
-                  border: '1px solid var(--display-border)',
-                  borderRadius: 16,
-                  padding: '8px 16px',
-                  marginBottom: 'clamp(0.6rem, 1.2vh, 1rem)',
-                  boxShadow: 'var(--display-shadow-subtle)',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '1rem',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-                  <Link
-                    to={`/tournaments/${id}`}
-                    title="Back to Tournament"
-                    aria-label="Back to Tournament"
-                    style={{
-                      width: 44,
-                      height: 44,
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: 12,
-                      background: 'var(--display-surface-elevated)',
-                      border: '1px solid var(--display-border)',
-                      color: 'var(--display-text-secondary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      textDecoration: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <ArrowLeft size={18} />
-                  </Link>
-                  <div style={{ minWidth: 0 }}>
-                    <h1 style={{ fontSize: 'clamp(1rem, 1.4vw, 1.35rem)', fontWeight: 900, color: 'var(--display-text-primary)', margin: 0 }}>
-                      {tournament?.name || 'Tournament Arena Live Display'}
-                    </h1>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--display-text-secondary)' }}>
-                      {tournament?.city || 'Sports Arena'} • Official Live Match Broadcast
-                    </div>
-                  </div>
+            {/* Main Arena Content in Portrait (ONLY this container scrolls) */}
+            <main
+              className="signage-main-arena-content signage-scroll-container"
+              style={{
+                width: '100%',
+                height: '100%',
+                flex: 1,
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                overscrollBehavior: 'contain',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
+              {loading ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--display-text-secondary)', gap: 12, background: 'var(--display-surface)', borderRadius: 18, border: '1px solid var(--display-border)' }}>
+                  <Radio size={36} className="animate-pulse" color="var(--display-accent)" />
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>Connecting to Stadium Live Feed...</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
-                  <button
-                    onClick={() => setDisplayOrientation(prev => prev === 'LANDSCAPE' ? 'PORTRAIT' : prev === 'PORTRAIT' ? 'AUTO' : 'LANDSCAPE')}
-                    aria-label="Toggle Orientation"
-                    style={{
-                      height: 44,
-                      padding: '0 12px',
-                      borderRadius: 12,
-                      background: 'var(--display-surface-elevated)',
-                      border: '1px solid var(--display-accent)',
-                      color: 'var(--display-accent)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <RotateCw size={16} />
-                    <span>Portrait (9:16)</span>
-                  </button>
-                  <button
-                    onClick={() => dispatch(toggleTheme())}
-                    suppressHydrationWarning
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 12,
-                      background: 'var(--display-surface-elevated)',
-                      border: '1px solid var(--display-border)',
-                      color: 'var(--display-text-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {mounted && currentTheme === 'light' ? (
-                      <Moon size={18} color="var(--display-boundary-purple)" />
-                    ) : (
-                      <Sun size={18} color="var(--display-warning-amber)" />
-                    )}
-                  </button>
-                  <button
-                    onClick={toggleFullscreen}
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 12,
-                      background: 'var(--display-surface-elevated)',
-                      border: '1px solid var(--display-border)',
-                      color: 'var(--display-text-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                  </button>
+              ) : matchCount === 0 ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--display-surface)', borderRadius: 18, border: '1px dashed var(--display-border)', padding: '2rem', textAlign: 'center' }}>
+                  <Radio size={44} color="var(--display-text-muted)" style={{ marginBottom: '1rem' }} />
+                  <h2 style={{ fontSize: '1.4rem', margin: 0, fontWeight: 900, color: 'var(--display-text-primary)' }}>No matches selected for display</h2>
+                  <p style={{ color: 'var(--display-text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem', maxWidth: 480 }}>No matches are currently selected for Signage TV display. Organizers can select matches in the Live Matches tab.</p>
                 </div>
-              </header>
-
-              <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                {loading ? (
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--display-text-secondary)', gap: 12, background: 'var(--display-surface)', borderRadius: 18, border: '1px solid var(--display-border)' }}>
-                    <Radio size={36} className="animate-pulse" color="var(--display-accent)" />
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>Connecting to Stadium Live Feed...</div>
-                  </div>
-                ) : matchCount === 0 ? (
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--display-surface)', borderRadius: 18, border: '1px dashed var(--display-border)', padding: '2rem', textAlign: 'center' }}>
-                    <Radio size={44} color="var(--display-text-muted)" style={{ marginBottom: '1rem' }} />
-                    <h2 style={{ fontSize: '1.4rem', margin: 0, fontWeight: 900, color: 'var(--display-text-primary)' }}>No matches selected for display</h2>
-                    <p style={{ color: 'var(--display-text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem', maxWidth: 480 }}>No matches are currently selected for Signage TV display. Organizers can select matches in the Live Matches tab.</p>
-                  </div>
-                ) : matchCount === 1 ? (
-                  <MatchCardHero match={displayMatches[0]} />
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', flex: 1, minHeight: 0 }}>
-                    {displayMatches.map((m) => (
-                      <MatchCardGrid key={m.id} match={m} matchCount={matchCount} />
-                    ))}
-                  </div>
-                )}
-              </main>
-            </div>
+              ) : matchCount === 1 ? (
+                <MatchCardHero match={displayMatches[0]} />
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', width: '100%', minHeight: 'fit-content' }}>
+                  {displayMatches.map((m) => (
+                    <MatchCardGrid key={m.id} match={m} matchCount={matchCount} />
+                  ))}
+                </div>
+              )}
+            </main>
 
             {/* Optional Horizontal Sponsor Strip Below Content */}
-            {isSidebarEnabled && sidebarsMode === 'STRIP' && adsData.leftAds?.length > 0 && adsData.rightAds?.length > 0 && (
+            {hasBottomStrip ? (
               <div
                 style={{
                   height: resolvedStripHeight,
@@ -1451,19 +1395,19 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
                   style={{ height: '100%', width: '100%' }}
                 />
               </div>
-            )}
+            ) : <div style={{ height: 0, overflow: 'hidden' }} />}
           </div>
         )}
 
-        {/* ── BOTTOM AD TICKER / SPONSOR STRIP WITH REAL-TIME CONFIGURABLE HEIGHT ── */}
-        {showBottomAd && (
+        {/* ── ROW 4: BOTTOM AD TICKER / SPONSOR STRIP WITH REAL-TIME CONFIGURABLE HEIGHT ── */}
+        {showBottomAd ? (
           <div
             style={{
               height: resolvedBottomHeight,
               width: '100%',
               overflow: 'hidden',
               flexShrink: 0,
-              marginTop: 'clamp(0.5rem, 1vh, 0.75rem)',
+              marginTop: 'clamp(0.4rem, 0.8vh, 0.65rem)',
               borderRadius: 10,
               transition: 'height 0.25s ease'
             }}
@@ -1475,7 +1419,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
               style={{ height: '100%', width: '100%', marginTop: 0 }}
             />
           </div>
-        )}
+        ) : <div style={{ height: 0, overflow: 'hidden' }} />}
       </div>
     </div>
   );

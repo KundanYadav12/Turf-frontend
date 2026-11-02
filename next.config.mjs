@@ -15,9 +15,9 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
   experimental: {
-    workerThreads: false,
     cpus: 1
   },
+
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [

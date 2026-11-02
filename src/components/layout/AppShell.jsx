@@ -14,9 +14,30 @@ export default function AppShell({ children }) {
     pathname.endsWith('/scorer');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: isDisplayRoute ? 0 : '100vh',
+        height: isDisplayRoute ? '100dvh' : undefined,
+        maxHeight: isDisplayRoute ? '100dvh' : undefined,
+        overflow: isDisplayRoute ? 'hidden' : undefined,
+        margin: 0,
+        padding: 0
+      }}
+    >
       {!isDisplayRoute && <Navbar />}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <main
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          minWidth: 0,
+          height: isDisplayRoute ? '100%' : undefined,
+          overflow: isDisplayRoute ? 'hidden' : undefined
+        }}
+      >
         {children}
       </main>
       {!isDisplayRoute && <Footer />}

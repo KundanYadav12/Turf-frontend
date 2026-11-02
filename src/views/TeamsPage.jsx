@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
+import { Link } from '../lib/routerCompat';
 import { useSelector, useDispatch } from 'react-redux';
 import axios from 'axios';
 import {
