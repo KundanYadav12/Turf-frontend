@@ -1,6 +1,18 @@
 import React, { Suspense } from 'react';
 import { notFound } from 'next/navigation';
-import TournamentDetailClient from './TournamentDetailClient';
+import nextDynamic from 'next/dynamic';
+
+const TournamentDetailClient = nextDynamic(
+  () => import('./TournamentDetailClient'),
+  {
+    ssr: false,
+    loading: () => (
+      <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>
+        Loading tournament details…
+      </div>
+    )
+  }
+);
 import {
   buildMetadata,
   buildSportsEventSchema,
@@ -9,9 +21,12 @@ import {
   SITE_URL
 } from '../../../lib/seo';
 
+export const dynamic = 'force-dynamic';
+
 async function getTournamentData(id) {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/tournaments/${id}`, { cache: 'no-store' });
+    const base = BACKEND_URL || 'http://127.0.0.1:5008';
+    const res = await fetch(`${base}/api/tournaments/${id}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.success && data.data) return data.data;
@@ -51,7 +66,7 @@ export async function generateMetadata({ params }) {
   });
 }
 
-export default async function TournamentDetailPage({ params }) {
+export default async function TournamentDetailPage({ params, searchParams }) {
   const tournament = await getTournamentData(params.id);
 
   if (!tournament) {
@@ -62,8 +77,8 @@ export default async function TournamentDetailPage({ params }) {
     name: tournament.name,
     description: tournament.description || `Official tournament fixtures and live scoring for ${tournament.name}`,
     url: `/tournaments/${params.id}`,
-    startDate: tournament.startDate,
-    endDate: tournament.endDate,
+    startDate: tournament.startDate || tournament.dates?.start,
+    endDate: tournament.endDate || tournament.dates?.end,
     status: tournament.status,
     locationName: tournament.venue?.name || 'Sports Arena',
     locationCity: tournament.city || 'India',
@@ -92,6 +107,7 @@ export default async function TournamentDetailPage({ params }) {
         <TournamentDetailClient
           tournament={tournament}
           tournamentId={params.id}
+          initialTab={searchParams?.tab}
         />
       </Suspense>
     </>

@@ -24,6 +24,7 @@ import OfficialScorersManager from '../../../components/tournament/OfficialScore
 import TournamentFixturesManager from '../../../components/tournament/TournamentFixturesManager';
 import TournamentStreamingPermissionsManager from '../../../components/streaming/TournamentStreamingPermissionsManager';
 import PickleballRulesTab from '../../../components/court/PickleballRulesTab';
+import PlayerScoringLeaderboard from '../../../components/tournament/PlayerScoringLeaderboard';
 
 const EMPTY_ARRAY = [];
 
@@ -38,7 +39,7 @@ const formatTournamentDate = (dateStr) => {
   return `${day} ${month} ${year}`;
 };
 
-export default function TournamentDetailClient({ tournament: initialTournament, tournamentId }) {
+export default function TournamentDetailClient({ tournament: initialTournament, tournamentId, initialTab }) {
   const dispatch = useDispatch();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -48,13 +49,23 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
     setMounted(true);
   }, []);
 
-  const urlTab = searchParams?.get('tab');
-  const [activeTab, setActiveTab] = useState(urlTab || 'overview');
+  const normalizeTabKey = (tabKey) => {
+    if (!tabKey) return 'overview';
+    const lower = String(tabKey).toLowerCase();
+    if (lower === 'fixtures' || lower === 'fixture' || lower === 'schedule') return 'matches';
+    return lower;
+  };
+
+  const urlTab = initialTab || searchParams?.get('tab');
+  const [activeTab, setActiveTab] = useState(normalizeTabKey(urlTab));
 
   useEffect(() => {
     const qTab = searchParams?.get('tab');
-    if (qTab && qTab !== activeTab) {
-      setActiveTab(qTab);
+    if (qTab) {
+      const normalized = normalizeTabKey(qTab);
+      if (normalized !== activeTab) {
+        setActiveTab(normalized);
+      }
     }
   }, [searchParams]);
   const [tournament, setTournament] = useState(initialTournament);
@@ -182,9 +193,10 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
   // Load Tab Data dynamically
   const loadTabData = useCallback(async (isBackground = false) => {
+    const isMatchesTab = activeTab === 'matches' || activeTab === 'fixtures';
     const hasData = (activeTab === 'live' && liveMatches.length > 0) ||
       (activeTab === 'teams' && teams.length > 0) ||
-      (activeTab === 'matches' && fixtures.length > 0) ||
+      (isMatchesTab && fixtures.length > 0) ||
       (activeTab === 'overview' && fixtures.length > 0);
 
     if (!isBackground && !hasData) {
@@ -199,10 +211,10 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           axios.get(`/api/tournaments/${tournamentId}/live`)
         ]);
         if (resM.status === 'fulfilled' && resM.value?.data?.success) {
-          setFixtures(resM.value.data.data.items || []);
+          setFixtures(resM.value.data.data.items || resM.value.data.data || []);
         }
         if (resT.status === 'fulfilled' && resT.value?.data?.success) {
-          const teamItems = resT.value.data.data.items || [];
+          const teamItems = resT.value.data.data.items || resT.value.data.data || [];
           setTeams(teamItems);
           setTournament(prev => ({
             ...prev,
@@ -214,7 +226,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         if (resL.status === 'fulfilled' && resL.value?.data?.success) {
           dispatch(setTournamentLiveMatches({
             tournamentId,
-            matches: resL.value.data.data.items || []
+            matches: resL.value.data.data.items || resL.value.data.data || []
           }));
         }
       } else if (activeTab === 'live') {
@@ -222,13 +234,20 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         if (res.data.success) {
           dispatch(setTournamentLiveMatches({
             tournamentId,
-            matches: res.data.data.items || []
+            matches: res.data.data.items || res.data.data || []
           }));
         }
-      } else if (activeTab === 'matches') {
-        const res = await axios.get(`/api/tournaments/${tournamentId}/matches`);
-        if (res.data.success) {
-          setFixtures(res.data.data.items || []);
+      } else if (isMatchesTab) {
+        const [resM, resT] = await Promise.allSettled([
+          axios.get(`/api/tournaments/${tournamentId}/matches`),
+          teams.length === 0 ? axios.get(`/api/tournaments/${tournamentId}/teams`) : Promise.resolve(null)
+        ]);
+        if (resM.status === 'fulfilled' && resM.value?.data?.success) {
+          setFixtures(resM.value.data.data.items || resM.value.data.data || []);
+        }
+        if (resT.status === 'fulfilled' && resT.value?.data?.success) {
+          const teamItems = resT.value.data.data.items || resT.value.data.data || [];
+          setTeams(teamItems);
         }
       } else if (activeTab === 'teams') {
         const res = await axios.get(`/api/tournaments/${tournamentId}/teams`);
@@ -930,6 +949,28 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
           {/* Action Links */}
           <div className="tournament-hero-action-buttons" suppressHydrationWarning>
+            {/* 0. Direct View Fixtures Button */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('matches')}
+              className="btn btn-outline"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.62rem 1.15rem',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '0.88rem',
+                border: (activeTab === 'matches' || activeTab === 'fixtures') ? '2px solid var(--accent-primary, #10b981)' : '1px solid rgba(255, 255, 255, 0.2)',
+                background: (activeTab === 'matches' || activeTab === 'fixtures') ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255, 255, 255, 0.05)',
+                color: (activeTab === 'matches' || activeTab === 'fixtures') ? 'var(--accent-primary, #10b981)' : 'var(--text-main, #ffffff)',
+                cursor: 'pointer'
+              }}
+            >
+              <Calendar size={16} color="var(--accent-primary, #10b981)" /> View Fixtures
+            </button>
+
             {/* 1. Register as Player */}
             <Link
               href={`/tournaments/${tournamentId}/register`}
@@ -1049,9 +1090,9 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
               padding: '0.75rem 1.25rem',
               background: 'transparent',
               border: 'none',
-              borderBottom: activeTab === tab.key ? '3px solid var(--accent-primary, #10b981)' : '3px solid transparent',
-              color: activeTab === tab.key ? 'var(--accent-primary, #10b981)' : 'var(--text-muted)',
-              fontWeight: activeTab === tab.key ? 800 : 500,
+              borderBottom: (activeTab === tab.key || (tab.key === 'matches' && (activeTab === 'fixtures' || activeTab === 'schedule'))) ? '3px solid var(--accent-primary, #10b981)' : '3px solid transparent',
+              color: (activeTab === tab.key || (tab.key === 'matches' && (activeTab === 'fixtures' || activeTab === 'schedule'))) ? 'var(--accent-primary, #10b981)' : 'var(--text-muted)',
+              fontWeight: (activeTab === tab.key || (tab.key === 'matches' && (activeTab === 'fixtures' || activeTab === 'schedule'))) ? 800 : 500,
               fontSize: '0.92rem',
               cursor: 'pointer',
               whiteSpace: 'nowrap'
@@ -1128,6 +1169,9 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#059669', marginTop: '0.35rem', fontWeight: 600 }}>
                   {fixtures.filter(f => f.status === 'COMPLETED').length} played • {fixtures.filter(f => f.status === 'SCHEDULED' || !f.status).length} scheduled
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#059669', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}>
+                  <span>View fixtures &amp; schedule →</span>
                 </div>
               </div>
 
@@ -1433,6 +1477,16 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                   There are currently no active matches with live scoring in this tournament. Check the fixtures tab for scheduled match times.
                 </p>
+                <div style={{ marginTop: '1rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('matches')}
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', background: '#10b981', border: 'none', fontWeight: 700, padding: '0.5rem 1.1rem', borderRadius: '8px', cursor: 'pointer' }}
+                  >
+                    <Calendar size={15} /> View Fixtures &amp; Schedule
+                  </button>
+                </div>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '1.25rem' }}>
@@ -1450,7 +1504,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         )}
 
         {/* ── Matches/Fixtures Tab ── */}
-        {activeTab === 'matches' && (
+        {(activeTab === 'matches' || activeTab === 'fixtures') && (
           <TournamentFixturesManager
             tournament={tournament}
             canManage={canManage}
@@ -2245,6 +2299,12 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 ))}
               </div>
             )}
+
+            {/* Player Scoring Leaderboard Section */}
+            <PlayerScoringLeaderboard
+              tournamentId={tournamentId}
+              refreshTrigger={awardsData}
+            />
           </div>
         )}
 

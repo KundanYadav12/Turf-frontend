@@ -901,7 +901,7 @@ export default function LiveScoreViewerPage({
           </p>
 
           <Link
-            href={tournamentId ? `/tournaments/${tournamentId}` : '/tournaments'}
+            href={tournamentId ? `/tournaments/${tournamentId}?tab=matches` : '/tournaments'}
             className="btn btn-outline btn-sm"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.15rem', borderRadius: '10px', textDecoration: 'none' }}
           >

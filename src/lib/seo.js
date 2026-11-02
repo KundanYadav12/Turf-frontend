@@ -4,7 +4,7 @@
  * Twitter Cards, Robots Directives, and Schema.org JSON-LD Generators.
  */
 
-import { APP_URL, BACKEND_URL as CFG_BACKEND_URL, buildAbsoluteUrl } from './siteConfig';
+import { APP_URL, BACKEND_URL as CFG_BACKEND_URL, buildAbsoluteUrl } from './siteConfig.js';
 
 export const SITE_URL = APP_URL;
 export const SITE_NAME = 'TurfSpot';

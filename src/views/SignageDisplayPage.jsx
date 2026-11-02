@@ -392,12 +392,19 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
   // Handle incoming live score update from Socket.IO room tournament:{id} and match:{id}
   const handleLiveMatchUpdate = useCallback((data) => {
     if (!data) return;
-    const targetId = data.matchId || data.id;
+
+    // Defensive check: ignore incoming update if tournament ID differs from current display
+    const incomingTournId = data.tournamentId || data.tournament_id || data.tournament_uuid;
+    if (incomingTournId && String(incomingTournId) !== String(id) && tournament?.id && String(incomingTournId) !== String(tournament.id)) {
+      return;
+    }
+
+    const targetId = data.matchId || data.id || data.uuid;
     if (!targetId) return;
 
     setMatches((prev) =>
       prev.map((m) => {
-        if (m.id === targetId || m.uuid === targetId || m.matchId === targetId || (data.matchNumber && m.matchNumber === data.matchNumber)) {
+        if (m.id === targetId || m.uuid === targetId || m.matchId === targetId) {
           if (data.eventSeq && m._eventSeq && data.eventSeq < m._eventSeq) {
             return m; // Ignore stale or out-of-order event
           }
@@ -419,7 +426,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
         return m;
       })
     );
-  }, []);
+  }, [id, tournament?.id]);
 
   useTournamentLive(id, handleLiveMatchUpdate);
 

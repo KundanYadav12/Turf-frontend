@@ -243,7 +243,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         const active = res.data.data[0];
         setTvStreamData(active);
         setTvStreamMode(true);
-        const matchObj = matchesRef.current.find(m => (m.uuid === active.matchId || m.id === active.matchId || m.matchNumber === active.matchId));
+        const matchObj = matchesRef.current.find(m => (m.uuid === active.matchId || m.id === active.matchId));
         if (matchObj) setTvStreamMatch(matchObj);
       } else {
         setTvStreamData(null);
@@ -278,11 +278,18 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     // Live score match updates (supports cricket, football, pickleball, badminton, etc.)
     const onMatchUpdate = (payload) => {
       if (!payload) return;
-      const targetId = payload.matchId || payload.id;
-      const targetNum = payload.matchNumber;
+
+      // Defensive check: ignore updates from other tournaments
+      const incomingTournId = payload.tournamentId || payload.tournament_id || payload.tournament_uuid;
+      if (incomingTournId && tournament?.id && String(incomingTournId) !== String(tournament.id) && String(incomingTournId) !== String(tournament.uuid)) {
+        return;
+      }
+
+      const targetId = payload.matchId || payload.id || payload.uuid;
+      if (!targetId) return;
 
       setMatches(prev => prev.map(m => {
-        if ((targetId && (m.id === targetId || m.matchId === targetId || m.uuid === targetId)) || (targetNum && m.matchNumber === targetNum)) {
+        if (m.id === targetId || m.matchId === targetId || m.uuid === targetId) {
           // Monotonic sequence check: ignore stale or out-of-order events
           if (payload.eventSeq && m._eventSeq && payload.eventSeq < m._eventSeq) {
             return m;
@@ -373,7 +380,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       if (data?.status === 'LIVE' || data?.status === 'PREVIEW' || data?.isLive) {
         setTvStreamData(data);
         setTvStreamMode(true);
-        const matchObj = matchesRef.current.find(m => (m.uuid === data.matchId || m.id === data.matchId || m.matchNumber === data.matchId));
+        const matchObj = matchesRef.current.find(m => (m.uuid === data.matchId || m.id === data.matchId));
         if (matchObj) setTvStreamMatch(matchObj);
       } else if (data?.status === 'ENDED' || data?.status === 'OFFLINE' || data?.isLive === false) {
         setTvStreamData(null);
@@ -564,7 +571,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
   // Determine Effective Match Layout and Slices
   let displayMatches = [...matches];
   if (config.featuredMatchId) {
-    const featIdx = displayMatches.findIndex(m => m.id === config.featuredMatchId || m.matchNumber === config.featuredMatchId);
+    const featIdx = displayMatches.findIndex(m => m.id === config.featuredMatchId || m.uuid === config.featuredMatchId);
     if (featIdx > 0) {
       const [feat] = displayMatches.splice(featIdx, 1);
       displayMatches.unshift(feat);

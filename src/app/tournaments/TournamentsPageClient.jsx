@@ -256,7 +256,7 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
                 {/* Footer Action Links */}
                 <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                   <Link
-                    href={`/tournaments/${t.id}`}
+                    href={`/tournaments/${t.id}?tab=matches`}
                     className="btn btn-primary btn-sm"
                     style={{ flex: 1, justifyContent: 'center' }}
                   >

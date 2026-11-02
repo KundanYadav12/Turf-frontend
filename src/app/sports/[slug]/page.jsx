@@ -462,7 +462,7 @@ export default async function SportLandingPage({ params }) {
                 </p>
                 <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>{t.format || 'KNOCKOUT'} Format</span>
-                  <Link href={`/tournaments/${t.id}`} className="btn btn-outline btn-sm">
+                  <Link href={`/tournaments/${t.id}?tab=matches`} className="btn btn-outline btn-sm">
                     View Fixtures
                   </Link>
                 </div>

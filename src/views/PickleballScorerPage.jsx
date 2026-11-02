@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from '../lib/routerCompat';
+import { useSelector } from 'react-redux';
 import axios from 'axios';
 import { socket } from '../services/socket';
 import {
@@ -17,6 +18,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const matchIdFromUrl = typeof window !== 'undefined' ? window.location.pathname.match(/\/matches\/([^/]+)/)?.[1] : null;
   const id = propsMatchId || routeParams?.id || matchIdFromUrl;
 
+  const reduxUser = useSelector((state) => state?.auth?.user);
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -56,6 +58,9 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const [correctionScoreB, setCorrectionScoreB] = useState(0);
   const [correctionNotes, setCorrectionNotes] = useState('');
 
+  // Per-match player point tracking toggle state
+  const [trackPlayerPoints, setTrackPlayerPoints] = useState(false);
+
   // Fetch full scorer state
   const fetchState = useCallback(async () => {
     try {
@@ -65,6 +70,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         setState(d);
         const resolvedRule = d?.sportState?.rotationRule || d?.rules?.rotationRule || d?.sport_state?.rotationRule || 'OFFICIAL';
         setRotationRule(resolvedRule);
+        const isTrackPoints = Boolean(d?.trackPlayerPoints || d?.match?.track_player_points || d?.sportState?.trackPlayerPoints || d?.sport_state?.trackPlayerPoints);
+        setTrackPlayerPoints(isTrackPoints);
         if (d.lineup) {
           if (Array.isArray(d.lineup.teamA) && d.lineup.teamA.length > 0) {
             setSelectedLineupA(d.lineup.teamA);
@@ -156,7 +163,16 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       setBreakState({ isBreak: false, reason: '', startedAt: null, expectedEndAt: null });
     };
 
+    const handleTrackPlayerPointsUpdated = (payload) => {
+      if (!payload) return;
+      const targetId = payload.matchId || payload.internalMatchId;
+      if (targetId && String(targetId) === String(id)) {
+        setTrackPlayerPoints(Boolean(payload.trackPlayerPoints));
+      }
+    };
+
     socket.on('match:pickleballScore', handleScore);
+    socket.on('match:trackPlayerPointsUpdated', handleTrackPlayerPointsUpdated);
     socket.on('tournament:courtColorUpdated', handleCourtColor);
     socket.on('court:colorUpdated', handleCourtColor);
     socket.on('match:break:start', handleBreakStart);
@@ -166,6 +182,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     return () => {
       socket.emit('leave:match', { matchId: id });
       socket.off('match:pickleballScore', handleScore);
+      socket.off('match:trackPlayerPointsUpdated', handleTrackPlayerPointsUpdated);
       socket.off('tournament:courtColorUpdated', handleCourtColor);
       socket.off('court:colorUpdated', handleCourtColor);
       socket.off('match:break:start', handleBreakStart);
@@ -295,9 +312,23 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     }
   };
 
+  // Toggle Track points by player handler
+  const handleToggleTrackPlayerPoints = async (enabled) => {
+    setTrackPlayerPoints(enabled);
+    try {
+      await axios.post(`/api/matches/${id}/pickleball/track-player-points`, {
+        trackPlayerPoints: enabled
+      });
+    } catch (err) {
+      console.warn('Failed to persist trackPlayerPoints:', err);
+      setTrackPlayerPoints(!enabled);
+      setError(err?.response?.data?.message || 'Failed to update track points setting.');
+    }
+  };
+
   // Record point (+1)
-  const handleRecordPoint = async (pointTo) => {
-    if (state.status !== 'LIVE') return;
+  const handleRecordPoint = async (pointTo, scoredByPlayerId = null) => {
+    if (state.status !== 'LIVE' || actionLoading) return;
     setActionLoading(true);
     setError('');
     try {
@@ -319,6 +350,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         tournamentId: state.tournament?.id || state.tournament?.uuid,
         eventId,
         seq: nextSeq,
+        scoredByPlayerId: scoredByPlayerId || null,
         from: {
           side: currentServeState.serverSide,
           box: currentServeState.serviceBox,
@@ -343,7 +375,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         from: ptEvent.from,
         to: ptEvent.to,
         eventId,
-        seq: nextSeq
+        seq: nextSeq,
+        scoredByPlayerId: scoredByPlayerId || null
       });
       if (res.data.success) {
         setState(res.data.data);
@@ -453,8 +486,77 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   }
 
   const { tournament, rules, teamA, teamB, scores, status, winner, resultSummary, lineup, logs } = state;
-  const isSingles = rules.matchFormat === 'SINGLES';
+  const isSingles = rules?.matchFormat === 'SINGLES';
   const expectedLineupCount = isSingles ? 1 : 2;
+  const isDoubles = !isSingles;
+
+  const rawLineupA = useMemo(() => {
+    if (Array.isArray(lineup?.teamA) && lineup.teamA.length > 0) return lineup.teamA;
+    if (Array.isArray(selectedLineupA) && selectedLineupA.length > 0) return selectedLineupA;
+    const fallback = [];
+    if (playerA1 && playerA1.trim()) fallback.push(playerA1.trim());
+    if (playerA2 && playerA2.trim()) fallback.push(playerA2.trim());
+    return fallback;
+  }, [lineup?.teamA, selectedLineupA, playerA1, playerA2]);
+
+  const rawLineupB = useMemo(() => {
+    if (Array.isArray(lineup?.teamB) && lineup.teamB.length > 0) return lineup.teamB;
+    if (Array.isArray(selectedLineupB) && selectedLineupB.length > 0) return selectedLineupB;
+    const fallback = [];
+    if (playerB1 && playerB1.trim()) fallback.push(playerB1.trim());
+    if (playerB2 && playerB2.trim()) fallback.push(playerB2.trim());
+    return fallback;
+  }, [lineup?.teamB, selectedLineupB, playerB1, playerB2]);
+
+  const hasPlayerContent = useCallback((p) => {
+    if (!p) return false;
+    if (typeof p === 'object') return Boolean((p.name && p.name.trim()) || p.id || p.member_id);
+    return Boolean(String(p).trim());
+  }, []);
+
+  const resolveLineupPlayers = useCallback((lineupList, squad) => {
+    if (!Array.isArray(lineupList)) return [];
+    return lineupList.filter(hasPlayerContent).map((p, idx) => {
+      const rawName = typeof p === 'string' ? p : (p.name || `Player ${idx + 1}`);
+      let playerId = typeof p === 'object' ? (p.id || p.member_id || null) : null;
+      if (!playerId && Array.isArray(squad)) {
+        const found = squad.find(m =>
+          (m.name && m.name.toLowerCase() === rawName.toLowerCase()) ||
+          (m.player_name && m.player_name.toLowerCase() === rawName.toLowerCase())
+        );
+        if (found) playerId = found.id || found.member_id || found.user_id;
+      }
+      return { id: playerId, name: rawName };
+    });
+  }, [hasPlayerContent]);
+
+  const lineupPlayersA = useMemo(() => resolveLineupPlayers(rawLineupA, teamA?.squad || teamA?.members), [resolveLineupPlayers, rawLineupA, teamA?.squad, teamA?.members]);
+  const lineupPlayersB = useMemo(() => resolveLineupPlayers(rawLineupB, teamB?.squad || teamB?.members), [resolveLineupPlayers, rawLineupB, teamB?.squad, teamB?.members]);
+
+  const isAuthorizedScorer = useMemo(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      let u = reduxUser;
+      if (!u) {
+        const rawUser = localStorage.getItem('turf_user') || localStorage.getItem('user');
+        if (rawUser) {
+          u = JSON.parse(rawUser);
+        }
+      }
+      if (!u) return true;
+      const role = String(u.role || '').toUpperCase();
+      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'ORGANIZER' || role === 'SCORER') return true;
+      const tCreatedBy = tournament?.createdBy || tournament?.created_by;
+      if (tCreatedBy && Number(u.id) === Number(tCreatedBy)) return true;
+      const mCreatedBy = state?.match?.createdBy || state?.match?.created_by;
+      if (mCreatedBy && Number(u.id) === Number(mCreatedBy)) return true;
+      const scorerId = state?.match?.scorer_id || state?.scorerId;
+      if (scorerId && Number(u.id) === Number(scorerId)) return true;
+      return false;
+    } catch {
+      return true;
+    }
+  }, [reduxUser, tournament?.createdBy, tournament?.created_by, state?.match?.createdBy, state?.match?.created_by, state?.match?.scorer_id, state?.scorerId]);
 
   const firstServerPreview = startingServingTeam === 'teamA'
     ? {
@@ -472,12 +574,12 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   };
 
   const isLineupReady = isSingles
-    ? Boolean((playerA1.trim() || selectedLineupA.length > 0) && (playerB1.trim() || selectedLineupB.length > 0))
+    ? Boolean((playerA1.trim() || selectedLineupA.length > 0 || lineup?.teamA?.length > 0) && (playerB1.trim() || selectedLineupB.length > 0 || lineup?.teamB?.length > 0))
     : Boolean(
-        (playerA1.trim() || selectedLineupA[0]) &&
-        (playerA2.trim() || selectedLineupA[1]) &&
-        (playerB1.trim() || selectedLineupB[0]) &&
-        (playerB2.trim() || selectedLineupB[1])
+        (playerA1.trim() || selectedLineupA[0] || lineup?.teamA?.[0]) &&
+        (playerA2.trim() || selectedLineupA[1] || lineup?.teamA?.[1]) &&
+        (playerB1.trim() || selectedLineupB[0] || lineup?.teamB?.[0]) &&
+        (playerB2.trim() || selectedLineupB[1] || lineup?.teamB?.[1])
       );
 
   return (
@@ -812,6 +914,59 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               </div>
             )}
 
+            {/* "Track points by player" Toggle (visible to authorized scorers) */}
+            {isAuthorizedScorer && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                marginBottom: '1.25rem',
+                padding: '0.55rem 1rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '12px',
+                border: '1px solid rgba(255, 255, 255, 0.08)'
+              }}>
+                <label style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  cursor: isLineupReady ? 'pointer' : 'not-allowed',
+                  userSelect: 'none',
+                  opacity: isLineupReady ? 1 : 0.65
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(trackPlayerPoints && isLineupReady)}
+                    disabled={!isLineupReady || actionLoading}
+                    onChange={(e) => handleToggleTrackPlayerPoints(e.target.checked)}
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      accentColor: '#10b981',
+                      cursor: isLineupReady ? 'pointer' : 'not-allowed'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f1f5f9' }}>
+                    Track points by player
+                  </span>
+                </label>
+                {!isLineupReady && (
+                  <span style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: '#f59e0b',
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    padding: '2px 8px',
+                    borderRadius: '6px'
+                  }}>
+                    Set the lineup first
+                  </span>
+                )}
+              </div>
+            )}
+
         <div className="scorer-arena-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 'clamp(0.4rem, 1.5vw, 1.5rem)', width: '100%', boxSizing: 'border-box' }}>
           {/* Team A Card */}
           <div
@@ -886,38 +1041,81 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               {scores.teamA}
             </div>
 
-            {/* +1 Button Team A */}
+            {/* +1 Button(s) Team A */}
             {status === 'LIVE' && (
-              <button
-                type="button"
-                onClick={() => handleRecordPoint('team_a')}
-                disabled={actionLoading}
-                style={{
-                  width: '100%',
-                  minHeight: '48px',
-                  padding: '0.45rem 0.5rem',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #10b981, #059669)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: actionLoading ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.1rem',
-                  boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
-                  transition: 'all 0.2s',
-                  boxSizing: 'border-box'
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.1 }}>
-                  <Zap size={15} /> +1
-                </span>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Point
-                </span>
-              </button>
+              trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersA.length >= 2 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%' }}>
+                  {lineupPlayersA.slice(0, 2).map((player, idx) => (
+                    <button
+                      key={player.id || idx}
+                      type="button"
+                      onClick={() => handleRecordPoint('team_a', player.id)}
+                      disabled={actionLoading}
+                      style={{
+                        width: '100%',
+                        minHeight: '44px',
+                        padding: '0.45rem 0.6rem',
+                        borderRadius: '12px',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: actionLoading ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem',
+                        boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                        transition: 'all 0.2s',
+                        boxSizing: 'border-box'
+                      }}
+                      title={`+1 ${player.name}`}
+                    >
+                      <Zap size={14} style={{ flexShrink: 0 }} />
+                      <span style={{
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '100%'
+                      }}>
+                        +1 {player.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleRecordPoint('team_a', (trackPlayerPoints && lineupPlayersA[0]?.id) ? lineupPlayersA[0].id : null)}
+                  disabled={actionLoading}
+                  style={{
+                    width: '100%',
+                    minHeight: '48px',
+                    padding: '0.45rem 0.5rem',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff',
+                    border: 'none',
+                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.1rem',
+                    boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                    transition: 'all 0.2s',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.1 }}>
+                    <Zap size={15} /> +1
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {trackPlayerPoints && !isDoubles && lineupPlayersA[0]?.name ? lineupPlayersA[0].name : 'Point'}
+                  </span>
+                </button>
+              )
             )}
           </div>
 
@@ -1004,38 +1202,81 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               {scores.teamB}
             </div>
 
-            {/* +1 Button Team B */}
+            {/* +1 Button(s) Team B */}
             {status === 'LIVE' && (
-              <button
-                type="button"
-                onClick={() => handleRecordPoint('team_b')}
-                disabled={actionLoading}
-                style={{
-                  width: '100%',
-                  minHeight: '48px',
-                  padding: '0.45rem 0.5rem',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: actionLoading ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.1rem',
-                  boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-                  transition: 'all 0.2s',
-                  boxSizing: 'border-box'
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.1 }}>
-                  <Zap size={15} /> +1
-                </span>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Point
-                </span>
-              </button>
+              trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersB.length >= 2 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%' }}>
+                  {lineupPlayersB.slice(0, 2).map((player, idx) => (
+                    <button
+                      key={player.id || idx}
+                      type="button"
+                      onClick={() => handleRecordPoint('team_b', player.id)}
+                      disabled={actionLoading}
+                      style={{
+                        width: '100%',
+                        minHeight: '44px',
+                        padding: '0.45rem 0.6rem',
+                        borderRadius: '12px',
+                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: actionLoading ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem',
+                        boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+                        transition: 'all 0.2s',
+                        boxSizing: 'border-box'
+                      }}
+                      title={`+1 ${player.name}`}
+                    >
+                      <Zap size={14} style={{ flexShrink: 0 }} />
+                      <span style={{
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '100%'
+                      }}>
+                        +1 {player.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleRecordPoint('team_b', (trackPlayerPoints && lineupPlayersB[0]?.id) ? lineupPlayersB[0].id : null)}
+                  disabled={actionLoading}
+                  style={{
+                    width: '100%',
+                    minHeight: '48px',
+                    padding: '0.45rem 0.5rem',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                    color: '#fff',
+                    border: 'none',
+                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.1rem',
+                    boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+                    transition: 'all 0.2s',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.1 }}>
+                    <Zap size={15} /> +1
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {trackPlayerPoints && !isDoubles && lineupPlayersB[0]?.name ? lineupPlayersB[0].name : 'Point'}
+                  </span>
+                </button>
+              )
             )}
           </div>
         </div>
@@ -1385,6 +1626,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                   </span>
                   <span className="scorer-text-heading" style={{ fontWeight: 600 }}>
                     {log.point_to === 'team_a' ? `Point to ${teamA.name}` : log.point_to === 'team_b' ? `Point to ${teamB.name}` : log.notes}
+                    {log.scored_by_player_name ? ` (${log.scored_by_player_name})` : ''}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>

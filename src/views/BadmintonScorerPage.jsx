@@ -28,6 +28,7 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
   const [playerB2, setPlayerB2] = useState('');
   const [startingServingTeam, setStartingServingTeam] = useState('teamA');
   const [showLineupSetup, setShowLineupSetup] = useState(false);
+  const [trackPlayerPoints, setTrackPlayerPoints] = useState(false);
 
   // Fetch full scorer state
   const fetchState = useCallback(async () => {
@@ -36,6 +37,8 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
       if (res.data.success) {
         const d = res.data.data;
         setState(d);
+        const isTrackPoints = Boolean(d?.state?.trackPlayerPoints || d?.match?.track_player_points);
+        setTrackPlayerPoints(isTrackPoints);
         const l = d?.match?.lineup || d?.state?.lineup;
         if (l) {
           if (Array.isArray(l.teamA) && l.teamA.length > 0) {
@@ -68,9 +71,19 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
       fetchState();
     };
 
+    const handleTrackPlayerPointsUpdated = (payload) => {
+      if (!payload) return;
+      const targetId = payload.matchId || payload.internalMatchId;
+      if (targetId && String(targetId) === String(id)) {
+        setTrackPlayerPoints(Boolean(payload.trackPlayerPoints));
+      }
+    };
+
     socket.on('match:badmintonEvent', handleUpdate);
+    socket.on('match:trackPlayerPointsUpdated', handleTrackPlayerPointsUpdated);
     return () => {
       socket.off('match:badmintonEvent', handleUpdate);
+      socket.off('match:trackPlayerPointsUpdated', handleTrackPlayerPointsUpdated);
       socket.emit('leave:match', { matchId: id });
     };
   }, [id, fetchState]);
@@ -91,13 +104,29 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
     }
   };
 
+  // Toggle Track points by player handler
+  const handleToggleTrackPlayerPoints = async (enabled) => {
+    setTrackPlayerPoints(enabled);
+    try {
+      await axios.post(`/api/matches/${id}/badminton/track-player-points`, {
+        trackPlayerPoints: enabled
+      });
+    } catch (err) {
+      console.warn('Failed to persist trackPlayerPoints:', err);
+      setTrackPlayerPoints(!enabled);
+      setErrorMsg(err?.response?.data?.message || 'Failed to update track points setting.');
+    }
+  };
+
   // Record Point (+1 Team A or +1 Team B)
-  const handleRecordPoint = async (scoringSide) => {
+  const handleRecordPoint = async (scoringSide, scoredByPlayerId = null) => {
+    if (actionLoading) return;
     setActionLoading(true);
     try {
       setLastEventType('POINT');
       const res = await axios.post(`/api/matches/${id}/badminton/point`, {
-        scoringSide
+        scoringSide,
+        scoredByPlayerId: scoredByPlayerId || null
       });
       if (res.data.success) {
         if (res.data.isCompleted) {
@@ -199,6 +228,53 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
   const isServingA = Boolean(serveState?.isTeamAServing);
   const isServingB = !isServingA;
 
+  // Check lineup readiness and resolve lineup player rosters
+  const isDoubles = (match?.matchFormat || state?.state?.matchFormat) !== 'SINGLES';
+  const rawLineupA = Array.isArray(match?.lineup?.teamA) ? match.lineup.teamA : (Array.isArray(bState?.lineup?.teamA) ? bState.lineup.teamA : []);
+  const rawLineupB = Array.isArray(match?.lineup?.teamB) ? match.lineup.teamB : (Array.isArray(bState?.lineup?.teamB) ? bState.lineup.teamB : []);
+  const hasPlayerContent = useCallback((p) => {
+    if (!p) return false;
+    if (typeof p === 'object') return Boolean((p.name && p.name.trim()) || p.id || p.member_id);
+    return Boolean(String(p).trim());
+  }, []);
+  const validPlayersA = useMemo(() => rawLineupA.filter(hasPlayerContent), [rawLineupA, hasPlayerContent]);
+  const validPlayersB = useMemo(() => rawLineupB.filter(hasPlayerContent), [rawLineupB, hasPlayerContent]);
+  const minRequiredLineup = isDoubles ? 2 : 1;
+  const isLineupReady = validPlayersA.length >= minRequiredLineup && validPlayersB.length >= minRequiredLineup;
+
+  const resolveLineupPlayers = useCallback((lineupList, squad) => {
+    if (!Array.isArray(lineupList)) return [];
+    return lineupList.filter(hasPlayerContent).map((p, idx) => {
+      const rawName = typeof p === 'string' ? p : (p.name || `Player ${idx + 1}`);
+      let playerId = typeof p === 'object' ? (p.id || p.member_id || null) : null;
+      if (!playerId && Array.isArray(squad)) {
+        const found = squad.find(m =>
+          (m.name && m.name.toLowerCase() === rawName.toLowerCase()) ||
+          (m.player_name && m.player_name.toLowerCase() === rawName.toLowerCase())
+        );
+        if (found) playerId = found.id || found.member_id || found.user_id;
+      }
+      return { id: playerId, name: rawName };
+    });
+  }, [hasPlayerContent]);
+
+  const lineupPlayersA = useMemo(() => resolveLineupPlayers(rawLineupA, match?.teamA?.squad), [resolveLineupPlayers, rawLineupA, match?.teamA?.squad]);
+  const lineupPlayersB = useMemo(() => resolveLineupPlayers(rawLineupB, match?.teamB?.squad), [resolveLineupPlayers, rawLineupB, match?.teamB?.squad]);
+
+  const isAuthorizedScorer = useMemo(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const rawUser = localStorage.getItem('turf_user') || localStorage.getItem('user');
+      if (!rawUser) return true;
+      const u = JSON.parse(rawUser);
+      const role = String(u.role || '').toUpperCase();
+      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'ORGANIZER') return true;
+      if (match?.tournament?.created_by && Number(u.id) === Number(match.tournament.created_by)) return true;
+      if (match?.scorer_id && Number(u.id) === Number(match.scorer_id)) return true;
+    } catch {}
+    return true;
+  }, [match?.tournament?.created_by, match?.scorer_id]);
+
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-muted)' }}>Loading Badminton Scorer Console…</div>;
   }
@@ -277,6 +353,59 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
           )}
         </div>
 
+        {/* "Track points by player" Toggle */}
+        {isAuthorizedScorer && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            marginBottom: '1.25rem',
+            padding: '0.55rem 1rem',
+            background: 'rgba(255, 255, 255, 0.03)',
+            borderRadius: '12px',
+            border: '1px solid rgba(255, 255, 255, 0.08)'
+          }}>
+            <label style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              cursor: isLineupReady ? 'pointer' : 'not-allowed',
+              userSelect: 'none',
+              opacity: isLineupReady ? 1 : 0.65
+            }}>
+              <input
+                type="checkbox"
+                checked={Boolean(trackPlayerPoints && isLineupReady)}
+                disabled={!isLineupReady || actionLoading}
+                onChange={(e) => handleToggleTrackPlayerPoints(e.target.checked)}
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  accentColor: '#10b981',
+                  cursor: isLineupReady ? 'pointer' : 'not-allowed'
+                }}
+              />
+              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-heading, #0f172a)' }}>
+                Track points by player
+              </span>
+            </label>
+            {!isLineupReady && (
+              <span style={{
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                color: '#f59e0b',
+                background: 'rgba(245, 158, 11, 0.15)',
+                padding: '2px 8px',
+                borderRadius: '6px'
+              }}>
+                Set the lineup first
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Head to Head Interactive Scoring Blocks */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '1.5rem', alignItems: 'center' }}>
           {/* Side A */}
@@ -308,14 +437,40 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
             </div>
 
             {isMatchLive && (
-              <button
-                onClick={() => handleRecordPoint('A')}
-                disabled={actionLoading}
-                className="btn btn-primary"
-                style={{ width: '100%', marginTop: '1.25rem', padding: '0.9rem', fontSize: '1.1rem', fontWeight: 800 }}
-              >
-                +1 Point {match.teamA.name}
-              </button>
+              trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersA.length >= 2 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%', marginTop: '1.25rem' }}>
+                  {lineupPlayersA.slice(0, 2).map((player, idx) => (
+                    <button
+                      key={player.id || idx}
+                      onClick={() => handleRecordPoint('A', player.id)}
+                      disabled={actionLoading}
+                      className="btn btn-primary"
+                      style={{
+                        width: '100%',
+                        minHeight: '44px',
+                        padding: '0.45rem 0.6rem',
+                        fontSize: '0.86rem',
+                        fontWeight: 800,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={`+1 ${player.name}`}
+                    >
+                      +1 {player.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleRecordPoint('A', (trackPlayerPoints && lineupPlayersA[0]?.id) ? lineupPlayersA[0].id : null)}
+                  disabled={actionLoading}
+                  className="btn btn-primary"
+                  style={{ width: '100%', marginTop: '1.25rem', padding: '0.9rem', fontSize: '1.1rem', fontWeight: 800 }}
+                >
+                  {trackPlayerPoints && !isDoubles && lineupPlayersA[0]?.name ? `+1 ${lineupPlayersA[0].name}` : `+1 Point ${match.teamA.name}`}
+                </button>
+              )
             )}
           </div>
 
@@ -350,14 +505,40 @@ export default function BadmintonScorerPage({ matchId: propsMatchId } = {}) {
             </div>
 
             {isMatchLive && (
-              <button
-                onClick={() => handleRecordPoint('B')}
-                disabled={actionLoading}
-                className="btn btn-primary"
-                style={{ width: '100%', marginTop: '1.25rem', padding: '0.9rem', fontSize: '1.1rem', fontWeight: 800 }}
-              >
-                +1 Point {match.teamB.name}
-              </button>
+              trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersB.length >= 2 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%', marginTop: '1.25rem' }}>
+                  {lineupPlayersB.slice(0, 2).map((player, idx) => (
+                    <button
+                      key={player.id || idx}
+                      onClick={() => handleRecordPoint('B', player.id)}
+                      disabled={actionLoading}
+                      className="btn btn-primary"
+                      style={{
+                        width: '100%',
+                        minHeight: '44px',
+                        padding: '0.45rem 0.6rem',
+                        fontSize: '0.86rem',
+                        fontWeight: 800,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={`+1 ${player.name}`}
+                    >
+                      +1 {player.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleRecordPoint('B', (trackPlayerPoints && lineupPlayersB[0]?.id) ? lineupPlayersB[0].id : null)}
+                  disabled={actionLoading}
+                  className="btn btn-primary"
+                  style={{ width: '100%', marginTop: '1.25rem', padding: '0.9rem', fontSize: '1.1rem', fontWeight: 800 }}
+                >
+                  {trackPlayerPoints && !isDoubles && lineupPlayersB[0]?.name ? `+1 ${lineupPlayersB[0].name}` : `+1 Point ${match.teamB.name}`}
+                </button>
+              )
             )}
           </div>
         </div>
