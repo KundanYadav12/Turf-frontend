@@ -14,6 +14,7 @@ import {
   StreamSidebarAdZone,
   MatchBreakOverlay
 } from './StreamAdLayers';
+import { YellowPickleballIcon } from './LiveStreamManagerModal';
 
 export default function LiveStreamPlayer({
   matchId,
@@ -908,18 +909,7 @@ export default function LiveStreamPlayer({
                 {/* Court Left Team */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 0%', minWidth: 0 }}>
                   {leftTeam.isServing && (
-                    <span
-                      title="Currently Serving"
-                      style={{
-                        width: 9,
-                        height: 9,
-                        borderRadius: '50%',
-                        background: '#10b981',
-                        boxShadow: '0 0 10px #10b981',
-                        flexShrink: 0,
-                        animation: 'pulse 1.2s infinite'
-                      }}
-                    />
+                    <YellowPickleballIcon size={16} />
                   )}
                   <span
                     style={{
@@ -1004,18 +994,7 @@ export default function LiveStreamPlayer({
                     {rightTeam.name}
                   </span>
                   {rightTeam.isServing && (
-                    <span
-                      title="Currently Serving"
-                      style={{
-                        width: 9,
-                        height: 9,
-                        borderRadius: '50%',
-                        background: '#38bdf8',
-                        boxShadow: '0 0 10px #38bdf8',
-                        flexShrink: 0,
-                        animation: 'pulse 1.2s infinite'
-                      }}
-                    />
+                    <YellowPickleballIcon size={16} />
                   )}
                 </div>
               </div>

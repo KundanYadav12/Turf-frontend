@@ -1145,3 +1145,191 @@ body:has(.tv-display-fixed-frame) {
   background: rgba(255, 255, 255, 0.04) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
+
+/* ==========================================================================
+   SCORER CONSOLE RESPONSIVE MOBILE & GOLDEN POINT ENHANCEMENTS
+   Optimized for phones (360px-430px), tablets, and desktops
+   ========================================================================== */
+
+/* Scorer Page Wrapper with Safe-Area Insets */
+.scorer-page-wrapper {
+  padding-left: max(12px, env(safe-area-inset-left)) !important;
+  padding-right: max(12px, env(safe-area-inset-right)) !important;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom)) !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 1080px !important;
+  overflow-x: hidden !important;
+}
+
+/* Compact Status Bar */
+.scorer-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 12px;
+  margin-bottom: 0.85rem;
+  font-size: 0.8rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+:root:not([data-theme="dark"]) .scorer-status-bar,
+[data-theme="light"] .scorer-status-bar {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+}
+[data-theme="dark"] .scorer-status-bar {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+/* Serving Team Subtle Highlight */
+.scorer-team-serving-a {
+  border: 2px solid #10b981 !important;
+  box-shadow: 0 0 0 1px #10b981, 0 8px 24px -4px rgba(16, 185, 129, 0.28) !important;
+}
+.scorer-team-serving-b {
+  border: 2px solid #3b82f6 !important;
+  box-shadow: 0 0 0 1px #3b82f6, 0 8px 24px -4px rgba(59, 130, 246, 0.28) !important;
+}
+
+/* Golden Point Banner */
+.golden-point-banner {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 50%, #92400e 100%);
+  color: #ffffff;
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  box-shadow: 0 4px 20px rgba(217, 119, 6, 0.45);
+  border-radius: 12px;
+  padding: 0.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  animation: goldenPulse 2.5s infinite;
+}
+@keyframes goldenPulse {
+  0%, 100% {
+    box-shadow: 0 4px 20px rgba(217, 119, 6, 0.45);
+  }
+  50% {
+    box-shadow: 0 4px 28px rgba(245, 158, 11, 0.65);
+  }
+}
+
+/* Editable Golden Target Chip */
+.golden-target-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fef3c7;
+  padding: 2px 8px;
+  border-radius: 14px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.golden-target-chip:hover {
+  background: rgba(0, 0, 0, 0.5);
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
+/* Restyled Modern Toggle Switch */
+.scorer-toggle-pill {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  position: relative;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+  padding: 2px;
+  box-sizing: border-box;
+}
+.scorer-toggle-pill[aria-checked="true"] {
+  background-color: #10b981;
+}
+.scorer-toggle-pill[aria-checked="false"] {
+  background-color: #475569;
+}
+.scorer-toggle-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.scorer-toggle-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: block;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+}
+.scorer-toggle-pill[aria-checked="true"] .scorer-toggle-knob {
+  transform: translateX(20px);
+}
+.scorer-toggle-pill[aria-checked="false"] .scorer-toggle-knob {
+  transform: translateX(0);
+}
+
+/* Scorer Split Buttons (+1 Player) */
+.scorer-btn-point {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: transform 0.12s ease, filter 0.12s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.scorer-btn-point:active {
+  transform: scale(0.96) !important;
+  filter: brightness(1.15) !important;
+}
+.scorer-btn-point:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Mobile Responsiveness for Phones (360px - 480px) */
+@media (max-width: 480px) {
+  .scorer-arena-card {
+    padding: 0.75rem 0.5rem 1rem !important;
+    border-radius: 14px !important;
+  }
+  .scorer-arena-grid {
+    gap: 0.35rem !important;
+  }
+  .scorer-team-card-a,
+  .scorer-team-card-b {
+    padding: 0.65rem 0.35rem 0.75rem !important;
+    border-radius: 12px !important;
+  }
+  .scorer-btn-point {
+    min-height: 50px !important;
+    padding: 0.35rem 0.25rem !important;
+  }
+  .scorer-header-card {
+    padding: 0.85rem 0.75rem !important;
+  }
+}
+

@@ -324,6 +324,12 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
             _pointEvent: payload.pointEvent || (payload.type === 'POINT_SCORED' ? payload : null),
             status: payload.status || m.status,
             courtColor: payload.courtColor || m.courtColor,
+            goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : m.goldenPoint,
+            sidesSwapped: payload.sidesSwapped !== undefined ? payload.sidesSwapped : m.sidesSwapped,
+            sport_state: payload.sportState || payload.sport_state || {
+              ...(typeof m.sport_state === 'object' ? m.sport_state : {}),
+              ...(payload.sidesSwapped !== undefined ? { sidesSwapped: payload.sidesSwapped } : {})
+            },
             score: {
               ...m.score,
               summary: payload.scoreSummary || payload.liveScoreSummary || payload.summary || m.score?.summary,
@@ -382,6 +388,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     socket.on('signage:emitMatchUpdate', onMatchUpdate);
     socket.on('tournament:matchUpdated', onMatchUpdate);
     socket.on('match:pickleballScore', onMatchUpdate);
+    socket.on('match:sidesSwapped', onMatchUpdate);
     socket.on('match:badmintonEvent', onMatchUpdate);
     socket.on('match:ballEvent', onMatchUpdate);
     socket.on('match:pointScored', onMatchUpdate);
@@ -425,6 +432,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       socket.off('signage:emitMatchUpdate', onMatchUpdate);
       socket.off('tournament:matchUpdated', onMatchUpdate);
       socket.off('match:pickleballScore', onMatchUpdate);
+      socket.off('match:sidesSwapped', onMatchUpdate);
       socket.off('match:badmintonEvent', onMatchUpdate);
       socket.off('match:ballEvent', onMatchUpdate);
       socket.off('match:pointScored', onMatchUpdate);
@@ -1613,6 +1621,35 @@ function TVMatchCardHeroRacquet({ match, theme, courtMiddleAds = [] }) {
               }}
             >
               {gamesWonText}
+            </div>
+          )}
+
+          {/* Golden Point Tie-Break Pill on TV Display */}
+          {(match.goldenPoint?.active || match.sport_state?.goldenPoint?.active) && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: 'clamp(0.7rem, 0.95vw, 0.85rem)',
+                fontWeight: 900,
+                color: '#fbbf24',
+                background: 'linear-gradient(135deg, rgba(217, 119, 6, 0.35), rgba(180, 83, 9, 0.35))',
+                border: '1.5px solid rgba(245, 158, 11, 0.55)',
+                padding: '3px 12px',
+                borderRadius: 20,
+                marginTop: '0.35rem',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 10px rgba(217, 119, 6, 0.3)'
+              }}
+            >
+              <Sparkles size={13} color="#fef08a" />
+              <span>
+                GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • 2 in a row wins
+                {match.goldenPoint?.streakCount > 0 && match.goldenPoint?.streakTeam && (
+                  ` • ${match.goldenPoint.streakTeam === 'teamA' ? match.teamA?.name : match.teamB?.name} streak ${match.goldenPoint.streakCount}/2`
+                )}
+              </span>
             </div>
           )}
         </div>

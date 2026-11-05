@@ -233,7 +233,7 @@ export function calculatePickleballDoublesPositions(teamScore, originalPlayerPos
 export const PickleballAdapter = {
   sport: 'pickleball',
 
-  init({ format = 'DOUBLES', scoringMode = 'SIDE_OUT', rotationRule = 'OFFICIAL', teamA, teamB, lineup, startingServingTeam = 'teamA', switchEnds = false, currentGame = 1, scores = null, servePoints = null, playerLocations: existingLocations = null }) {
+  init({ format = 'DOUBLES', scoringMode = 'SIDE_OUT', rotationRule = 'OFFICIAL', teamA, teamB, lineup, startingServingTeam = 'teamA', switchEnds = false, currentGame = 1, scores = null, servePoints = null, playerLocations: existingLocations = null, sidesSwapped = false }) {
     const isDoubles = String(format).toUpperCase() !== 'SINGLES';
     const isBadmintonRule = String(rotationRule || '').toUpperCase() === 'BADMINTON' || String(rotationRule || '').toUpperCase() === 'BADMINTON_STYLE';
     const isSideOut = !isBadmintonRule && String(scoringMode).toUpperCase() !== 'RALLY';
@@ -330,9 +330,11 @@ export const PickleballAdapter = {
       : sPlayers[0];
     const currentServerId = firstServer.id;
 
-    // Determine team sides based on switchEnds
+    // Determine team sides based on switchEnds or sidesSwapped
     let teamSides = { teamA: 'LEFT', teamB: 'RIGHT' };
-    if (switchEnds && currentGame === 2) {
+    if (sidesSwapped) {
+      teamSides = { teamA: 'RIGHT', teamB: 'LEFT' };
+    } else if (switchEnds && currentGame === 2) {
       teamSides = { teamA: 'RIGHT', teamB: 'LEFT' };
     }
 
@@ -997,6 +999,10 @@ export function computeCourtStateFromHistory(config = {}, history = []) {
  * Helper to compute full render-ready court state with player markers, badges, and boxes.
  */
 export function finalizeCourtState(state, adapter, config = {}) {
+  if (config.sidesSwapped !== undefined) {
+    state.teamSides = config.sidesSwapped ? { teamA: 'RIGHT', teamB: 'LEFT' } : { teamA: 'LEFT', teamB: 'RIGHT' };
+    state.sidesSwapped = Boolean(config.sidesSwapped);
+  }
   const derived = adapter.deriveGeometry(state);
 
   const teamA = config.teamA || { id: 'teamA', name: 'Team A' };
@@ -1075,7 +1081,14 @@ export function finalizeCourtState(state, adapter, config = {}) {
   const minScore = Math.min(scoreA, scoreB);
   const diff = maxScore - minScore;
 
-  if (maxScore >= targetScore && (!winByTwo || diff >= 2)) {
+  if (config.goldenPoint?.active) {
+    if (config.goldenPoint.isWinner) {
+      gameStatus = 'COMPLETED';
+      winner = config.goldenPoint.winnerTeamKey || (scoreA > scoreB ? 'teamA' : 'teamB');
+    } else if (config.goldenPoint.isGamePoint) {
+      gameStatus = 'GAME_POINT';
+    }
+  } else if (maxScore >= targetScore && (!winByTwo || diff >= 2)) {
     gameStatus = 'COMPLETED';
     winner = scoreA > scoreB ? 'teamA' : 'teamB';
   } else if (maxScore >= targetScore - 1 && (!winByTwo || diff >= 1)) {
@@ -1086,6 +1099,10 @@ export function finalizeCourtState(state, adapter, config = {}) {
     ...state,
     teamA,
     teamB,
+    teamSides: state.teamSides,
+    sidesSwapped: Boolean(state.sidesSwapped),
+    leftTeam: state.teamSides.teamA === 'LEFT' ? teamA : teamB,
+    rightTeam: state.teamSides.teamA === 'LEFT' ? teamB : teamA,
     scoreA: state.scores.teamA,
     scoreB: state.scores.teamB,
     servingPlayer: derived.servingPlayer,

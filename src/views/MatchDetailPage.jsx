@@ -7,7 +7,7 @@ import { useMatchLive } from '../hooks/useMatchLive';
 import {
   Radio, ArrowLeft, Send, Trophy, MapPin, Calendar, Clock,
   ExternalLink, Zap, Video, Tv, Share2, Check, Eye, EyeOff,
-  Activity, RefreshCw, AlertCircle
+  Activity, RefreshCw, AlertCircle, Sparkles
 } from 'lucide-react';
 import ScoreCelebration from '../components/scorer/ScoreCelebration';
 import CourtView, { getServeState, parseRacquetScoreDetails } from '../components/court/CourtView';
@@ -217,6 +217,7 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
           scoreA: payload.teamAScore ?? payload.scoreA ?? prev.scoreA,
           scoreB: payload.teamBScore ?? payload.scoreB ?? prev.scoreB,
           winnerTeamId: payload.winnerTeamId || prev.winnerTeamId,
+          goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : prev.goldenPoint,
           resultSummary: payload.resultSummary || prev.resultSummary
         };
       });
@@ -820,6 +821,45 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
           const parsed = parseRacquetScoreDetails(match);
           return (
             <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+              {/* Golden Point Tie-Break Banner */}
+              {(match.goldenPoint?.active || match.sport_state?.goldenPoint?.active) && (
+                <div style={{
+                  marginBottom: '1rem',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #d97706, #b45309)',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem',
+                  width: '100%',
+                  maxWidth: '800px',
+                  boxSizing: 'border-box',
+                  boxShadow: '0 4px 14px rgba(217, 119, 6, 0.4)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Sparkles size={16} color="#fef08a" />
+                    <span>
+                      GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • 2 in a row wins
+                    </span>
+                  </div>
+                  {match.goldenPoint?.streakCount > 0 && match.goldenPoint?.streakTeam && (
+                    <span style={{
+                      background: 'rgba(0,0,0,0.3)',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      fontSize: '0.74rem',
+                      fontWeight: 800,
+                      color: '#fef08a'
+                    }}>
+                      🔥 {match.goldenPoint.streakTeam === 'teamA' ? match.teamA?.name : match.teamB?.name} streak {match.goldenPoint.streakCount}/2
+                    </span>
+                  )}
+                </div>
+              )}
               <CourtView
                 match={match}
                 serveState={serveState}

@@ -57,6 +57,7 @@ export default function CourtView({
   pointEvent = null,
   rallyMode = false,
   ambientRally = true,
+  sidesSwapped = false,
   className = '',
   style = {}
 }) {
@@ -67,6 +68,7 @@ export default function CourtView({
       return {
         ...match,
         serveState: propServeState || match.serveState,
+        sidesSwapped: (match.sidesSwapped !== undefined) ? match.sidesSwapped : (match.sport_state?.sidesSwapped ?? match.sportState?.sidesSwapped ?? sidesSwapped),
         sportSlug: match.sportSlug || sport,
         matchFormat: match.matchFormat || format,
         courtColor: match.courtColor || initialCourtColor,
@@ -80,6 +82,7 @@ export default function CourtView({
     const computedScoreSummary = scoreSummary || (teamA?.score !== undefined ? `${teamA.score} - ${teamB?.score || 0}` : null);
     return {
       serveState: propServeState,
+      sidesSwapped,
       sportSlug: sport,
       matchFormat: format,
       teamA,
@@ -110,7 +113,7 @@ export default function CourtView({
     lineup, scoreSummary, scores,
     propServingSide, propServerCourt, propServerNumber,
     initialCourtColor, courtAds?.length, courtMiddleAds?.length, lastEventType, eventSeq, pointEvent,
-    status, winner, isGamePoint, isMatchPoint
+    status, winner, isGamePoint, isMatchPoint, sidesSwapped
   ]);
 
   const courtState = useMemo(() => {
@@ -943,7 +946,7 @@ export default function CourtView({
                   <circle
                     cx="0"
                     cy="0"
-                    r="13"
+                    r="14"
                     fill={p.team === 'teamA' ? '#059669' : '#2563eb'}
                     stroke="#ffffff"
                     strokeWidth="2"
@@ -954,7 +957,7 @@ export default function CourtView({
                     y="3.5"
                     textAnchor="middle"
                     fill="#ffffff"
-                    fontSize="8.5"
+                    fontSize="9"
                     fontWeight="900"
                     fontFamily="system-ui, -apple-system, sans-serif"
                     letterSpacing="0.02em"
@@ -966,21 +969,21 @@ export default function CourtView({
                   {p.isServer && (
                     <g transform={`translate(${isLeft ? 16 : -16}, -12)`}>
                       <rect
-                        x={isLeft ? 0 : -62}
-                        y="-7"
-                        width="62"
-                        height="14"
-                        rx="7"
+                        x={isLeft ? 0 : -66}
+                        y="-7.5"
+                        width="66"
+                        height="15"
+                        rx="7.5"
                         fill="#10b981"
                         stroke="#ffffff"
                         strokeWidth="0.8"
                       />
                       <text
-                        x={isLeft ? 31 : -31}
-                        y="3"
+                        x={isLeft ? 33 : -33}
+                        y="3.5"
                         textAnchor="middle"
                         fill="#ffffff"
-                        fontSize="7"
+                        fontSize="7.5"
                         fontWeight="900"
                         letterSpacing="0.05em"
                       >
@@ -992,21 +995,21 @@ export default function CourtView({
                   {p.isReceiver && (
                     <g transform={`translate(${isLeft ? 16 : -16}, -12)`}>
                       <rect
-                        x={isLeft ? 0 : -48}
-                        y="-7"
-                        width="48"
-                        height="14"
-                        rx="7"
+                        x={isLeft ? 0 : -52}
+                        y="-7.5"
+                        width="52"
+                        height="15"
+                        rx="7.5"
                         fill="rgba(2, 132, 199, 0.95)"
                         stroke="#ffffff"
                         strokeWidth="0.8"
                       />
                       <text
-                        x={isLeft ? 24 : -24}
-                        y="3"
+                        x={isLeft ? 26 : -26}
+                        y="3.5"
                         textAnchor="middle"
                         fill="#ffffff"
-                        fontSize="7"
+                        fontSize="7.5"
                         fontWeight="900"
                         letterSpacing="0.05em"
                       >
@@ -1018,21 +1021,21 @@ export default function CourtView({
                   {/* 6. Name Chip (Close to baseline, zero overlap with center score at x:200/600) */}
                   <g transform={`translate(0, ${p.boxName.includes('top') ? -24 : 24})`}>
                     <rect
-                      x="-44"
-                      y="-7"
-                      width="88"
-                      height={p.isTBA ? 18 : 14}
-                      rx="4"
-                      fill="rgba(15, 23, 42, 0.88)"
-                      stroke="rgba(255, 255, 255, 0.18)"
+                      x="-48"
+                      y="-8"
+                      width="96"
+                      height={p.isTBA ? 20 : 16}
+                      rx="5"
+                      fill="rgba(15, 23, 42, 0.92)"
+                      stroke="rgba(255, 255, 255, 0.25)"
                       strokeWidth="1"
                     />
                     <text
                       x="0"
-                      y={p.isTBA ? 1 : 3}
+                      y={p.isTBA ? 1.5 : 3.5}
                       textAnchor="middle"
                       fill="#ffffff"
-                      fontSize="7.5"
+                      fontSize="8.5"
                       fontWeight="700"
                     >
                       {p.name.length > 13 ? `${p.name.slice(0, 12)}…` : p.name}
@@ -1040,10 +1043,10 @@ export default function CourtView({
                     {p.isTBA && (
                       <text
                         x="0"
-                        y="8.5"
+                        y="9.5"
                         textAnchor="middle"
                         fill="#94a3b8"
-                        fontSize="5.8"
+                        fontSize="6.2"
                         fontStyle="italic"
                       >
                         Lineup TBA

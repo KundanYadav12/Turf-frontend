@@ -7,7 +7,7 @@ import { socket } from '../services/socket';
 import {
   Trophy, ArrowLeft, Users, Zap, RotateCcw, Edit3, CheckCircle,
   AlertCircle, Play, Shield, Clock, Award, Sparkles, ChevronRight,
-  Coffee, BookOpen
+  Coffee, BookOpen, ArrowLeftRight
 } from 'lucide-react';
 import CourtView, { getServeState } from '../components/court/CourtView';
 import PickleballRulesTab from '../components/court/PickleballRulesTab';
@@ -61,6 +61,16 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   // Per-match player point tracking toggle state
   const [trackPlayerPoints, setTrackPlayerPoints] = useState(false);
 
+  // Switch Ends / Sides Swapped State (Display / Orientation only)
+  const [sidesSwapped, setSidesSwapped] = useState(false);
+  const [switchEndsLoading, setSwitchEndsLoading] = useState(false);
+
+  // Golden Point Tie-Break State (Scorer Target Modal & Edit)
+  const [showGoldenTargetModal, setShowGoldenTargetModal] = useState(false);
+  const [goldenTargetInput, setGoldenTargetInput] = useState('21');
+  const [goldenTargetError, setGoldenTargetError] = useState('');
+  const [isEditingGoldenTarget, setIsEditingGoldenTarget] = useState(false);
+
   // Fetch full scorer state
   const fetchState = useCallback(async () => {
     try {
@@ -72,6 +82,14 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         setRotationRule(resolvedRule);
         const isTrackPoints = Boolean(d?.trackPlayerPoints || d?.match?.track_player_points || d?.sportState?.trackPlayerPoints || d?.sport_state?.trackPlayerPoints);
         setTrackPlayerPoints(isTrackPoints);
+        const isSwapped = Boolean(d?.sidesSwapped ?? d?.sportState?.sidesSwapped ?? d?.sport_state?.sidesSwapped ?? false);
+        setSidesSwapped(isSwapped);
+        if (d.goldenPoint) {
+          if (d.goldenPoint.active && !d.goldenPoint.target) {
+            setShowGoldenTargetModal(true);
+            setGoldenTargetInput(String(d.goldenPoint.lastTarget || 21));
+          }
+        }
         if (d.lineup) {
           if (Array.isArray(d.lineup.teamA) && d.lineup.teamA.length > 0) {
             setSelectedLineupA(d.lineup.teamA);
@@ -107,8 +125,18 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     socket.emit('join:match', { matchId: id });
 
     const handleScore = (payload) => {
+      if (payload?.sidesSwapped !== undefined || payload?.sportState?.sidesSwapped !== undefined) {
+        setSidesSwapped(Boolean(payload.sidesSwapped ?? payload.sportState?.sidesSwapped));
+      }
       setState((prev) => {
         if (!prev) return prev;
+        const newGoldenPoint = payload.goldenPoint || prev.goldenPoint;
+        if (newGoldenPoint?.active && !newGoldenPoint?.target) {
+          setShowGoldenTargetModal(true);
+          setGoldenTargetInput(String(newGoldenPoint.lastTarget || 21));
+        } else if (newGoldenPoint?.target && !isEditingGoldenTarget) {
+          setShowGoldenTargetModal(false);
+        }
         return {
           ...prev,
           status: payload.status,
@@ -116,6 +144,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
             teamA: payload.teamAScore,
             teamB: payload.teamBScore
           },
+          goldenPoint: newGoldenPoint,
           winner: payload.winnerTeamId
             ? (payload.winnerTeamId === prev.teamA.id ? 'team_a' : 'team_b')
             : null,
@@ -124,6 +153,43 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       });
       // Refresh full logs
       fetchState();
+    };
+
+    const handleGoldenTargetSet = (payload) => {
+      if (!payload) return;
+      const targetId = payload.matchId || payload.id;
+      if (targetId && String(targetId) === String(id)) {
+        setState((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            goldenPoint: payload.goldenPoint || {
+              ...(prev.goldenPoint || {}),
+              target: payload.goldenPointTarget,
+              active: true
+            }
+          };
+        });
+        setShowGoldenTargetModal(false);
+        setIsEditingGoldenTarget(false);
+        setGoldenTargetError('');
+      }
+    };
+
+    const handleGoldenPointToggle = (payload) => {
+      if (!payload) return;
+      const targetId = payload.matchId || payload.id;
+      if (targetId && String(targetId) === String(id)) {
+        setState((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rules: { ...prev.rules, goldenPointEnabled: payload.goldenPointEnabled },
+            sportState: { ...prev.sportState, goldenPointEnabled: payload.goldenPointEnabled },
+            goldenPoint: payload.goldenPoint || prev.goldenPoint
+          };
+        });
+      }
     };
 
     const handleCourtColor = (data) => {
@@ -171,7 +237,18 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       }
     };
 
+    const handleSidesSwapped = (payload) => {
+      if (!payload) return;
+      const targetId = payload.matchId || payload.id;
+      if (targetId && String(targetId) === String(id)) {
+        setSidesSwapped(Boolean(payload.sidesSwapped));
+      }
+    };
+
     socket.on('match:pickleballScore', handleScore);
+    socket.on('match:sidesSwapped', handleSidesSwapped);
+    socket.on('match:goldenTargetSet', handleGoldenTargetSet);
+    socket.on('match:goldenPointToggle', handleGoldenPointToggle);
     socket.on('match:trackPlayerPointsUpdated', handleTrackPlayerPointsUpdated);
     socket.on('tournament:courtColorUpdated', handleCourtColor);
     socket.on('court:colorUpdated', handleCourtColor);
@@ -182,6 +259,9 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     return () => {
       socket.emit('leave:match', { matchId: id });
       socket.off('match:pickleballScore', handleScore);
+      socket.off('match:sidesSwapped', handleSidesSwapped);
+      socket.off('match:goldenTargetSet', handleGoldenTargetSet);
+      socket.off('match:goldenPointToggle', handleGoldenPointToggle);
       socket.off('match:trackPlayerPointsUpdated', handleTrackPlayerPointsUpdated);
       socket.off('tournament:courtColorUpdated', handleCourtColor);
       socket.off('court:colorUpdated', handleCourtColor);
@@ -189,7 +269,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       socket.off('match:break:end', handleBreakEnd);
       socket.off('match:break_updated', handleBreakStart);
     };
-  }, [id, fetchState]);
+  }, [id, fetchState, isEditingGoldenTarget]);
 
   const handleToggleBreak = async () => {
     if (breakState.isBreak) {
@@ -225,6 +305,23 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       setError(err?.response?.data?.message || 'Failed to start match break.');
     } finally {
       setBreakActionLoading(false);
+    }
+  };
+
+  // Switch Ends handler: toggles sidesSwapped for court and score card orientation
+  const handleSwitchEnds = async () => {
+    const nextSwapped = !sidesSwapped;
+    setSidesSwapped(nextSwapped);
+    setSwitchEndsLoading(true);
+    try {
+      await axios.post(`/api/matches/${id}/pickleball/switch-ends`, {
+        sidesSwapped: nextSwapped
+      });
+    } catch (err) {
+      setSidesSwapped(!nextSwapped);
+      setError(err?.response?.data?.message || 'Failed to switch court ends.');
+    } finally {
+      setSwitchEndsLoading(false);
     }
   };
 
@@ -326,9 +423,74 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
     }
   };
 
+  // Set Golden Point target handler
+  const handleConfirmGoldenTarget = async () => {
+    const currentMax = Math.max(state?.scores?.teamA || 0, state?.scores?.teamB || 0);
+    const val = parseInt(goldenTargetInput, 10);
+    if (!goldenTargetInput || isNaN(val) || !Number.isInteger(val)) {
+      setGoldenTargetError('Please enter a valid whole number.');
+      return;
+    }
+    if (val < 16) {
+      setGoldenTargetError('Golden target must be a whole number of at least 16.');
+      return;
+    }
+    if (val <= currentMax) {
+      setGoldenTargetError(`Golden target must be greater than both current scores (${currentMax}).`);
+      return;
+    }
+
+    setActionLoading(true);
+    setGoldenTargetError('');
+    try {
+      const res = await axios.post(`/api/matches/${id}/pickleball/golden-target`, {
+        goldenPointTarget: val
+      });
+      if (res.data?.success) {
+        setState(res.data.data);
+        setShowGoldenTargetModal(false);
+        setIsEditingGoldenTarget(false);
+        setSuccess(`Golden Point winning target set to ${val}!`);
+      }
+    } catch (err) {
+      setGoldenTargetError(err?.response?.data?.message || 'Failed to update Golden Point target.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Toggle Golden Point rule setting (before tie reached)
+  const handleToggleGoldenPointSetting = async (enabled) => {
+    setActionLoading(true);
+    setError('');
+    try {
+      const res = await axios.post(`/api/matches/${id}/pickleball/golden-point-toggle`, {
+        enabled
+      });
+      if (res.data?.success) {
+        setState(res.data.data);
+        setSuccess(`Golden Point tie-break rule ${enabled ? 'ENABLED' : 'DISABLED'} for this match.`);
+      }
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to update Golden Point setting.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Record point (+1)
   const handleRecordPoint = async (pointTo, scoredByPlayerId = null) => {
     if (state.status !== 'LIVE' || actionLoading) return;
+    if (state?.goldenPoint?.active && !state?.goldenPoint?.target) {
+      setShowGoldenTargetModal(true);
+      return;
+    }
+
+    // Haptic feedback on supported mobile devices
+    if (typeof window !== 'undefined' && window.navigator && typeof window.navigator.vibrate === 'function') {
+      try { window.navigator.vibrate(25); } catch (e) {}
+    }
+
     setActionLoading(true);
     setError('');
     try {
@@ -545,6 +707,37 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
         name: playerB1.trim() || (typeof selectedLineupB[0] === 'string' ? selectedLineupB[0] : selectedLineupB[0]?.name) || `${teamB?.name || 'Team B'} 1`,
         box: 'top-right'
       };
+
+  const serveInfo = useMemo(() => {
+    if (!state || !state.scores) return null;
+    const currentServeState = getServeState({
+      ...state,
+      scores: state.scores,
+      sportSlug: 'pickleball',
+      matchFormat: state.rules?.matchFormat || 'DOUBLES',
+      teamA: state.teamA,
+      teamB: state.teamB
+    });
+    const servingTeamKey = state?.sportState?.servingTeam || state?.sport_state?.servingTeam || (currentServeState.isTeamAServing ? 'teamA' : 'teamB');
+    const serverNum = state?.sportState?.serverNumber || state?.sport_state?.serverNumber || (currentServeState.serverNumber || 1);
+    const servingTeamName = servingTeamKey === 'teamA' ? state.teamA?.name : state.teamB?.name;
+    const receivingTeamName = servingTeamKey === 'teamA' ? state.teamB?.name : state.teamA?.name;
+    const servingScore = servingTeamKey === 'teamA' ? state.scores?.teamA : state.scores?.teamB;
+    const receivingScore = servingTeamKey === 'teamA' ? state.scores?.teamB : state.scores?.teamA;
+    const isSingles = state.rules?.matchFormat === 'SINGLES';
+    const callText = isSingles ? `${servingScore} - ${receivingScore}` : `${servingScore} - ${receivingScore} - ${serverNum}`;
+    return {
+      servingTeamKey,
+      serverNum,
+      servingTeamName,
+      receivingTeamName,
+      callText,
+      serverPlayerName: currentServeState.serverPlayerName || null,
+      servingBoxName: currentServeState.servingBoxName || null
+    };
+  }, [state]);
+
+  const isScoringBlocked = actionLoading || Boolean(state?.goldenPoint?.active && !state?.goldenPoint?.target);
 
   if (loading) {
     return (
@@ -786,11 +979,27 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                   <span className="scorer-meta-chip-label" style={{ fontWeight: 700 }}>Cap:</span> {rules.maxScore}
                 </span>
               )}
+              {sidesSwapped && (
+                <span className="scorer-meta-chip" style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.78rem',
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '8px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#10b981',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  fontWeight: 800
+                }}>
+                  🔄 Ends switched
+                </span>
+              )}
             </div>
           </div>
 
           {/* Quick Action buttons */}
-          <div className="scorer-quick-actions" style={{ display: 'grid', gridTemplateColumns: status === 'LIVE' ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: '0.5rem', width: '100%', maxWidth: '420px' }}>
+          <div className="scorer-quick-actions" style={{ display: 'grid', gridTemplateColumns: status === 'LIVE' ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: '0.5rem', width: '100%', maxWidth: '580px' }}>
             <button
               type="button"
               onClick={() => setShowCorrectionModal(true)}
@@ -868,6 +1077,41 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               <Coffee size={15} style={{ flexShrink: 0 }} />
               {breakState.isBreak ? 'On Break' : 'Break'}
             </button>
+            <button
+              type="button"
+              onClick={handleSwitchEnds}
+              disabled={switchEndsLoading}
+              className="btn btn-outline btn-sm"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                minHeight: '40px',
+                height: '40px',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                padding: '0.45rem 0.65rem',
+                borderRadius: '10px',
+                background: sidesSwapped
+                  ? 'rgba(16, 185, 129, 0.2)'
+                  : ((scores.teamA >= Math.ceil((rules.targetScore || 15) / 2) || scores.teamB >= Math.ceil((rules.targetScore || 15) / 2)) ? 'rgba(56, 189, 248, 0.15)' : 'transparent'),
+                color: sidesSwapped
+                  ? '#10b981'
+                  : ((scores.teamA >= Math.ceil((rules.targetScore || 15) / 2) || scores.teamB >= Math.ceil((rules.targetScore || 15) / 2)) ? '#38bdf8' : 'inherit'),
+                borderColor: sidesSwapped
+                  ? '#10b981'
+                  : ((scores.teamA >= Math.ceil((rules.targetScore || 15) / 2) || scores.teamB >= Math.ceil((rules.targetScore || 15) / 2)) ? '#38bdf8' : 'rgba(255, 255, 255, 0.2)'),
+                boxShadow: ((scores.teamA >= Math.ceil((rules.targetScore || 15) / 2) || scores.teamB >= Math.ceil((rules.targetScore || 15) / 2)) && !sidesSwapped) ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+                boxSizing: 'border-box',
+                whiteSpace: 'nowrap',
+                width: '100%'
+              }}
+              title="Switch court ends: swap left and right court halves"
+            >
+              <ArrowLeftRight size={15} style={{ flexShrink: 0 }} />
+              <span>{sidesSwapped ? 'Ends Switched' : 'Switch Ends'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -914,377 +1158,513 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               </div>
             )}
 
-            {/* "Track points by player" Toggle (visible to authorized scorers) */}
+            {/* Compact Status Bar */}
+            <div className="scorer-status-bar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 800, color: 'var(--text-heading)' }}>
+                  Game 1 • First to {rules.targetScore}
+                </span>
+                {serveInfo && status === 'LIVE' && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    background: serveInfo.servingTeamKey === 'teamA' ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)',
+                    color: serveInfo.servingTeamKey === 'teamA' ? '#10b981' : '#38bdf8',
+                    fontWeight: 700,
+                    fontSize: '0.76rem'
+                  }}>
+                    🎾 Serving: <strong>{serveInfo.servingTeamName}</strong> {isDoubles ? `(#${serveInfo.serverNum})` : ''} • Call: <strong>{serveInfo.callText}</strong>
+                  </span>
+                )}
+              </div>
+
+              {/* Golden Point Status / Settings */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {state?.goldenPoint?.active ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.78rem' }}>
+                      ⚡ Golden Point Active
+                    </span>
+                    {state.goldenPoint.target && isAuthorizedScorer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGoldenTargetInput(String(state.goldenPoint.target));
+                          setGoldenTargetError('');
+                          setIsEditingGoldenTarget(true);
+                          setShowGoldenTargetModal(true);
+                        }}
+                        className="golden-target-chip"
+                        title="Click to edit Golden Point target score"
+                      >
+                        Golden target: {state.goldenPoint.target} ✎
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  /* If tie not yet reached, allow scorer to toggle Golden Point setting */
+                  isAuthorizedScorer && (scores.teamA < (rules.targetScore - 1) || scores.teamB < (rules.targetScore - 1)) && (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(state?.rules?.goldenPointEnabled ?? state?.sportState?.goldenPointEnabled ?? true)}
+                        onChange={(e) => handleToggleGoldenPointSetting(e.target.checked)}
+                        style={{ width: '14px', height: '14px', accentColor: '#f59e0b', cursor: 'pointer' }}
+                      />
+                      <span>Golden Point at tie ({rules.targetScore - 1}–{rules.targetScore - 1})</span>
+                    </label>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Golden Point Tie-Break Banner */}
+            {state?.goldenPoint?.active && (
+              <div className="golden-point-banner" style={{ marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '0.86rem' }}>
+                  <Sparkles size={18} color="#fef08a" />
+                  <span>
+                    GOLDEN POINT • First to {state.goldenPoint.target || '...'} • 2 in a row wins
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  {state.goldenPoint.streakCount > 0 && state.goldenPoint.streakTeam && (
+                    <span style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px solid rgba(255,255,255,0.25)',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '0.76rem',
+                      fontWeight: 800,
+                      color: '#fef08a'
+                    }}>
+                      🔥 {state.goldenPoint.streakTeam === 'teamA' ? teamA.name : teamB.name} streak {state.goldenPoint.streakCount}/2
+                    </span>
+                  )}
+                  {state.goldenPoint.isGamePoint && (
+                    <span style={{
+                      background: '#ef4444',
+                      color: '#ffffff',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '0.74rem',
+                      fontWeight: 900,
+                      letterSpacing: '0.04em'
+                    }}>
+                      ⚡ GAME POINT
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Restyled "Track points by player" Toggle Switch */}
             {isAuthorizedScorer && (
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'space-between',
                 flexWrap: 'wrap',
                 gap: '0.75rem',
                 marginBottom: '1.25rem',
-                padding: '0.55rem 1rem',
-                background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: '12px',
-                border: '1px solid rgba(255, 255, 255, 0.08)'
+                padding: '0.75rem 1rem',
+                background: 'var(--bg-secondary, rgba(255, 255, 255, 0.03))',
+                borderRadius: '14px',
+                border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+                boxSizing: 'border-box',
+                width: '100%'
               }}>
-                <label style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.6rem',
-                  cursor: isLineupReady ? 'pointer' : 'not-allowed',
-                  userSelect: 'none',
-                  opacity: isLineupReady ? 1 : 0.65
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(trackPlayerPoints && isLineupReady)}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', minWidth: 0, flex: '1 1 200px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '0.9rem', color: 'var(--text-heading)' }}>
+                    <Users size={16} color="var(--accent-primary, #10b981)" style={{ flexShrink: 0 }} />
+                    <span>Track points by player</span>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)', marginTop: '2px' }}>
+                    {isLineupReady
+                      ? 'Split buttons enable assigning each point directly to the scoring player'
+                      : 'Set lineup below to enable player point attribution'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                  {!isLineupReady && (
+                    <span style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      color: '#f59e0b',
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      padding: '2px 8px',
+                      borderRadius: '6px'
+                    }}>
+                      Lineup needed
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(trackPlayerPoints && isLineupReady)}
+                    aria-label="Track points by player toggle"
                     disabled={!isLineupReady || actionLoading}
-                    onChange={(e) => handleToggleTrackPlayerPoints(e.target.checked)}
-                    style={{
-                      width: '18px',
-                      height: '18px',
-                      accentColor: '#10b981',
-                      cursor: isLineupReady ? 'pointer' : 'not-allowed'
-                    }}
-                  />
-                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f1f5f9' }}>
-                    Track points by player
-                  </span>
-                </label>
-                {!isLineupReady && (
-                  <span style={{
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    color: '#f59e0b',
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    padding: '2px 8px',
-                    borderRadius: '6px'
-                  }}>
-                    Set the lineup first
-                  </span>
-                )}
+                    onClick={() => handleToggleTrackPlayerPoints(!trackPlayerPoints)}
+                    className="scorer-toggle-pill"
+                  >
+                    <span className="scorer-toggle-knob" />
+                  </button>
+                </div>
               </div>
             )}
 
-        <div className="scorer-arena-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 'clamp(0.4rem, 1.5vw, 1.5rem)', width: '100%', boxSizing: 'border-box' }}>
-          {/* Team A Card */}
-          <div
-            className={`scorer-team-card-a ${winner === 'team_a' ? 'scorer-team-winner' : ''}`}
-            style={{
-              textAlign: 'center',
-              padding: 'clamp(0.65rem, 1.8vw, 1.25rem)',
-              borderRadius: '16px',
-              minWidth: 0,
-              width: '100%',
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center'
-            }}
-          >
-            <div style={{
-              width: 'clamp(44px, 10vw, 64px)',
-              height: 'clamp(44px, 10vw, 64px)',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #10b981, #059669)',
-              color: '#fff',
-              fontSize: 'clamp(1.1rem, 2.5vw, 1.5rem)',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 0.5rem auto',
-              boxShadow: '0 4px 15px rgba(16,185,129,0.35)',
-              flexShrink: 0
-            }}>
-              {teamA.name.slice(0, 2).toUpperCase()}
-            </div>
-            <h3
-              className="scorer-text-heading"
+        {/* Arena Score Cards */}
+        {(() => {
+          const renderTeamACard = () => (
+            <div
+              key="team-a-card"
+              className={`scorer-team-card-a ${winner === 'team_a' ? 'scorer-team-winner' : ''} ${serveInfo?.servingTeamKey === 'teamA' && status === 'LIVE' ? 'scorer-team-serving-a' : ''}`}
               style={{
-                fontSize: 'clamp(0.95rem, 2vw, 1.35rem)',
+                textAlign: 'center',
+                padding: 'clamp(0.65rem, 1.8vw, 1.25rem)',
+                borderRadius: '16px',
+                minWidth: 0,
+                width: '100%',
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center'
+              }}
+            >
+              <div style={{
+                width: 'clamp(44px, 10vw, 64px)',
+                height: 'clamp(44px, 10vw, 64px)',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#fff',
+                fontSize: 'clamp(1.1rem, 2.5vw, 1.5rem)',
                 fontWeight: 800,
-                margin: '0 0 0.25rem 0',
-                width: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}
-              title={teamA.name}
-            >
-              {teamA.name}
-            </h3>
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 0.4rem auto',
+                boxShadow: '0 4px 15px rgba(16,185,129,0.35)',
+                flexShrink: 0
+              }}>
+                {teamA.name.slice(0, 2).toUpperCase()}
+              </div>
+              <h3
+                className="scorer-text-heading"
+                style={{
+                  fontSize: 'clamp(0.95rem, 2vw, 1.35rem)',
+                  fontWeight: 800,
+                  margin: '0 0 0.2rem 0',
+                  width: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+                title={teamA.name}
+              >
+                {teamA.name}
+              </h3>
+              {/* Full player names visible (wrap to two lines instead of cutting off) */}
+              <div
+                className="scorer-text-muted"
+                style={{
+                  fontSize: '0.78rem',
+                  width: '100%',
+                  lineHeight: 1.25,
+                  minHeight: '2.5em',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  marginBottom: '0.25rem'
+                }}
+                title={formatLineup(lineup?.teamA)}
+              >
+                {formatLineup(lineup?.teamA)}
+              </div>
+              {serveInfo?.servingTeamKey === 'teamA' && status === 'LIVE' && (
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '10px', marginBottom: '0.2rem' }}>
+                  🎾 SERVING {isDoubles ? `#${serveInfo.serverNum}` : ''}
+                </span>
+              )}
+              <div
+                className={winner === 'team_a' ? 'scorer-score-num-win-a' : 'scorer-score-num'}
+                style={{
+                  fontSize: 'clamp(2.75rem, 7vw, 5.5rem)',
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  margin: '0.25rem 0 0.5rem 0'
+                }}
+              >
+                {scores.teamA}
+              </div>
+
+              {/* +1 Button(s) Team A */}
+              {status === 'LIVE' && (
+                trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersA.length >= 2 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%' }}>
+                    {lineupPlayersA.slice(0, 2).map((player, idx) => (
+                      <button
+                        key={player.id || idx}
+                        type="button"
+                        onClick={() => handleRecordPoint('team_a', player.id)}
+                        disabled={isScoringBlocked}
+                        className="scorer-btn-point"
+                        style={{
+                          background: 'linear-gradient(135deg, #10b981, #059669)',
+                          color: '#fff',
+                          boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                          flexDirection: 'column',
+                          gap: '2px'
+                        }}
+                        title={`+1 ${player.name}`}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                          <Zap size={14} style={{ flexShrink: 0 }} />
+                          <span style={{ fontWeight: 900, fontSize: '0.92rem', lineHeight: 1 }}>+1</span>
+                        </div>
+                        <span style={{
+                          fontWeight: 700,
+                          fontSize: '0.76rem',
+                          lineHeight: 1.15,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          wordBreak: 'break-word',
+                          textAlign: 'center',
+                          padding: '0 2px'
+                        }}>
+                          {player.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRecordPoint('team_a', (trackPlayerPoints && lineupPlayersA[0]?.id) ? lineupPlayersA[0].id : null)}
+                    disabled={isScoringBlocked}
+                    className="scorer-btn-point"
+                    style={{
+                      minHeight: '52px',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#fff',
+                      flexDirection: 'column',
+                      boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                      gap: '2px'
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.1 }}>
+                      <Zap size={16} /> +1
+                    </span>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      {trackPlayerPoints && !isDoubles && lineupPlayersA[0]?.name ? lineupPlayersA[0].name : 'Point'}
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+          );
+
+          const renderTeamBCard = () => (
             <div
-              className="scorer-text-muted"
+              key="team-b-card"
+              className={`scorer-team-card-b ${winner === 'team_b' ? 'scorer-team-winner' : ''} ${serveInfo?.servingTeamKey === 'teamB' && status === 'LIVE' ? 'scorer-team-serving-b' : ''}`}
               style={{
-                fontSize: '0.78rem',
+                textAlign: 'center',
+                padding: 'clamp(0.65rem, 1.8vw, 1.25rem)',
+                borderRadius: '16px',
+                minWidth: 0,
                 width: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                marginBottom: '0.25rem'
-              }}
-              title={formatLineup(lineup?.teamA)}
-            >
-              {formatLineup(lineup?.teamA)}
-            </div>
-            <div
-              className={winner === 'team_a' ? 'scorer-score-num-win-a' : 'scorer-score-num'}
-              style={{
-                fontSize: 'clamp(2.75rem, 7vw, 5.5rem)',
-                fontWeight: 900,
-                lineHeight: 1,
-                margin: '0.25rem 0 0.5rem 0'
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center'
               }}
             >
-              {scores.teamA}
-            </div>
-
-            {/* +1 Button(s) Team A */}
-            {status === 'LIVE' && (
-              trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersA.length >= 2 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%' }}>
-                  {lineupPlayersA.slice(0, 2).map((player, idx) => (
-                    <button
-                      key={player.id || idx}
-                      type="button"
-                      onClick={() => handleRecordPoint('team_a', player.id)}
-                      disabled={actionLoading}
-                      style={{
-                        width: '100%',
-                        minHeight: '44px',
-                        padding: '0.45rem 0.6rem',
-                        borderRadius: '12px',
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: actionLoading ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.35rem',
-                        boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
-                        transition: 'all 0.2s',
-                        boxSizing: 'border-box'
-                      }}
-                      title={`+1 ${player.name}`}
-                    >
-                      <Zap size={14} style={{ flexShrink: 0 }} />
-                      <span style={{
-                        fontWeight: 800,
-                        fontSize: '0.84rem',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        maxWidth: '100%'
-                      }}>
-                        +1 {player.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleRecordPoint('team_a', (trackPlayerPoints && lineupPlayersA[0]?.id) ? lineupPlayersA[0].id : null)}
-                  disabled={actionLoading}
-                  style={{
-                    width: '100%',
-                    minHeight: '48px',
-                    padding: '0.45rem 0.5rem',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                    color: '#fff',
-                    border: 'none',
-                    cursor: actionLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.1rem',
-                    boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
-                    transition: 'all 0.2s',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.1 }}>
-                    <Zap size={15} /> +1
-                  </span>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    {trackPlayerPoints && !isDoubles && lineupPlayersA[0]?.name ? lineupPlayersA[0].name : 'Point'}
-                  </span>
-                </button>
-              )
-            )}
-          </div>
-
-          {/* VS Divider */}
-          <div style={{ padding: '0 0.25rem', flexShrink: 0, textAlign: 'center' }}>
-            <div style={{ fontSize: 'clamp(1rem, 2vw, 1.25rem)', fontWeight: 900, color: 'var(--accent-primary, #10b981)', letterSpacing: '0.12em' }}>
-              VS
-            </div>
-            <div className="scorer-text-muted" style={{ fontSize: '0.72rem', fontWeight: 700, marginTop: '0.25rem', whiteSpace: 'nowrap' }}>
-              FIRST TO {rules.targetScore}
-            </div>
-          </div>
-
-          {/* Team B Card */}
-          <div
-            className={`scorer-team-card-b ${winner === 'team_b' ? 'scorer-team-winner' : ''}`}
-            style={{
-              textAlign: 'center',
-              padding: 'clamp(0.65rem, 1.8vw, 1.25rem)',
-              borderRadius: '16px',
-              minWidth: 0,
-              width: '100%',
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center'
-            }}
-          >
-            <div style={{
-              width: 'clamp(44px, 10vw, 64px)',
-              height: 'clamp(44px, 10vw, 64px)',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-              color: '#fff',
-              fontSize: 'clamp(1.1rem, 2.5vw, 1.5rem)',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 0.5rem auto',
-              boxShadow: '0 4px 15px rgba(59,130,246,0.35)',
-              flexShrink: 0
-            }}>
-              {teamB.name.slice(0, 2).toUpperCase()}
-            </div>
-            <h3
-              className="scorer-text-heading"
-              style={{
-                fontSize: 'clamp(0.95rem, 2vw, 1.35rem)',
+              <div style={{
+                width: 'clamp(44px, 10vw, 64px)',
+                height: 'clamp(44px, 10vw, 64px)',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                color: '#fff',
+                fontSize: 'clamp(1.1rem, 2.5vw, 1.5rem)',
                 fontWeight: 800,
-                margin: '0 0 0.25rem 0',
-                width: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}
-              title={teamB.name}
-            >
-              {teamB.name}
-            </h3>
-            <div
-              className="scorer-text-muted"
-              style={{
-                fontSize: '0.78rem',
-                width: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                marginBottom: '0.25rem'
-              }}
-              title={formatLineup(lineup?.teamB)}
-            >
-              {formatLineup(lineup?.teamB)}
-            </div>
-            <div
-              className={winner === 'team_b' ? 'scorer-score-num-win-b' : 'scorer-score-num'}
-              style={{
-                fontSize: 'clamp(2.75rem, 7vw, 5.5rem)',
-                fontWeight: 900,
-                lineHeight: 1,
-                margin: '0.25rem 0 0.5rem 0'
-              }}
-            >
-              {scores.teamB}
-            </div>
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 0.4rem auto',
+                boxShadow: '0 4px 15px rgba(59,130,246,0.35)',
+                flexShrink: 0
+              }}>
+                {teamB.name.slice(0, 2).toUpperCase()}
+              </div>
+              <h3
+                className="scorer-text-heading"
+                style={{
+                  fontSize: 'clamp(0.95rem, 2vw, 1.35rem)',
+                  fontWeight: 800,
+                  margin: '0 0 0.2rem 0',
+                  width: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+                title={teamB.name}
+              >
+                {teamB.name}
+              </h3>
+              {/* Full player names visible (wrap to two lines instead of cutting off) */}
+              <div
+                className="scorer-text-muted"
+                style={{
+                  fontSize: '0.78rem',
+                  width: '100%',
+                  lineHeight: 1.25,
+                  minHeight: '2.5em',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  marginBottom: '0.25rem'
+                }}
+                title={formatLineup(lineup?.teamB)}
+              >
+                {formatLineup(lineup?.teamB)}
+              </div>
+              {serveInfo?.servingTeamKey === 'teamB' && status === 'LIVE' && (
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#3b82f6', background: 'rgba(59, 130, 246, 0.15)', padding: '2px 8px', borderRadius: '10px', marginBottom: '0.2rem' }}>
+                  🎾 SERVING {isDoubles ? `#${serveInfo.serverNum}` : ''}
+                </span>
+              )}
+              <div
+                className={winner === 'team_b' ? 'scorer-score-num-win-b' : 'scorer-score-num'}
+                style={{
+                  fontSize: 'clamp(2.75rem, 7vw, 5.5rem)',
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  margin: '0.25rem 0 0.5rem 0'
+                }}
+              >
+                {scores.teamB}
+              </div>
 
-            {/* +1 Button(s) Team B */}
-            {status === 'LIVE' && (
-              trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersB.length >= 2 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%' }}>
-                  {lineupPlayersB.slice(0, 2).map((player, idx) => (
-                    <button
-                      key={player.id || idx}
-                      type="button"
-                      onClick={() => handleRecordPoint('team_b', player.id)}
-                      disabled={actionLoading}
-                      style={{
-                        width: '100%',
-                        minHeight: '44px',
-                        padding: '0.45rem 0.6rem',
-                        borderRadius: '12px',
-                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: actionLoading ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.35rem',
-                        boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-                        transition: 'all 0.2s',
-                        boxSizing: 'border-box'
-                      }}
-                      title={`+1 ${player.name}`}
-                    >
-                      <Zap size={14} style={{ flexShrink: 0 }} />
-                      <span style={{
-                        fontWeight: 800,
-                        fontSize: '0.84rem',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        maxWidth: '100%'
-                      }}>
-                        +1 {player.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+              {/* +1 Button(s) Team B */}
+              {status === 'LIVE' && (
+                trackPlayerPoints && isLineupReady && isDoubles && lineupPlayersB.length >= 2 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.45rem', width: '100%' }}>
+                    {lineupPlayersB.slice(0, 2).map((player, idx) => (
+                      <button
+                        key={player.id || idx}
+                        type="button"
+                        onClick={() => handleRecordPoint('team_b', player.id)}
+                        disabled={isScoringBlocked}
+                        className="scorer-btn-point"
+                        style={{
+                          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                          color: '#fff',
+                          boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+                          flexDirection: 'column',
+                          gap: '2px'
+                        }}
+                        title={`+1 ${player.name}`}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                          <Zap size={14} style={{ flexShrink: 0 }} />
+                          <span style={{ fontWeight: 900, fontSize: '0.92rem', lineHeight: 1 }}>+1</span>
+                        </div>
+                        <span style={{
+                          fontWeight: 700,
+                          fontSize: '0.76rem',
+                          lineHeight: 1.15,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          wordBreak: 'break-word',
+                          textAlign: 'center',
+                          padding: '0 2px'
+                        }}>
+                          {player.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRecordPoint('team_b', (trackPlayerPoints && lineupPlayersB[0]?.id) ? lineupPlayersB[0].id : null)}
+                    disabled={isScoringBlocked}
+                    className="scorer-btn-point"
+                    style={{
+                      minHeight: '52px',
+                      background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                      color: '#fff',
+                      flexDirection: 'column',
+                      boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+                      gap: '2px'
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.1 }}>
+                      <Zap size={16} /> +1
+                    </span>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      {trackPlayerPoints && !isDoubles && lineupPlayersB[0]?.name ? lineupPlayersB[0].name : 'Point'}
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+          );
+
+          const renderVSDivider = () => (
+            <div key="vs-divider" style={{ padding: '0 0.25rem', flexShrink: 0, textAlign: 'center' }}>
+              <div style={{ fontSize: 'clamp(1rem, 2vw, 1.25rem)', fontWeight: 900, color: 'var(--accent-primary, #10b981)', letterSpacing: '0.12em' }}>
+                VS
+              </div>
+              <div className="scorer-text-muted" style={{ fontSize: '0.72rem', fontWeight: 700, marginTop: '0.25rem', whiteSpace: 'nowrap' }}>
+                FIRST TO {rules.targetScore}
+              </div>
+            </div>
+          );
+
+          return (
+            <div className="scorer-arena-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 'clamp(0.4rem, 1.5vw, 1.5rem)', width: '100%', boxSizing: 'border-box' }}>
+              {sidesSwapped ? (
+                <>
+                  {renderTeamBCard()}
+                  {renderVSDivider()}
+                  {renderTeamACard()}
+                </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => handleRecordPoint('team_b', (trackPlayerPoints && lineupPlayersB[0]?.id) ? lineupPlayersB[0].id : null)}
-                  disabled={actionLoading}
-                  style={{
-                    width: '100%',
-                    minHeight: '48px',
-                    padding: '0.45rem 0.5rem',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                    color: '#fff',
-                    border: 'none',
-                    cursor: actionLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.1rem',
-                    boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-                    transition: 'all 0.2s',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.1 }}>
-                    <Zap size={15} /> +1
-                  </span>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.95, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    {trackPlayerPoints && !isDoubles && lineupPlayersB[0]?.name ? lineupPlayersB[0].name : 'Point'}
-                  </span>
-                </button>
-              )
-            )}
-          </div>
-        </div>
+                <>
+                  {renderTeamACard()}
+                  {renderVSDivider()}
+                  {renderTeamBCard()}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Animated Recolorable Court Visualization */}
         <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <CourtView
             sport="pickleball"
+            sidesSwapped={sidesSwapped}
             format={rules?.matchFormat || 'DOUBLES'}
             teamA={courtTeamA}
             teamB={courtTeamB}
@@ -1318,6 +1698,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
               tournament,
               courtColor: tournament?.courtColor || '#0d5c3a',
               lineup,
+              sidesSwapped,
               logs: logs || state?.logs || [],
               sport_state: state?.sportState || state?.sport_state,
               sportState: state?.sportState || state?.sport_state,
@@ -1624,9 +2005,16 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                   <span style={{ fontWeight: 800, color: 'var(--accent-primary, #10b981)' }}>
                     #{log.sequence_number}
                   </span>
-                  <span className="scorer-text-heading" style={{ fontWeight: 600 }}>
-                    {log.point_to === 'team_a' ? `Point to ${teamA.name}` : log.point_to === 'team_b' ? `Point to ${teamB.name}` : log.notes}
-                    {log.scored_by_player_name ? ` (${log.scored_by_player_name})` : ''}
+                  <span className="scorer-text-heading" style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {String(log.notes || '').includes('[GOLDEN POINT]') && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#fbbf24', background: 'rgba(245, 158, 11, 0.2)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '1px 6px', borderRadius: '4px' }}>
+                        GOLDEN POINT
+                      </span>
+                    )}
+                    <span>
+                      {log.point_to === 'team_a' ? `Point to ${teamA.name}` : log.point_to === 'team_b' ? `Point to ${teamB.name}` : String(log.notes || '').replace('[GOLDEN POINT] ', '')}
+                      {log.scored_by_player_name ? ` (${log.scored_by_player_name})` : ''}
+                    </span>
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -1792,6 +2180,177 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                 style={{ flex: 1, background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff', fontWeight: 800 }}
               >
                 {breakActionLoading ? 'Starting…' : 'Start Break'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Golden Point Target Modal (Scorer only, never shown to viewers) */}
+      {isAuthorizedScorer && ((state?.goldenPoint?.active && !state?.goldenPoint?.target) || showGoldenTargetModal) && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '1rem',
+          boxSizing: 'border-box'
+        }}>
+          <div className="scorer-panel" style={{
+            borderRadius: '20px',
+            padding: '1.75rem',
+            width: '100%',
+            maxWidth: '460px',
+            border: '1.5px solid rgba(245, 158, 11, 0.5)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+            boxSizing: 'border-box'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+              <Sparkles size={24} color="#f59e0b" style={{ flexShrink: 0 }} />
+              <h3 className="scorer-text-heading" style={{ fontSize: '1.25rem', fontWeight: 900, margin: 0 }}>
+                {isEditingGoldenTarget ? 'Edit Golden Target' : 'Golden Point! Set the winning target.'}
+              </h3>
+            </div>
+            <p className="scorer-text-muted" style={{ fontSize: '0.84rem', margin: '0 0 1rem 0', lineHeight: 1.4 }}>
+              {isEditingGoldenTarget
+                ? `Adjust target score. Target must be a whole number of at least 16 and greater than both current scores (${Math.max(scores.teamA, scores.teamB)}).`
+                : `Match reached tie at ${state?.goldenPoint?.tieThreshold || (rules.targetScore - 1)}–${state?.goldenPoint?.tieThreshold || (rules.targetScore - 1)}. Normal win-by-2 replaced with Golden Point: first to reach target OR 2 consecutive points wins.`}
+            </p>
+
+            {/* Current Score Display */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '1rem',
+              padding: '0.65rem 1rem',
+              background: 'rgba(245, 158, 11, 0.1)',
+              borderRadius: '12px',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              marginBottom: '1.25rem',
+              fontSize: '0.92rem',
+              fontWeight: 800
+            }}>
+              <span style={{ color: '#10b981' }}>{teamA.name}: {scores.teamA}</span>
+              <span style={{ color: 'var(--text-muted)' }}>vs</span>
+              <span style={{ color: '#3b82f6' }}>{teamB.name}: {scores.teamB}</span>
+            </div>
+
+            {/* Target input */}
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '0.4rem' }}>
+                Winning Target Score
+              </label>
+              <input
+                type="number"
+                min={Math.max(16, scores.teamA + 1, scores.teamB + 1)}
+                step="1"
+                value={goldenTargetInput}
+                onChange={(e) => {
+                  setGoldenTargetInput(e.target.value);
+                  setGoldenTargetError('');
+                }}
+                className="scorer-subcard"
+                placeholder="e.g. 21"
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  fontSize: '1.35rem',
+                  fontWeight: 900,
+                  textAlign: 'center',
+                  boxSizing: 'border-box'
+                }}
+                autoFocus
+              />
+              {goldenTargetError && (
+                <div style={{ color: '#ef4444', fontSize: '0.78rem', fontWeight: 700, marginTop: '0.35rem', textAlign: 'center' }}>
+                  {goldenTargetError}
+                </div>
+              )}
+            </div>
+
+            {/* Preset Chips */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+                Quick Preset Target Chips:
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+                {[21, 25, 30].map((preset) => {
+                  const minAllowed = Math.max(16, scores.teamA + 1, scores.teamB + 1);
+                  const isPresetDisabled = preset < minAllowed;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      disabled={isPresetDisabled}
+                      onClick={() => {
+                        setGoldenTargetInput(String(preset));
+                        setGoldenTargetError('');
+                      }}
+                      className={`btn ${goldenTargetInput === String(preset) ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                      style={{
+                        fontWeight: 800,
+                        fontSize: '0.86rem',
+                        padding: '0.45rem 0',
+                        opacity: isPresetDisabled ? 0.4 : 1
+                      }}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const def = Math.max(21, scores.teamA + 1, scores.teamB + 1);
+                    setGoldenTargetInput(String(def));
+                    setGoldenTargetError('');
+                  }}
+                  className="btn btn-outline btn-sm"
+                  style={{ fontWeight: 800, fontSize: '0.74rem', padding: '0.45rem 0', whiteSpace: 'nowrap' }}
+                >
+                  Default (21)
+                </button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              {isEditingGoldenTarget && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGoldenTargetModal(false);
+                    setIsEditingGoldenTarget(false);
+                    setGoldenTargetError('');
+                  }}
+                  className="btn btn-outline"
+                  style={{ flex: 1, fontWeight: 700 }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleConfirmGoldenTarget}
+                disabled={actionLoading}
+                className="btn btn-primary"
+                style={{
+                  flex: 1,
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  fontSize: '0.92rem',
+                  border: 'none',
+                  padding: '0.75rem'
+                }}
+              >
+                {actionLoading ? 'Saving…' : (isEditingGoldenTarget ? 'Confirm Target Update' : 'Confirm Golden Target')}
               </button>
             </div>
           </div>

@@ -23,7 +23,8 @@ import {
   Clock,
   CheckCircle2,
   RotateCw,
-  Video
+  Video,
+  Sparkles
 } from 'lucide-react';
 import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 
@@ -433,6 +434,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
             _pointEvent: data.pointEvent || (data.type === 'POINT_SCORED' ? data : null),
             status: data.status || m.status,
             courtColor: data.courtColor || m.courtColor,
+            goldenPoint: data.goldenPoint !== undefined ? data.goldenPoint : m.goldenPoint,
             score: {
               ...m.score,
               summary: data.scoreSummary || data.liveScoreSummary || m.score?.summary,
@@ -1732,6 +1734,33 @@ const MatchCardHero = ({ match }) => {
             )}
           </div>
         </div>
+
+        {/* Golden Point Pill on Signage */}
+        {(match.goldenPoint?.active || match.sport_state?.goldenPoint?.active) && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            background: 'linear-gradient(135deg, rgba(217, 119, 6, 0.4), rgba(180, 83, 9, 0.4))',
+            border: '1.5px solid rgba(245, 158, 11, 0.6)',
+            color: '#fbbf24',
+            padding: '3px 12px',
+            borderRadius: 16,
+            fontSize: '0.78rem',
+            fontWeight: 800,
+            margin: '0.3rem auto',
+            width: 'fit-content'
+          }}>
+            <Sparkles size={13} color="#fef08a" />
+            <span>
+              GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • 2 in a row wins
+              {match.goldenPoint?.streakCount > 0 && match.goldenPoint?.streakTeam && (
+                ` • ${match.goldenPoint.streakTeam === 'teamA' ? match.teamA?.name : match.teamB?.name} streak ${match.goldenPoint.streakCount}/2`
+              )}
+            </span>
+          </div>
+        )}
 
         {/* Central Responsive Animated Court Visual */}
         <div style={{

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useParams } from 'next/navigation';
 import { socket } from '../../../../services/socket';
+import { YellowPickleballIcon } from '../../../../components/streaming/LiveStreamManagerModal';
 
 export default function MatchOBSOverlayPage({ params }) {
   const routeParams = useParams();
@@ -120,11 +121,15 @@ export default function MatchOBSOverlayPage({ params }) {
   }
 
   const isCricket = sportSlug === 'cricket' || (!sportSlug && scoreSummary?.includes('/'));
-  const isPickleball = sportSlug === 'pickleball';
+  const isPickleball = sportSlug === 'pickleball' || String(data.sportName || '').toLowerCase().includes('pickleball');
   const isBadminton = sportSlug === 'badminton';
   const isFootball = sportSlug === 'football';
 
   const isTop = overlayConfig?.position === 'top';
+
+  const sTeam = sportState?.servingTeam || data?.servingTeam;
+  const isServingTeamA = isPickleball && (sTeam === 'teamA' || sTeam === 'team_a');
+  const isServingTeamB = isPickleball && (sTeam === 'teamB' || sTeam === 'team_b');
 
   return (
     <div
@@ -259,8 +264,9 @@ export default function MatchOBSOverlayPage({ params }) {
               {teamA?.name ? teamA.name.slice(0, 2).toUpperCase() : 'TA'}
             </div>
             <div>
-              <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.15rem' }}>
-                {teamA?.name || 'Team A'}
+              <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span>{teamA?.name || 'Team A'}</span>
+                {isServingTeamA && <YellowPickleballIcon size={18} />}
               </div>
               <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
                 {isCricket && sportState?.battingTeamName === teamA?.name ? '🏏 Batting' : 'Playing Squad'}
@@ -304,8 +310,9 @@ export default function MatchOBSOverlayPage({ params }) {
           {/* Team B */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flex: 1, minWidth: '220px', justifyContent: 'flex-end', textAlign: 'right' }}>
             <div>
-              <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.15rem' }}>
-                {teamB?.name || 'Team B'}
+              <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.15rem', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.45rem' }}>
+                {isServingTeamB && <YellowPickleballIcon size={18} />}
+                <span>{teamB?.name || 'Team B'}</span>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
                 {isCricket && sportState?.battingTeamName === teamB?.name ? '🏏 Batting' : 'Playing Squad'}
@@ -374,7 +381,12 @@ export default function MatchOBSOverlayPage({ params }) {
                   else if (is6) { bg = '#8b5cf6'; color = '#fff'; }
                   else if (is4) { bg = '#10b981'; color = '#fff'; }
 
-                  return (
+                  const isPickleball = String(data.sportName || '').toLowerCase().includes('pickleball') || String(data.sportSlug || '').toLowerCase().includes('pickleball');
+  const sTeam = sportState?.servingTeam || data.servingTeam;
+  const isServingTeamA = isPickleball && (sTeam === 'teamA' || sTeam === 'team_a');
+  const isServingTeamB = isPickleball && (sTeam === 'teamB' || sTeam === 'team_b');
+
+  return (
                     <span
                       key={idx}
                       style={{

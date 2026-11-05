@@ -183,12 +183,19 @@ export function getServeState(match) {
   const isTeamAServing = servingTeamKey === 'teamA';
 
   // 6. Screen Team Sides ('left' | 'right')
-  let teamASide = 'left';
-  let teamBSide = 'right';
+  const sidesSwapped = Boolean(
+    match?.sidesSwapped ??
+    match?.sportState?.sidesSwapped ??
+    match?.sport_state?.sidesSwapped ??
+    state?.sidesSwapped ??
+    false
+  );
+  let teamASide = sidesSwapped ? 'right' : 'left';
+  let teamBSide = sidesSwapped ? 'left' : 'right';
 
   if (match.teamSides) {
-    teamASide = String(match.teamSides.teamA || match.teamSides.A || 'left').toLowerCase();
-    teamBSide = String(match.teamSides.teamB || match.teamSides.B || 'right').toLowerCase();
+    teamASide = String(match.teamSides.teamA || match.teamSides.A || teamASide).toLowerCase();
+    teamBSide = String(match.teamSides.teamB || match.teamSides.B || teamBSide).toLowerCase();
   } else if (match.switchEnds === true || match.rules?.switchEnds === true) {
     // BWF change of ends rule when explicitly enabled
     if (currentGame === 2) {
@@ -276,6 +283,7 @@ export function getServeState(match) {
     servingBoxName, // 'bottom-left' | 'top-left' | 'top-right' | 'bottom-right'
     targetBoxName, // 'top-right' | 'bottom-right' | 'bottom-left' | 'top-left'
     teamSides: { teamA: teamASide, teamB: teamBSide },
+    sidesSwapped,
     isTeamAServing,
     scoreA,
     scoreB,
@@ -405,7 +413,8 @@ export function getCourtState(match) {
     },
     targetScore: match?.targetScore || match?.rules?.targetScore || (isBadminton ? 21 : 15),
     winByTwo: match?.winByTwo ?? match?.rules?.winByTwo ?? true,
-    startingServingTeam
+    startingServingTeam,
+    sidesSwapped: serveState.sidesSwapped
   };
 
   // 6. Check for Point History Logs
@@ -550,7 +559,7 @@ export function getCourtState(match) {
       ];
 
   // 11. Game Point, Match Point, Winner flags
-  const isGamePoint = Boolean(state.isGamePoint || engineState.isGamePoint);
+  const isGamePoint = Boolean(state.isGamePoint || engineState.isGamePoint || match.goldenPoint?.isGamePoint || state.goldenPoint?.isGamePoint);
   const isMatchPoint = Boolean(state.isMatchPoint || engineState.isMatchWon);
   const status = match.status || (engineState.isMatchWon ? 'COMPLETED' : 'LIVE');
   const winner = match.winnerTeamId
@@ -600,6 +609,7 @@ export function getCourtState(match) {
     receivingTeamName,
     servingStatusText,
     teamSides,
+    sidesSwapped: serveState.sidesSwapped,
     servingBoxName,
     targetBoxName,
     serverCoords,

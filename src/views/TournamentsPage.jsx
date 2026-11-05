@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import axios from 'axios';
@@ -6,7 +6,7 @@ import {
   setTournamentsLoading,
   setTournamentsFeed
 } from '../features/tournament/tournamentSlice';
-import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Tv, Eye } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Tv, Eye, X, Loader2 } from 'lucide-react';
 import CreateTournamentModal from '../components/tournament/CreateTournamentModal';
 
 const TournamentsPage = () => {
@@ -19,43 +19,146 @@ const TournamentsPage = () => {
   const [sportFilter, setSportFilter] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const canCreateTournament = isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'VENUE_OWNER');
+  // Synchronous refs to prevent duplicate fetches & stale closures
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
 
-  // Fetch paginated feed using modern useCallback
-  const fetchTournaments = useCallback(async (cursor = null, isAppend = false) => {
+  const nextCursorRef = useRef(feedPagination?.nextCursor);
+  nextCursorRef.current = feedPagination?.nextCursor;
+
+  const hasMoreRef = useRef(feedPagination?.hasMore);
+  hasMoreRef.current = feedPagination?.hasMore;
+
+  const isFetchingRef = useRef(false);
+  const searchRequestIdRef = useRef(0);
+  const debounceTimerRef = useRef(null);
+  const isInitialMountRef = useRef(true);
+  const sentinelRef = useRef(null);
+
+  const canCreateTournament = isAuthenticated && Boolean(
+    ['ADMIN', 'SUPER_ADMIN', 'VENUE_OWNER', 'PLAYER', 'USER'].includes(String(user?.role || '').toUpperCase())
+  );
+
+  // Fetch paginated feed supporting cursors, request ID deduplication, and filter overrides
+  const fetchTournaments = useCallback(async (cursor = null, isAppend = false, customParams = null) => {
+    if (isFetchingRef.current && isAppend) return;
+    isFetchingRef.current = true;
+
+    const currentReqId = ++searchRequestIdRef.current;
     dispatch(setTournamentsLoading(true));
+
     try {
+      const activeSearch = customParams?.search !== undefined ? customParams.search : search;
+      const activeCity = customParams?.city !== undefined ? customParams.city : cityFilter;
+      const activeSport = customParams?.sportSlug !== undefined ? customParams.sportSlug : sportFilter;
+
       const params = { limit: 12 };
       if (cursor) params.cursor = cursor;
-      if (cityFilter) params.city = cityFilter;
-      if (sportFilter) params.sportSlug = sportFilter;
-      if (search) params.search = search;
+      if (activeCity) params.city = activeCity;
+      if (activeSport) params.sportSlug = activeSport;
+      if (activeSearch && activeSearch.trim()) params.search = activeSearch.trim();
 
       const res = await axios.get('/api/tournaments', { params });
-      if (res.data.success) {
+
+      if (currentReqId !== searchRequestIdRef.current) {
+        return;
+      }
+
+      if (res.data?.success) {
         dispatch(setTournamentsFeed({
-          items: res.data.data,
-          pagination: res.data.pagination,
+          items: res.data.data || [],
+          pagination: res.data.pagination || { hasMore: false, nextCursor: null },
           isAppend
         }));
       }
     } catch (err) {
-      console.error('Failed to load tournaments feed:', err);
+      if (currentReqId === searchRequestIdRef.current) {
+        console.error('Failed to load tournaments feed:', err);
+      }
     } finally {
-      dispatch(setTournamentsLoading(false));
+      isFetchingRef.current = false;
+      if (currentReqId === searchRequestIdRef.current) {
+        dispatch(setTournamentsLoading(false));
+      }
     }
   }, [cityFilter, sportFilter, search, dispatch]);
 
-  // Initial load or filter change
+  // Initial load
   useEffect(() => {
     fetchTournaments(null, false);
-  }, [fetchTournaments]);
+  }, []);
 
-  const handleLoadMore = () => {
-    if (feedPagination?.nextCursor && !loading) {
-      fetchTournaments(feedPagination.nextCursor, true);
+  // Debounced auto-search & auto-filter effect
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
     }
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      fetchTournaments(null, false, { search, city: cityFilter, sportSlug: sportFilter });
+    }, 350);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [search, cityFilter, sportFilter, fetchTournaments]);
+
+  // Immediate manual search trigger
+  const handleManualSearch = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    fetchTournaments(null, false, { search, city: cityFilter, sportSlug: sportFilter });
   };
+
+  // Clear search input handler
+  const handleClearSearch = () => {
+    setSearch('');
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    fetchTournaments(null, false, { search: '', city: cityFilter, sportSlug: sportFilter });
+  };
+
+  // IntersectionObserver for lazy loading
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (
+          entry.isIntersecting &&
+          !loadingRef.current &&
+          !isFetchingRef.current &&
+          hasMoreRef.current &&
+          nextCursorRef.current
+        ) {
+          fetchTournaments(nextCursorRef.current, true);
+        }
+      },
+      {
+        root: null,
+        rootMargin: '250px',
+        threshold: 0.1
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [feedPagination?.hasMore, feedPagination?.nextCursor, fetchTournaments]);
 
   const tournaments = allTournamentIds.map((id) => tournamentsById[id]).filter(Boolean);
 
@@ -116,7 +219,7 @@ const TournamentsPage = () => {
         alignItems: 'center',
         marginBottom: '1.75rem'
       }}>
-        <div style={{
+        <form onSubmit={handleManualSearch} style={{
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
@@ -125,9 +228,10 @@ const TournamentsPage = () => {
           borderRadius: 'var(--radius-sm, 8px)',
           border: '1px solid var(--border-color, rgba(255,255,255,0.08))',
           flex: '1 1 240px',
-          boxShadow: 'var(--shadow-card)'
+          boxShadow: 'var(--shadow-card)',
+          position: 'relative'
         }}>
-          <Search size={16} color="var(--text-dim, #94a3b8)" />
+          <Search size={16} color="var(--text-dim, #94a3b8)" style={{ flexShrink: 0 }} />
           <input
             type="text"
             placeholder="Search tournament name or city..."
@@ -142,7 +246,17 @@ const TournamentsPage = () => {
               width: '100%'
             }}
           />
-        </div>
+          {search && (
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: 'var(--text-dim, #94a3b8)', display: 'flex', alignItems: 'center' }}
+              title="Clear search"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </form>
 
         {/* City Filter Pills */}
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -390,28 +504,37 @@ const TournamentsPage = () => {
         </div>
       )}
 
-      {/* Pagination Load More Button */}
-      {feedPagination?.hasMore && (
-        <div style={{ textAlign: 'center', marginTop: '2rem' }}>
-          <button
-            onClick={handleLoadMore}
-            disabled={loading}
+      {/* Lazy Loading Sentinel and Loading Indicator */}
+      <div
+        ref={sentinelRef}
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '1.25rem 0 2.5rem',
+          minHeight: '50px'
+        }}
+      >
+        {loading && (
+          <div
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.65rem',
+              color: 'var(--text-muted, #94a3b8)',
+              fontSize: '0.88rem',
+              fontWeight: 600,
+              padding: '0.5rem 1.25rem',
+              borderRadius: '20px',
               background: 'var(--bg-card, #1e293b)',
-              color: 'var(--text-main, #fff)',
-              border: '1px solid var(--border-color, rgba(255,255,255,0.15))',
-              padding: '0.7rem 2rem',
-              borderRadius: 'var(--radius-sm, 8px)',
-              fontSize: '0.85rem',
-              fontWeight: 700,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              boxShadow: 'var(--shadow-card)'
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))'
             }}
           >
-            {loading ? 'Loading more...' : 'Load More Tournaments'}
-          </button>
-        </div>
-      )}
+            <Loader2 size={16} className="spin" color="var(--accent-primary, #10b981)" />
+            <span>Loading more tournaments…</span>
+          </div>
+        )}
+      </div>
 
       {/* Create Tournament Modal Form */}
       <CreateTournamentModal

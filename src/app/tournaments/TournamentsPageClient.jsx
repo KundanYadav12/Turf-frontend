@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from '../../lib/routerCompat';
 import { useDispatch, useSelector } from 'react-redux';
 import axios from 'axios';
@@ -7,7 +7,7 @@ import {
   setTournamentsLoading,
   setTournamentsFeed
 } from '../../features/tournament/tournamentSlice';
-import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Eye } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Eye, X, Loader2 } from 'lucide-react';
 import CreateTournamentModal from '../../components/tournament/CreateTournamentModal';
 
 const formatTournamentDate = (dateStr) => {
@@ -31,58 +31,166 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
   const [sportFilter, setSportFilter] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
+  // Synchronous refs to prevent stale closures and duplicate fetches
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+
+  const nextCursorRef = useRef(feedPagination?.nextCursor);
+  nextCursorRef.current = feedPagination?.nextCursor;
+
+  const hasMoreRef = useRef(feedPagination?.hasMore);
+  hasMoreRef.current = feedPagination?.hasMore;
+
+  const isFetchingRef = useRef(false);
+  const searchRequestIdRef = useRef(0);
+  const debounceTimerRef = useRef(null);
+  const isInitialMountRef = useRef(true);
+  const sentinelRef = useRef(null);
+
+  // Initialize Redux store with initial server data once on mount
   useEffect(() => {
     setIsMounted(true);
-  }, []);
-
-  // Initialize Redux store with initial server data
-  useEffect(() => {
-    if (initialTournaments.length > 0 && allTournamentIds.length === 0) {
+    if (initialTournaments.length > 0 && allTournamentIds.length === 0 && !isInitialized) {
       dispatch(setTournamentsFeed({
         items: initialTournaments,
         pagination: initialPagination,
         isAppend: false
       }));
     }
-  }, [initialTournaments, initialPagination, allTournamentIds.length, dispatch]);
+    setIsInitialized(true);
+  }, []);
 
-  const canCreateTournament = isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'VENUE_OWNER');
+  const canCreateTournament = isAuthenticated && Boolean(
+    ['ADMIN', 'SUPER_ADMIN', 'VENUE_OWNER', 'PLAYER', 'USER'].includes(String(user?.role || '').toUpperCase())
+  );
 
-  const fetchTournaments = useCallback(async (cursor = null, isAppend = false) => {
+  // Core fetch function supporting cursors (for lazy loading) and filter overrides
+  const fetchTournaments = useCallback(async (cursor = null, isAppend = false, customParams = null) => {
+    if (isFetchingRef.current && isAppend) return;
+    isFetchingRef.current = true;
+
+    const currentReqId = ++searchRequestIdRef.current;
     dispatch(setTournamentsLoading(true));
+
     try {
+      const activeSearch = customParams?.search !== undefined ? customParams.search : search;
+      const activeCity = customParams?.city !== undefined ? customParams.city : cityFilter;
+      const activeSport = customParams?.sportSlug !== undefined ? customParams.sportSlug : sportFilter;
+
       const params = { limit: 12 };
       if (cursor) params.cursor = cursor;
-      if (cityFilter) params.city = cityFilter;
-      if (sportFilter) params.sportSlug = sportFilter;
-      if (search) params.search = search;
+      if (activeCity) params.city = activeCity;
+      if (activeSport) params.sportSlug = activeSport;
+      if (activeSearch && activeSearch.trim()) params.search = activeSearch.trim();
 
       const res = await axios.get('/api/tournaments', { params });
-      if (res.data.success) {
+
+      // Stale request check: if user typed something newer, discard this response
+      if (currentReqId !== searchRequestIdRef.current) {
+        return;
+      }
+
+      if (res.data && res.data.success) {
         dispatch(setTournamentsFeed({
-          items: res.data.data,
-          pagination: res.data.pagination,
+          items: res.data.data || [],
+          pagination: res.data.pagination || { hasMore: false, nextCursor: null },
           isAppend
         }));
       }
     } catch (err) {
-      console.error('Failed to load tournaments feed:', err);
+      if (currentReqId === searchRequestIdRef.current) {
+        console.error('Failed to load tournaments feed:', err);
+      }
     } finally {
-      dispatch(setTournamentsLoading(false));
+      isFetchingRef.current = false;
+      if (currentReqId === searchRequestIdRef.current) {
+        dispatch(setTournamentsLoading(false));
+      }
     }
   }, [cityFilter, sportFilter, search, dispatch]);
 
-  const handleLoadMore = () => {
-    if (feedPagination?.nextCursor && !loading) {
-      fetchTournaments(feedPagination.nextCursor, true);
+  // Debounced auto-search & auto-filter effect when user types or changes dropdowns
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
     }
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      fetchTournaments(null, false, { search, city: cityFilter, sportSlug: sportFilter });
+    }, 350);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [search, cityFilter, sportFilter, fetchTournaments]);
+
+  // Immediate manual search trigger (Enter key or Filter button)
+  const handleManualSearch = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    fetchTournaments(null, false, { search, city: cityFilter, sportSlug: sportFilter });
   };
 
-  // Derive tournament list: prefer redux if loaded, fallback to initial SSR tournaments
-  const tournaments = allTournamentIds.length > 0
+  // Clear search input handler
+  const handleClearSearch = () => {
+    setSearch('');
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    fetchTournaments(null, false, { search: '', city: cityFilter, sportSlug: sportFilter });
+  };
+
+  // IntersectionObserver for seamless infinite scrolling / lazy loading
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (
+          entry.isIntersecting &&
+          !loadingRef.current &&
+          !isFetchingRef.current &&
+          hasMoreRef.current &&
+          nextCursorRef.current
+        ) {
+          fetchTournaments(nextCursorRef.current, true);
+        }
+      },
+      {
+        root: null,
+        rootMargin: '250px',
+        threshold: 0.1
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [feedPagination?.hasMore, feedPagination?.nextCursor, fetchTournaments]);
+
+  // Derive tournament list:
+  // Once initialized, Redux is the single authoritative source of truth.
+  // Before client hydration, fallback to initial SSR data.
+  const tournaments = isInitialized
     ? allTournamentIds.map((id) => tournamentsById[id]).filter(Boolean)
-    : initialTournaments;
+    : (allTournamentIds.length > 0
+        ? allTournamentIds.map((id) => tournamentsById[id]).filter(Boolean)
+        : initialTournaments);
 
   return (
     <div className="container" style={{ padding: 'clamp(1rem, 2.5vw, 1.75rem) clamp(0.75rem, 2vw, 1.25rem)' }}>
@@ -135,17 +243,26 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
 
       {/* Filter and Search Bar */}
       <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.75rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ flex: '1 1 200px', display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: '0 0.75rem', border: '1px solid var(--border-color)' }}>
-          <Search size={16} color="var(--text-muted)" />
+        <form onSubmit={handleManualSearch} style={{ flex: '1 1 200px', display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: '0 0.75rem', border: '1px solid var(--border-color)', position: 'relative' }}>
+          <Search size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
           <input
             type="text"
             placeholder="Search tournament title or venue..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetchTournaments(null, false)}
             style={{ width: '100%', padding: '0.65rem 0.5rem', background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '0.88rem', outline: 'none' }}
           />
-        </div>
+          {search && (
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', borderRadius: '50%' }}
+              title="Clear search"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </form>
 
         <select
           value={cityFilter}
@@ -172,7 +289,8 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
         </select>
 
         <button
-          onClick={() => fetchTournaments(null, false)}
+          onClick={handleManualSearch}
+          type="button"
           className="btn btn-secondary"
           style={{ padding: '0.65rem 1.1rem', fontSize: '0.85rem' }}
         >
@@ -279,19 +397,37 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
         </div>
       )}
 
-      {/* Pagination Load More */}
-      {feedPagination?.hasMore && (
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <button
-            onClick={handleLoadMore}
-            disabled={loading}
-            className="btn btn-secondary"
-            style={{ padding: '0.75rem 2rem', fontSize: '0.9rem' }}
+      {/* Lazy Loading Sentinel and Loading Indicator */}
+      <div
+        ref={sentinelRef}
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '1.25rem 0 2.5rem',
+          minHeight: '50px'
+        }}
+      >
+        {loading && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.65rem',
+              color: 'var(--text-muted, #94a3b8)',
+              fontSize: '0.88rem',
+              fontWeight: 600,
+              padding: '0.5rem 1.25rem',
+              borderRadius: '20px',
+              background: 'var(--bg-card, rgba(30, 41, 59, 0.7))',
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))'
+            }}
           >
-            {loading ? 'Loading More Leagues…' : 'Load More Tournaments'}
-          </button>
-        </div>
-      )}
+            <Loader2 size={16} className="spin" color="var(--accent-primary, #10b981)" />
+            <span>Loading more tournaments…</span>
+          </div>
+        )}
+      </div>
 
       {/* Create Tournament Modal */}
       {isCreateModalOpen && (

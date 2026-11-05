@@ -8,9 +8,36 @@ import {
   Check, RefreshCw, Eye, EyeOff, Play, Pause, Square,
   Shield, AlertCircle, CheckCircle, Smartphone, ExternalLink,
   Layers, Volume2, VolumeX, RotateCw, Monitor, Sparkles,
-  Minimize2, Maximize2, Coffee, Clock
+  Minimize2, Maximize2, Coffee, Clock, Plus, Minus
 } from 'lucide-react';
 import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi } from '../../services/advertisementService';
+
+export function YellowPickleballIcon({ size = 16, style = {} }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 26 26"
+      style={{
+        display: 'inline-block',
+        verticalAlign: 'middle',
+        flexShrink: 0,
+        filter: 'drop-shadow(0 0 4px rgba(250, 204, 21, 0.6))',
+        ...style
+      }}
+      aria-label="Serving Ball"
+      title="Currently Serving"
+    >
+      <circle cx="13" cy="13" r="12" fill="rgba(250, 204, 21, 0.25)" />
+      <circle cx="13" cy="13" r="10.5" fill="#facc15" stroke="#ca8a04" strokeWidth="1.5" />
+      <circle cx="9.5" cy="9.5" r="1.6" fill="#854d0e" />
+      <circle cx="16.5" cy="9.5" r="1.6" fill="#854d0e" />
+      <circle cx="9.5" cy="16.5" r="1.6" fill="#854d0e" />
+      <circle cx="16.5" cy="16.5" r="1.6" fill="#854d0e" />
+      <circle cx="13" cy="13" r="1.6" fill="#854d0e" />
+    </svg>
+  );
+}
 
 export default function LiveStreamManagerModal({
   matchId,
@@ -52,7 +79,49 @@ export default function LiveStreamManagerModal({
     return '0 - 0';
   };
 
+  const resolveServingTeam = (m) => {
+    if (!m) return 'teamA';
+    const st = m.sportState?.servingTeam || m.sport_state?.servingTeam || m.servingTeam || m.state?.sportState?.servingTeam || m.state?.servingTeam;
+    if (st) {
+      return (st === 'teamB' || st === 'team_b') ? 'teamB' : 'teamA';
+    }
+    if (m.serveState?.isTeamAServing !== undefined) {
+      return m.serveState.isTeamAServing ? 'teamA' : 'teamB';
+    }
+    if (m.isTeamAServing !== undefined) {
+      return m.isTeamAServing ? 'teamA' : 'teamB';
+    }
+    return 'teamA';
+  };
+
+  const resolveSidesSwapped = (m) => {
+    if (!m) return false;
+    return Boolean(
+      m.sidesSwapped ??
+      m.sportState?.sidesSwapped ??
+      m.sport_state?.sidesSwapped ??
+      m.state?.sportState?.sidesSwapped ??
+      m.state?.sidesSwapped ??
+      false
+    );
+  };
+
   const [liveScore, setLiveScore] = useState(() => resolveScore(matchData));
+  const [servingTeam, setServingTeam] = useState(() => resolveServingTeam(matchData));
+  const [sidesSwapped, setSidesSwapped] = useState(() => resolveSidesSwapped(matchData));
+
+  // Fullscreen and Zoom State
+  const cameraContainerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const idleTimeoutRef = useRef(null);
+
+  const [zoomLevel, setZoomLevel] = useState(1.0);
+  const [maxZoom, setMaxZoom] = useState(5.0);
+  const [supportsNativeZoom, setSupportsNativeZoom] = useState(false);
+  const touchStartDistRef = useRef(null);
+  const touchStartZoomRef = useRef(1.0);
 
   // Match Break State
   const [breakState, setBreakState] = useState({ isBreak: false, reason: 'Interval', durationMinutes: null });
@@ -83,6 +152,24 @@ export default function LiveStreamManagerModal({
       } else if (payload.teamAScore !== undefined && payload.teamBScore !== undefined) {
         setLiveScore(`${payload.teamAScore} - ${payload.teamBScore}`);
       }
+
+      const sTeam = payload.sportState?.servingTeam || payload.sport_state?.servingTeam || payload.servingTeam || payload.state?.sportState?.servingTeam || payload.state?.servingTeam;
+      if (sTeam) {
+        setServingTeam((sTeam === 'teamB' || sTeam === 'team_b') ? 'teamB' : 'teamA');
+      } else if (payload.serveState?.isTeamAServing !== undefined) {
+        setServingTeam(payload.serveState.isTeamAServing ? 'teamA' : 'teamB');
+      }
+
+      if (payload.sidesSwapped !== undefined || payload.sportState?.sidesSwapped !== undefined || payload.sport_state?.sidesSwapped !== undefined) {
+        setSidesSwapped(Boolean(payload.sidesSwapped ?? payload.sportState?.sidesSwapped ?? payload.sport_state?.sidesSwapped));
+      }
+    };
+
+    const handleSidesSwapped = (payload) => {
+      if (!payload) return;
+      const tId = payload.matchId || payload.id;
+      if (tId && String(tId) !== String(matchId)) return;
+      setSidesSwapped(Boolean(payload.sidesSwapped));
     };
 
     const handleBreakStart = (data) => {
@@ -107,6 +194,7 @@ export default function LiveStreamManagerModal({
 
     socket.on('score:updated', onScoreChange);
     socket.on('match:pickleballScore', onScoreChange);
+    socket.on('match:sidesSwapped', handleSidesSwapped);
     socket.on('signage:matchUpdate', onScoreChange);
     socket.on('match:break:start', handleBreakStart);
     socket.on('match:break:end', handleBreakEnd);
@@ -116,6 +204,7 @@ export default function LiveStreamManagerModal({
     return () => {
       socket.off('score:updated', onScoreChange);
       socket.off('match:pickleballScore', onScoreChange);
+      socket.off('match:sidesSwapped', handleSidesSwapped);
       socket.off('signage:matchUpdate', onScoreChange);
       socket.off('match:break:start', handleBreakStart);
       socket.off('match:break:end', handleBreakEnd);
@@ -220,6 +309,114 @@ export default function LiveStreamManagerModal({
   useEffect(() => {
     facingModeRef.current = facingMode;
   }, [facingMode]);
+
+  // Fullscreen and Zoom Handlers
+  const applyZoom = useCallback(async (newZoom) => {
+    const clamped = Math.min(maxZoom, Math.max(1.0, +(Number(newZoom).toFixed(1))));
+    setZoomLevel(clamped);
+
+    // Apply native zoom to video track if available
+    const videoTrack = localStreamRef.current?.getVideoTracks()?.[0];
+    if (videoTrack?.applyConstraints) {
+      try {
+        const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : null;
+        if (caps && 'zoom' in caps) {
+          await videoTrack.applyConstraints({
+            advanced: [{ zoom: clamped }]
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn('[CameraManager] Native zoom constraint application failed:', err);
+      }
+    }
+  }, [maxZoom]);
+
+  const resetIdleTimer = useCallback(() => {
+    setControlsVisible(true);
+    if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+    idleTimeoutRef.current = setTimeout(() => {
+      if (isFullscreen || isPseudoFullscreen) {
+        setControlsVisible(false);
+      }
+    }, 3500);
+  }, [isFullscreen, isPseudoFullscreen]);
+
+  const handleToggleFullscreen = async () => {
+    const el = cameraContainerRef.current;
+    if (isFullscreen || isPseudoFullscreen) {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        try {
+          if (document.exitFullscreen) await document.exitFullscreen();
+          else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+        } catch (e) {}
+      }
+      setIsPseudoFullscreen(false);
+      setIsFullscreen(false);
+      try {
+        if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
+      } catch {}
+    } else {
+      if (el) {
+        try {
+          if (el.requestFullscreen) {
+            await el.requestFullscreen();
+          } else if (el.webkitRequestFullscreen) {
+            await el.webkitRequestFullscreen();
+          } else {
+            setIsPseudoFullscreen(true);
+          }
+        } catch (e) {
+          setIsPseudoFullscreen(true);
+        }
+      } else {
+        setIsPseudoFullscreen(true);
+      }
+      try {
+        if (window.screen?.orientation?.lock) {
+          await window.screen.orientation.lock('landscape').catch(() => {});
+        }
+      } catch {}
+    }
+    resetIdleTimer();
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      const activeFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+      setIsFullscreen(activeFs);
+      if (!activeFs) {
+        setIsPseudoFullscreen(false);
+        try {
+          if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
+        } catch {}
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (isPseudoFullscreen) {
+          setIsPseudoFullscreen(false);
+        }
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          try {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+          } catch (err) {}
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPseudoFullscreen]);
 
   const getAuthHeaders = () => {
     if (typeof window === 'undefined') return {};
@@ -389,6 +586,30 @@ export default function LiveStreamManagerModal({
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
 
+      // Inspect camera capabilities for hardware optical/digital zoom
+      const vTrack = stream.getVideoTracks()[0];
+      if (vTrack?.getCapabilities) {
+        try {
+          const caps = vTrack.getCapabilities();
+          if (caps && 'zoom' in caps) {
+            setSupportsNativeZoom(true);
+            if (caps.zoom?.max) {
+              setMaxZoom(Math.min(5.0, caps.zoom.max));
+            }
+          } else {
+            setSupportsNativeZoom(false);
+            setMaxZoom(5.0);
+          }
+        } catch {
+          setSupportsNativeZoom(false);
+          setMaxZoom(5.0);
+        }
+      } else {
+        setSupportsNativeZoom(false);
+        setMaxZoom(5.0);
+      }
+      setZoomLevel(1.0);
+
       // Rule 2: Listen for ended and mute events on every track
       attachTrackListeners(stream);
 
@@ -499,6 +720,7 @@ export default function LiveStreamManagerModal({
     const nextMode = facingMode === 'user' ? 'environment' : 'user';
     setFacingMode(nextMode);
     facingModeRef.current = nextMode;
+    setZoomLevel(1.0);
     if (cameraActive) {
       await startCamera(nextMode);
     }
@@ -1169,18 +1391,64 @@ export default function LiveStreamManagerModal({
 
               {/* Camera Preview Area with Live Scoreboard Overlay */}
               <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  aspectRatio: '16 / 9',
-                  borderRadius: '14px',
-                  overflow: 'hidden',
-                  background: '#090d16',
-                  border: '1.5px solid rgba(255, 255, 255, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
+                ref={cameraContainerRef}
+                onClick={resetIdleTimer}
+                onMouseMove={resetIdleTimer}
+                onTouchStart={(e) => {
+                  if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    touchStartDistRef.current = Math.hypot(dx, dy);
+                    touchStartZoomRef.current = zoomLevel;
+                  }
+                  resetIdleTimer();
                 }}
+                onTouchMove={(e) => {
+                  if (e.touches.length === 2 && touchStartDistRef.current) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const dist = Math.hypot(dx, dy);
+                    const factor = dist / touchStartDistRef.current;
+                    const nextZ = Math.min(maxZoom, Math.max(1.0, +(touchStartZoomRef.current * factor).toFixed(1)));
+                    applyZoom(nextZ);
+                  }
+                  resetIdleTimer();
+                }}
+                onTouchEnd={() => {
+                  touchStartDistRef.current = null;
+                }}
+                style={
+                  (isFullscreen || isPseudoFullscreen)
+                    ? {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: '100vw',
+                        height: '100dvh',
+                        zIndex: 99999,
+                        borderRadius: 0,
+                        margin: 0,
+                        background: '#000000',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }
+                    : {
+                        position: 'relative',
+                        width: '100%',
+                        aspectRatio: '16 / 9',
+                        borderRadius: '14px',
+                        overflow: 'hidden',
+                        background: '#090d16',
+                        border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }
+                }
               >
                 <video
                   ref={videoPreviewRef}
@@ -1191,9 +1459,171 @@ export default function LiveStreamManagerModal({
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    display: cameraActive ? 'block' : 'none'
+                    display: cameraActive ? 'block' : 'none',
+                    transform: !supportsNativeZoom && zoomLevel > 1.0 ? `scale(${zoomLevel})` : 'none',
+                    transformOrigin: 'center center',
+                    transition: 'transform 0.1s ease-out'
                   }}
                 />
+
+                {/* Fullscreen / Exit Fullscreen Button */}
+                <button
+                  type="button"
+                  onClick={handleToggleFullscreen}
+                  style={{
+                    position: 'absolute',
+                    top: (isFullscreen || isPseudoFullscreen) ? '1.25rem' : '0.65rem',
+                    right: (isFullscreen || isPseudoFullscreen) ? '1.25rem' : '0.65rem',
+                    zIndex: 30,
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    backdropFilter: 'blur(8px)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    padding: '0.4rem 0.65rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    opacity: (isFullscreen || isPseudoFullscreen) ? (controlsVisible ? 1 : 0) : 1,
+                    pointerEvents: (isFullscreen || isPseudoFullscreen) && !controlsVisible ? 'none' : 'auto',
+                    transition: 'opacity 0.25s ease'
+                  }}
+                  title={(isFullscreen || isPseudoFullscreen) ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen'}
+                >
+                  {(isFullscreen || isPseudoFullscreen) ? (
+                    <>
+                      <Minimize2 size={15} />
+                      <span>Exit Fullscreen</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 size={15} />
+                      <span>Fullscreen</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Compact Floating Controls Bar in Fullscreen (Auto-hides on idle) */}
+                {(isFullscreen || isPseudoFullscreen) && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '1.25rem',
+                      left: '1.25rem',
+                      zIndex: 30,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      backdropFilter: 'blur(10px)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '10px',
+                      padding: '0.35rem 0.65rem',
+                      opacity: controlsVisible ? 1 : 0,
+                      pointerEvents: controlsVisible ? 'auto' : 'none',
+                      transition: 'opacity 0.25s ease',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={toggleCameraFacing}
+                      disabled={!cameraActive}
+                      className="btn btn-outline btn-xs"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: '6px', color: '#fff' }}
+                    >
+                      <RotateCw size={13} />
+                      {facingMode === 'user' ? 'Front' : 'Rear'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleAudio}
+                      disabled={!cameraActive}
+                      className="btn btn-outline btn-xs"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: '6px', color: isAudioMuted ? '#f87171' : '#fff' }}
+                    >
+                      {isAudioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                      {isAudioMuted ? 'Muted' : 'Mic'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleToggleBreak}
+                      disabled={breakActionLoading}
+                      className="btn btn-outline btn-xs"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        borderRadius: '6px',
+                        background: breakState.isBreak ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
+                        color: breakState.isBreak ? '#fbbf24' : '#fff',
+                        borderColor: breakState.isBreak ? '#fbbf24' : 'inherit'
+                      }}
+                    >
+                      <Coffee size={13} />
+                      {breakState.isBreak ? 'Break' : 'Break'}
+                    </button>
+                    {/* Compact Zoom in Fullscreen */}
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '0.45rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => applyZoom(Math.max(1.0, +(zoomLevel - 0.2).toFixed(1)))}
+                        disabled={!cameraActive || zoomLevel <= 1.0}
+                        style={{ background: 'transparent', border: 'none', color: '#ffffff', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                        title="Zoom Out"
+                      >
+                        <Minus size={13} />
+                      </button>
+                      <input
+                        type="range"
+                        min="1.0"
+                        max={maxZoom}
+                        step="0.1"
+                        value={zoomLevel}
+                        onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                        disabled={!cameraActive}
+                        style={{ width: '55px', accentColor: '#38bdf8', cursor: 'pointer' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => applyZoom(Math.min(maxZoom, +(zoomLevel + 0.2).toFixed(1)))}
+                        disabled={!cameraActive || zoomLevel >= maxZoom}
+                        style={{ background: 'transparent', border: 'none', color: '#ffffff', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                        title="Zoom In"
+                      >
+                        <Plus size={13} />
+                      </button>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#38bdf8', minWidth: '30px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+                        {zoomLevel.toFixed(1)}x
+                      </span>
+                    </div>
+                    {/* Live Broadcast button */}
+                    {!isBroadcasting ? (
+                      <button
+                        type="button"
+                        onClick={handleStartMobileStream}
+                        disabled={actionLoading}
+                        className="btn btn-xs"
+                        style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: '#fff', fontWeight: 800, borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: '0.25rem' }}
+                      >
+                        <Radio size={13} /> Go Live
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleEndStream}
+                        disabled={actionLoading}
+                        className="btn btn-xs"
+                        style={{ background: 'linear-gradient(135deg, #475569, #334155)', color: '#fff', fontWeight: 800, borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: '0.25rem' }}
+                      >
+                        <Square size={13} /> Stop
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Active Grace Period Overlay during Live Broadcast */}
                 {isGracePeriod && (
@@ -1352,23 +1782,50 @@ export default function LiveStreamManagerModal({
                   <div
                     style={{
                       position: 'absolute',
-                      bottom: '0.75rem',
-                      left: '0.75rem',
-                      right: '0.75rem',
-                      background: 'rgba(15, 23, 42, 0.88)',
+                      bottom: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem',
+                      left: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem',
+                      right: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem',
+                      background: 'rgba(15, 23, 42, 0.90)',
                       backdropFilter: 'blur(10px)',
                       borderRadius: '10px',
                       padding: '0.5rem 0.85rem',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      border: '1px solid rgba(255, 255, 255, 0.18)',
                       display: 'flex',
                       justifyContent: 'space-between',
-                      alignItems: 'center'
+                      alignItems: 'center',
+                      zIndex: 25,
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                      pointerEvents: 'none'
                     }}
                   >
-                    <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#ffffff' }}>
-                      {teamAName} vs {teamBName}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.88rem', fontWeight: 800, color: '#ffffff', minWidth: 0, overflow: 'hidden' }}>
+                      {sidesSwapped ? (
+                        <>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {teamBName}
+                            {servingTeam === 'teamB' && <YellowPickleballIcon size={16} />}
+                          </span>
+                          <span style={{ color: '#64748b', fontWeight: 700, margin: '0 2px' }}>vs</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {teamAName}
+                            {servingTeam === 'teamA' && <YellowPickleballIcon size={16} />}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {teamAName}
+                            {servingTeam === 'teamA' && <YellowPickleballIcon size={16} />}
+                          </span>
+                          <span style={{ color: '#64748b', fontWeight: 700, margin: '0 2px' }}>vs</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {teamBName}
+                            {servingTeam === 'teamB' && <YellowPickleballIcon size={16} />}
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 900, color: '#38bdf8' }}>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 900, color: '#38bdf8', flexShrink: 0, fontVariantNumeric: 'tabular-nums', marginLeft: '0.75rem' }}>
                       {liveScore}
                     </div>
                   </div>
@@ -1377,7 +1834,7 @@ export default function LiveStreamManagerModal({
 
               {/* Camera & Broadcast Controls */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     onClick={toggleCameraFacing}
                     disabled={!cameraActive}
@@ -1418,6 +1875,52 @@ export default function LiveStreamManagerModal({
                     <Coffee size={14} />
                     {breakState.isBreak ? '⏸️ On Break • End' : 'Break'}
                   </button>
+
+                  {/* Zoom Controls */}
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      padding: '0.25rem 0.55rem',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)'
+                    }}
+                    title="Camera Zoom"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => applyZoom(Math.max(1.0, +(zoomLevel - 0.2).toFixed(1)))}
+                      disabled={!cameraActive || zoomLevel <= 1.0}
+                      style={{ background: 'transparent', border: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                      title="Zoom Out"
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <input
+                      type="range"
+                      min="1.0"
+                      max={maxZoom}
+                      step="0.1"
+                      value={zoomLevel}
+                      onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                      disabled={!cameraActive}
+                      style={{ width: '65px', accentColor: '#38bdf8', cursor: 'pointer' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => applyZoom(Math.min(maxZoom, +(zoomLevel + 0.2).toFixed(1)))}
+                      disabled={!cameraActive || zoomLevel >= maxZoom}
+                      style={{ background: 'transparent', border: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                      title="Zoom In"
+                    >
+                      <Plus size={13} />
+                    </button>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#38bdf8', minWidth: '34px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+                      {zoomLevel.toFixed(1)}x
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem' }}>

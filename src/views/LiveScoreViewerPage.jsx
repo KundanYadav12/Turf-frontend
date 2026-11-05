@@ -12,7 +12,7 @@ import MobileAdStrip from '../components/ads/MobileAdStrip';
 import {
   Radio, ArrowLeft, Share2, Check, Wifi, WifiOff,
   Clock, Calendar, Trophy, AlertCircle, RefreshCw, Zap,
-  ExternalLink, X, Shield, Users, Activity, Eye
+  ExternalLink, X, Shield, Users, Activity, Eye, Sparkles
 } from 'lucide-react';
 
 /**
@@ -329,6 +329,7 @@ export default function LiveScoreViewerPage({
               details: payload.details || prev.score?.details
             },
             resultSummary: payload.resultSummary || prev.resultSummary,
+            goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : prev.goldenPoint,
             winner: payload.winnerTeamId ? (payload.winnerTeamId === prev.teamA?.id ? 'team_a' : 'team_b') : prev.winner
           };
         });
@@ -396,6 +397,7 @@ export default function LiveScoreViewerPage({
     };
 
     socket.on('match:pickleballScore', handleScoreUpdate);
+    socket.on('match:sidesSwapped', handleScoreUpdate);
     socket.on('match:pointScored', handleScoreUpdate);
     socket.on('signage:pointScored', handleScoreUpdate);
     socket.on('match:undoPoint', handleScoreUpdate);
@@ -424,6 +426,7 @@ export default function LiveScoreViewerPage({
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('match:pickleballScore', handleScoreUpdate);
+      socket.off('match:sidesSwapped', handleScoreUpdate);
       socket.off('match:pointScored', handleScoreUpdate);
       socket.off('signage:pointScored', handleScoreUpdate);
       socket.off('match:undoPoint', handleScoreUpdate);
@@ -766,6 +769,58 @@ export default function LiveScoreViewerPage({
           {currentMatch.resultSummary && (
             <div style={{ marginTop: '0.85rem', padding: '0.5rem 0.85rem', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: 800, fontSize: '0.85rem', textAlign: 'center' }}>
               🏆 {currentMatch.resultSummary}
+            </div>
+          )}
+
+          {/* Golden Point Tie-Break Banner for Live Viewer */}
+          {currentMatch.goldenPoint?.active && (
+            <div style={{
+              marginTop: '0.85rem',
+              padding: '0.5rem 0.85rem',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #d97706, #b45309)',
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              flexWrap: 'wrap',
+              boxShadow: '0 4px 14px rgba(217, 119, 6, 0.4)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Sparkles size={16} color="#fef08a" />
+                <span>
+                  GOLDEN POINT • First to {currentMatch.goldenPoint.target || '...'} • 2 in a row wins
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {currentMatch.goldenPoint.streakCount > 0 && currentMatch.goldenPoint.streakTeam && (
+                  <span style={{
+                    background: 'rgba(0,0,0,0.3)',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    color: '#fef08a'
+                  }}>
+                    🔥 {currentMatch.goldenPoint.streakTeam === 'teamA' ? teamAName : teamBName} streak {currentMatch.goldenPoint.streakCount}/2
+                  </span>
+                )}
+                {currentMatch.goldenPoint.isGamePoint && (
+                  <span style={{
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontSize: '0.72rem',
+                    fontWeight: 900
+                  }}>
+                    ⚡ GAME POINT
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>
