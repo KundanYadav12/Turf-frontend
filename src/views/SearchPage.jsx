@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { getVenuesApi } from '../services/venueService';
 import { Search, MapPin, Filter, Star, ChevronDown, ChevronUp } from 'lucide-react';
+import OptimizedImage from '../components/common/OptimizedImage';
 
 const SearchPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -143,7 +144,14 @@ const SearchPage = () => {
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="venue-card-image">
-                    <img src={v.primaryImage} alt={v.name} />
+                    <OptimizedImage
+                      src={v.primaryImage}
+                      alt={v.name}
+                      preset="card"
+                      width={420}
+                      height={220}
+                      fallbackSrc="/placeholder-turf.jpg"
+                    />
                     <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem' }}>
                       <span className="badge badge-success" style={{ backdropFilter: 'blur(10px)' }}>
                         <Star size={12} fill="currentColor" /> {v.rating} ({v.reviewCount})

@@ -6,6 +6,7 @@ import FootballLiveCard from './FootballLiveCard';
 import BadmintonLiveCard from './BadmintonLiveCard';
 import CourtView from '../court/CourtView';
 import { Radio, Eye, EyeOff, Video } from 'lucide-react';
+import OptimizedImage from '../common/OptimizedImage';
 
 /**
  * High-performance memoized Live Match Card.
@@ -123,7 +124,7 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-heading, #ffffff)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
           {teamA?.logo && (
-            <img src={teamA.logo} alt={teamA.name} style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover' }} />
+            <OptimizedImage src={teamA.logo} preset="logo" width={22} height={22} alt={teamA.name} style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover' }} />
           )}
           <span>{teamA?.name}</span>
         </div>
@@ -131,7 +132,7 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem', flex: 1 }}>
           <span>{teamB?.name}</span>
           {teamB?.logo && (
-            <img src={teamB.logo} alt={teamB.name} style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover' }} />
+            <OptimizedImage src={teamB.logo} preset="logo" width={22} height={22} alt={teamB.name} style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover' }} />
           )}
         </div>
       </div>

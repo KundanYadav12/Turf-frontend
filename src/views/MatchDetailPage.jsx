@@ -10,6 +10,7 @@ import {
   Activity, RefreshCw, AlertCircle, Sparkles
 } from 'lucide-react';
 import ScoreCelebration from '../components/scorer/ScoreCelebration';
+import OptimizedImage from '../components/common/OptimizedImage';
 import CourtView, { getServeState, parseRacquetScoreDetails } from '../components/court/CourtView';
 import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 import LiveStreamManagerModal from '../components/streaming/LiveStreamManagerModal';
@@ -192,15 +193,23 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
     // Live score update handler for all sports (Cricket, Pickleball, Football, Badminton)
     const onScoreUpdate = (payload) => {
       if (!payload) return;
-      const targetId = payload.matchId || payload.matchUuid || payload.id;
-      if (targetId && String(targetId) !== String(id)) return;
+      const targetRouteId = String(id);
+      const isMatch =
+        String(payload.matchId || '') === targetRouteId ||
+        String(payload.matchUuid || '') === targetRouteId ||
+        String(payload.matchNumericId || '') === targetRouteId ||
+        String(payload.uuid || '') === targetRouteId ||
+        String(payload.id || '') === targetRouteId ||
+        String(payload.public_id || '') === targetRouteId;
+      if (!isMatch) return;
 
       setMatch((prev) => {
         if (!prev) return prev;
-        const newSummary = payload.scoreSummary || payload.liveScoreSummary || payload.summary || prev.score?.summary;
-        const newSubtext = payload.subtext || payload.liveSubtext || prev.score?.subtext;
+        const newSummary = payload.scoreSummary || payload.liveScoreSummary || payload.summary ||
+          (payload.teamAScore !== undefined && payload.teamBScore !== undefined ? `${payload.teamAScore} - ${payload.teamBScore}` : prev.score?.summary);
+        const newSubtext = payload.subtext !== undefined ? payload.subtext : (payload.liveSubtext !== undefined ? payload.liveSubtext : prev.score?.subtext);
         const newStatus = payload.status || prev.status;
-        const newDetails = payload.state || payload.details || prev.score?.details;
+        const newDetails = payload.sportState || payload.state || payload.details || prev.score?.details;
 
         return {
           ...prev,
@@ -211,11 +220,15 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
             subtext: newSubtext,
             details: newDetails
           },
+          sportState: payload.sportState || payload.state || prev.sportState,
+          sport_state: payload.sportState || payload.state || prev.sport_state,
+          sidesSwapped: payload.sidesSwapped !== undefined ? payload.sidesSwapped : prev.sidesSwapped,
           currentInnings: payload.state?.currentInnings || prev.currentInnings,
           overs: payload.state?.overs ?? prev.overs,
           wickets: payload.state?.wickets ?? prev.wickets,
           scoreA: payload.teamAScore ?? payload.scoreA ?? prev.scoreA,
           scoreB: payload.teamBScore ?? payload.scoreB ?? prev.scoreB,
+          scores: payload.scores || prev.scores,
           winnerTeamId: payload.winnerTeamId || prev.winnerTeamId,
           goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : prev.goldenPoint,
           resultSummary: payload.resultSummary || prev.resultSummary
@@ -237,6 +250,12 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
       }
     };
 
+    const handleConnect = () => {
+      socket.emit('join:match', { matchId: id });
+      fetchEvents();
+    };
+
+    socket.on('connect', handleConnect);
     socket.on('stream:status', onStreamStatus);
     socket.on('stream:status_changed', onStreamStatus);
     socket.on('stream:ended', onStreamEnded);
@@ -245,12 +264,16 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
     socket.on('match:pointScored', onScoreUpdate);
     socket.on('match:pickleballScore', onScoreUpdate);
     socket.on('match:badmintonEvent', onScoreUpdate);
+    socket.on('match:badmintonPoint', onScoreUpdate);
     socket.on('match:footballEvent', onScoreUpdate);
     socket.on('match:undone', onScoreUpdate);
+    socket.on('match:undoPoint', onScoreUpdate);
+    socket.on('match:sidesSwapped', onScoreUpdate);
     socket.on('tournament:matchUpdated', onScoreUpdate);
 
     return () => {
       socket.emit('leave:match', { matchId: id });
+      socket.off('connect', handleConnect);
       socket.off('stream:status', onStreamStatus);
       socket.off('stream:status_changed', onStreamStatus);
       socket.off('stream:ended', onStreamEnded);
@@ -259,8 +282,11 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
       socket.off('match:pointScored', onScoreUpdate);
       socket.off('match:pickleballScore', onScoreUpdate);
       socket.off('match:badmintonEvent', onScoreUpdate);
+      socket.off('match:badmintonPoint', onScoreUpdate);
       socket.off('match:footballEvent', onScoreUpdate);
       socket.off('match:undone', onScoreUpdate);
+      socket.off('match:undoPoint', onScoreUpdate);
+      socket.off('match:sidesSwapped', onScoreUpdate);
       socket.off('tournament:matchUpdated', onScoreUpdate);
     };
   }, [id]);
@@ -463,7 +489,15 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
       {/* Top Stadium Sponsor Banner */}
       {ads.topAd && (
         <div style={{ marginBottom: '1rem', textAlign: 'center', background: 'rgba(0,0,0,0.4)', borderRadius: 12, padding: '0.4rem', border: '1px solid var(--border-color)' }}>
-          <img src={ads.topAd.image_url} alt={ads.topAd.name} style={{ maxHeight: 42, maxWidth: '100%', objectFit: 'contain' }} />
+          <OptimizedImage
+            src={ads.topAd.image_url}
+            alt={ads.topAd.name}
+            preset="banner"
+            width={728}
+            height={48}
+            fit="contain"
+            style={{ maxHeight: 42, maxWidth: '100%', objectFit: 'contain' }}
+          />
         </div>
       )}
 

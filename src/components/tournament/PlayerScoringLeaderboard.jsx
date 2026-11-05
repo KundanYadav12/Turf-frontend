@@ -7,6 +7,7 @@ import {
   Award, Zap, CheckCircle2, AlertCircle, RefreshCw, User
 } from 'lucide-react';
 import { Link } from '../../lib/routerCompat';
+import OptimizedImage from '../common/OptimizedImage';
 
 /**
  * PlayerScoringLeaderboard Component
@@ -378,8 +379,11 @@ export default function PlayerScoringLeaderboard({ tournamentId, refreshTrigger 
                       {/* Photo / Avatar */}
                       <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
                         {player.photo ? (
-                          <img
+                          <OptimizedImage
                             src={player.photo}
+                            preset="avatar"
+                            width={34}
+                            height={34}
                             alt={player.name}
                             style={{
                               width: '34px',
@@ -387,13 +391,7 @@ export default function PlayerScoringLeaderboard({ tournamentId, refreshTrigger 
                               borderRadius: '50%',
                               objectFit: 'cover',
                               margin: '0 auto',
-                              display: 'block',
-                              border: '1.5px solid var(--border-color)'
-                            }}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                              const fallback = e.currentTarget.nextSibling;
-                              if (fallback) fallback.style.display = 'flex';
+                              display: 'block'
                             }}
                           />
                         ) : null}
@@ -658,8 +656,11 @@ export default function PlayerScoringLeaderboard({ tournamentId, refreshTrigger 
                 {/* Player Profile Summary */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-color)' }}>
                   {historyData.player?.photo ? (
-                    <img
+                    <OptimizedImage
                       src={historyData.player.photo}
+                      preset="avatar"
+                      width={56}
+                      height={56}
                       alt={historyData.player.name}
                       style={{
                         width: '56px',

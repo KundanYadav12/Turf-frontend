@@ -4,6 +4,7 @@ import { Link } from '../../../lib/routerCompat';
 import { getCourtSlotsApi } from '../../../services/bookingService';
 import CheckoutModal from '../../../components/player/CheckoutModal';
 import { MapPin, Star, Clock, ShieldCheck, CheckCircle, ChevronRight } from 'lucide-react';
+import OptimizedImage from '../../../components/common/OptimizedImage';
 
 export default function VenueDetailClient({ venue }) {
   const [selectedCourt, setSelectedCourt] = useState(venue.courts?.[0] || null);
@@ -94,8 +95,9 @@ export default function VenueDetailClient({ venue }) {
           </div>
 
           <div style={{ position: 'relative', width: '100%', height: 'clamp(220px, 35vw, 320px)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            <img
+            <OptimizedImage
               src={venue.primaryImage || '/placeholder-turf.jpg'}
+              preset="banner"
               alt={`${venue.name} Turf Arena in ${venue.city}`}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />

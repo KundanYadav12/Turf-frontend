@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { getOptimizedImageUrl } from '../../utils/imageUrl';
 
 /**
  * MobileAdStrip: Continuous, GPU-Accelerated, Seamless Infinite Loop Ad Strip
@@ -152,7 +153,7 @@ export default function MobileAdStrip({
       >
         {(ad.imageUrl || ad.image_url) ? (
           <img
-            src={ad.imageUrl || ad.image_url}
+            src={getOptimizedImageUrl(ad.imageUrl || ad.image_url, { height: height, fit: fit })}
             alt={ad.title || 'Sponsor Ad'}
             style={{
               height: `calc(100% - 10px)`,

@@ -12,6 +12,7 @@ import {
   getRoleConfig,
   CRICKET_EXTRAS
 } from '../../config/sportRoles';
+import OptimizedImage from '../common/OptimizedImage';
 
 export default function TeamRosterDrawer({
   isOpen,
@@ -402,8 +403,11 @@ export default function TeamRosterDrawer({
           {/* Team identity card in header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {teamLogo ? (
-              <img
+              <OptimizedImage
                 src={teamLogo}
+                preset="logo"
+                width={52}
+                height={52}
                 alt={teamName}
                 style={{
                   width: 52,
@@ -1083,8 +1087,11 @@ export default function TeamRosterDrawer({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
                       <div style={{ position: 'relative', flexShrink: 0 }}>
                         {player.avatar ? (
-                          <img
+                          <OptimizedImage
                             src={player.avatar}
+                            preset="avatar"
+                            width={42}
+                            height={42}
                             alt={player.name}
                             style={{
                               width: 42,

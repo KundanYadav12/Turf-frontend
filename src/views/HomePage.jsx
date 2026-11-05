@@ -4,6 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { getSportsApi, getVenuesApi } from '../services/venueService';
 import { setVenues, setSelectedSport, setSelectedCity } from '../features/venue/venueSlice';
 import { Search, MapPin, Star, ChevronRight, ShieldCheck, Zap, Award, Sparkles } from 'lucide-react';
+import OptimizedImage from '../components/common/OptimizedImage';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -195,7 +196,14 @@ const HomePage = () => {
                 style={{ cursor: 'pointer' }}
               >
                 <div className="venue-card-image">
-                  <img src={v.primaryImage} alt={v.name} />
+                  <OptimizedImage
+                    src={v.primaryImage}
+                    alt={v.name}
+                    preset="card"
+                    width={420}
+                    height={220}
+                    fallbackSrc="/placeholder-turf.jpg"
+                  />
                   <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem' }}>
                     <span className="badge badge-success" style={{ backdropFilter: 'blur(10px)' }}>
                       <Star size={12} fill="currentColor" /> {v.rating} ({v.reviewCount})

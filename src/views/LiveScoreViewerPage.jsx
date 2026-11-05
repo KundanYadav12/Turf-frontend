@@ -9,6 +9,7 @@ import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 import TeamLogoAvatar from '../components/common/TeamLogoAvatar';
 import CourtView from '../components/court/CourtView';
 import MobileAdStrip from '../components/ads/MobileAdStrip';
+import OptimizedImage from '../components/common/OptimizedImage';
 import {
   Radio, ArrowLeft, Share2, Check, Wifi, WifiOff,
   Clock, Calendar, Trophy, AlertCircle, RefreshCw, Zap,
@@ -891,9 +892,13 @@ export default function LiveScoreViewerPage({
                 <div style={{ position: 'absolute', top: 6, left: 8, zIndex: 5, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 800, color: '#10b981', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                   Official Sponsor
                 </div>
-                <img
+                <OptimizedImage
                   src={ad.imageUrl}
                   alt={ad.title || 'Sponsor'}
+                  preset="card"
+                  width={600}
+                  height={110}
+                  objectFit={ad.imageFit || 'contain'}
                   style={{ width: '100%', height: 'auto', maxHeight: '110px', objectFit: ad.imageFit || 'contain', display: 'block' }}
                 />
               </a>
@@ -933,9 +938,13 @@ export default function LiveScoreViewerPage({
             Featured Partner
           </div>
           <a href={adsData.leftAds[0].linkUrl || '#'} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
-            <img
+            <OptimizedImage
               src={adsData.leftAds[0].imageUrl}
               alt="Partner"
+              preset="card"
+              width={400}
+              height={120}
+              objectFit="contain"
               style={{ width: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '8px' }}
             />
           </a>

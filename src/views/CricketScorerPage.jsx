@@ -7,6 +7,7 @@ import api from '../services/api';
 import { setCredentials } from '../features/auth/authSlice';
 import { socket } from '../services/socket';
 import BoundaryCelebration from '../components/scorer/BoundaryCelebration';
+import { getOptimizedImageUrl } from '../utils/imageUrl';
 import {
   ArrowLeft,
   RotateCcw,
@@ -647,8 +648,10 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
           }}
         >
           <img
-            src={ads.topAd.image_url}
+            src={getOptimizedImageUrl(ads.topAd.image_url, { width: 600, height: 42, fit: 'contain', quality: 80 })}
             alt={ads.topAd.name}
+            loading="lazy"
+            decoding="async"
             style={{ maxHeight: '38px', objectFit: 'contain', borderRadius: '4px' }}
           />
         </div>
@@ -1745,8 +1748,10 @@ const CricketScorerPage = ({ matchId: propsMatchId } = {}) => {
           }}
         >
           <img
-            src={ads.bottomAd.image_url}
+            src={getOptimizedImageUrl(ads.bottomAd.image_url, { width: 600, height: 36, fit: 'contain', quality: 80 })}
             alt={ads.bottomAd.name}
+            loading="lazy"
+            decoding="async"
             style={{ maxHeight: '32px', objectFit: 'contain', borderRadius: '4px' }}
           />
         </div>

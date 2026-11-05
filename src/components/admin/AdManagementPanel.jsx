@@ -84,6 +84,9 @@ const PRESET_SIZES = [
   { id: 'MEDIUM_RECTANGLE', label: 'Medium Rectangle (300px × 250px)', width: '300px', height: '250px', fit: 'cover' },
   { id: 'SKYSCRAPER', label: 'Skyscraper (160px × 600px)', width: '160px', height: '600px', fit: 'contain' },
   { id: 'WIDE_SKYSCRAPER', label: 'Wide Skyscraper (260px × 600px)', width: '260px', height: '600px', fit: 'contain' },
+  { id: 'CORNER_SMALL', label: 'Corner Logo - Small (8% of width)', width: '8%', height: 'auto', fit: 'contain' },
+  { id: 'CORNER_MEDIUM', label: 'Corner Logo - Medium (12% of width - Recommended)', width: '12%', height: 'auto', fit: 'contain' },
+  { id: 'CORNER_LARGE', label: 'Corner Logo - Large (16% of width)', width: '16%', height: 'auto', fit: 'contain' },
   { id: 'FULL_WIDTH', label: 'Full Width Stretch (100% × Auto)', width: '100%', height: 'auto', fit: 'cover' },
   { id: 'CUSTOM', label: 'Custom Width & Height', width: '300px', height: '200px', fit: 'contain' }
 ];
@@ -159,6 +162,8 @@ const AdManagementPanel = () => {
     targetPage: 'ALL',
     deviceTarget: 'ALL',
     devices: ['MOBILE', 'TV', 'SIGNAGE'],
+    opacity: 100,
+    margin: '2%',
     imageFile: null
   });
   const [formImagePreview, setFormImagePreview] = useState('');
@@ -714,10 +719,12 @@ const AdManagementPanel = () => {
     return { val: defaultVal, unit: defaultUnit };
   };
 
-  const openCreateModal = (initialPosition = 'TOP') => {
+  const openCreateModal = (posParam = 'TOP') => {
     setEditingAd(null);
     setModalError('');
     setTournamentSearchQuery('');
+
+    const initialPosition = (typeof posParam === 'string' && posParam) ? posParam : 'TOP';
 
     const isCourtMiddle = initialPosition === 'COURT_MIDDLE';
     const isMobileTop = initialPosition === 'MOBILE_TOP';
@@ -727,6 +734,7 @@ const AdManagementPanel = () => {
     const isStreamLeft = initialPosition === 'STREAM_LEFT';
     const isStreamRight = initialPosition === 'STREAM_RIGHT';
     const isStreamBreak = initialPosition === 'STREAM_BREAK';
+    const isCornerLogo = initialPosition === 'STREAM_TOP_LEFT' || initialPosition === 'STREAM_TOP_RIGHT' || initialPosition === 'top_left' || initialPosition === 'top_right';
 
     let defaultPreset = 'RESPONSIVE';
     let defaultWidth = '100%';
@@ -800,6 +808,17 @@ const AdManagementPanel = () => {
       defaultHeightVal = 100;
       defaultHeightUnit = '%';
       defaultFit = 'contain';
+    } else if (isCornerLogo) {
+      defaultPreset = 'MEDIUM';
+      defaultWidth = '12%';
+      defaultWidthVal = 12;
+      defaultWidthUnit = '%';
+      defaultHeight = 'auto';
+      defaultHeightVal = 100;
+      defaultHeightUnit = '%';
+      defaultFit = 'contain';
+      defaultMotion = 'STATIC';
+      defaultDevices = ['STREAM', 'MOBILE', 'TV'];
     }
 
     setFormData({
@@ -818,7 +837,9 @@ const AdManagementPanel = () => {
       motionType: defaultMotion,
       movementDirection: defaultDir,
       speed: defaultSpeed,
-      slideInterval: 6,
+      slideInterval: isCornerLogo ? 8 : 6,
+      opacity: 100,
+      margin: '2%',
       pauseOnHover: true,
       venueIds: [],
       tournamentIds: [],
@@ -846,7 +867,7 @@ const AdManagementPanel = () => {
       title: ad.title || '',
       description: ad.description || '',
       linkUrl: ad.linkUrl || ad.clickUrl || '',
-      position: ad.position || 'TOP',
+      position: (typeof ad?.position === 'string' && ad.position) ? ad.position : 'TOP',
       sizePreset: ad.sizePreset || 'RESPONSIVE',
       width: ad.width || '100%',
       height: ad.height || 'auto',
@@ -859,6 +880,8 @@ const AdManagementPanel = () => {
       movementDirection: ad.movementDirection || (ad.position === 'LEFT' || ad.position === 'RIGHT' ? 'BOTTOM_TO_TOP' : 'RIGHT_TO_LEFT'),
       speed: ad.speed || 25,
       slideInterval: ad.slideInterval || 6,
+      opacity: ad.opacity != null ? Math.min(100, Math.max(30, parseInt(ad.opacity, 10))) : 100,
+      margin: ad.margin || '2%',
       pauseOnHover: ad.pauseOnHover !== false,
       venueIds: Array.isArray(ad.venueIds) ? ad.venueIds : [],
       tournamentIds: Array.isArray(ad.tournamentIds) ? ad.tournamentIds : (ad.tournamentId ? [ad.tournamentId] : []),
@@ -924,6 +947,11 @@ const AdManagementPanel = () => {
         nextMotion = 'STATIC';
       } else if (preset.id === 'COURT_MIDDLE_STRIP') {
         nextPos = 'COURT_MIDDLE';
+        nextMotion = 'STATIC';
+      } else if (preset.id === 'CORNER_SMALL' || preset.id === 'CORNER_MEDIUM' || preset.id === 'CORNER_LARGE') {
+        if (prev.position !== 'STREAM_TOP_LEFT' && prev.position !== 'STREAM_TOP_RIGHT') {
+          nextPos = 'STREAM_TOP_LEFT';
+        }
         nextMotion = 'STATIC';
       } else if (preset.id === 'SIGNAGE_TOP_BANNER' || preset.id === 'LEADERBOARD' || preset.id === 'LARGE_LEADERBOARD') {
         nextPos = 'TOP';
@@ -1009,6 +1037,8 @@ const AdManagementPanel = () => {
       payload.append('displayMode', formData.motionType === 'STATIC' ? 'STATIC' : 'MOTION');
       payload.append('speed', formData.speed || 25);
       payload.append('slideInterval', formData.slideInterval || 6);
+      payload.append('opacity', formData.opacity != null ? formData.opacity : 100);
+      payload.append('margin', formData.margin || '2%');
       payload.append('pauseOnHover', formData.pauseOnHover ? 'true' : 'false');
       payload.append('sortOrder', formData.sortOrder);
       payload.append('status', formData.status);
@@ -1082,149 +1112,183 @@ const AdManagementPanel = () => {
   const streamLeftAds = filterAds(ads.filter(a => a.position === 'STREAM_LEFT' || a.position === 'stream_left'));
   const streamRightAds = filterAds(ads.filter(a => a.position === 'STREAM_RIGHT' || a.position === 'stream_right'));
   const streamBreakAds = filterAds(ads.filter(a => a.position === 'STREAM_BREAK' || a.position === 'stream_break'));
+  const streamTopLeftAds = filterAds(ads.filter(a => a.position === 'STREAM_TOP_LEFT' || a.position === 'top_left' || a.position === 'STREAM_CORNER_TOP_LEFT'));
+  const streamTopRightAds = filterAds(ads.filter(a => a.position === 'STREAM_TOP_RIGHT' || a.position === 'top_right' || a.position === 'STREAM_CORNER_TOP_RIGHT'));
+  const isCornerLogo = formData.position === 'STREAM_TOP_LEFT' || formData.position === 'STREAM_TOP_RIGHT' || formData.position === 'top_left' || formData.position === 'top_right';
 
-  const renderStreamTable = (tableTitle, adsList, positionKey, accentColor) => (
-    <div style={{ marginBottom: '2rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor }} />
-          <h4 style={{ fontSize: '0.95rem', margin: 0, fontWeight: 800, color: '#f8fafc' }}>
-            {tableTitle}
-          </h4>
-        </div>
-        <button
-          type="button"
-          onClick={() => openCreateModal(positionKey)}
-          className="btn btn-sm"
-          style={{ fontSize: '0.75rem', padding: '3px 8px', background: 'rgba(255,255,255,0.06)', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 4 }}
-        >
-          <Plus size={12} /> Add {positionKey.replace('STREAM_', '')} Ad
-        </button>
-      </div>
+  const renderStreamTable = (tableTitle, adsList, positionKey, accentColor, customBtnLabel) => {
+    const isCorner = positionKey === 'STREAM_TOP_LEFT' || positionKey === 'STREAM_TOP_RIGHT';
+    const btnLabel = customBtnLabel || `Add ${positionKey.replace('STREAM_', '')} Ad`;
 
-      {adsList.length === 0 ? (
-        <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 10, fontSize: '0.84rem' }}>
-          No {tableTitle} configured yet. Click &quot;Add {positionKey.replace('STREAM_', '')} Ad&quot; to create one.
+    return (
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor }} />
+            <h4 style={{ fontSize: '0.95rem', margin: 0, fontWeight: 800, color: '#f8fafc' }}>
+              {tableTitle}
+            </h4>
+          </div>
+          <button
+            type="button"
+            onClick={() => openCreateModal(positionKey)}
+            className="btn btn-sm"
+            style={{ fontSize: '0.75rem', padding: '3px 8px', background: 'rgba(255,255,255,0.06)', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            <Plus size={12} /> {btnLabel}
+          </button>
         </div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Preview</th>
-                <th>Title</th>
-                <th>Preset / Sizing</th>
-                <th>Fit</th>
-                <th>Motion</th>
-                <th>Tournament</th>
-                <th>Venue</th>
-                <th>Device</th>
-                <th>Order</th>
-                <th>Schedule</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adsList.map(ad => (
-                <tr key={ad.id}>
-                  <td>
-                    <img
-                      src={ad.imageUrl}
-                      alt={ad.title}
-                      onClick={() => setPreviewModal(ad)}
-                      style={{ width: 70, height: 32, objectFit: ad.imageFit || 'contain', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.4)' }}
-                    />
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700 }}>{ad.title}</div>
-                    {ad.description && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.description}</div>}
-                    {ad.linkUrl && <div style={{ fontSize: '0.68rem', color: '#60a5fa', textDecoration: 'underline' }}>{ad.linkUrl}</div>}
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {ad.sizePreset || 'CUSTOM'}
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{ad.width || '100%'} × {ad.height || 'auto'}</div>
-                  </td>
-                  <td>
-                    <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
-                      {ad.imageFit || 'contain'}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: accentColor }}>
-                      {ad.motionType || 'STATIC'} {ad.motionType === 'SCROLL' ? (ad.movementDirection === 'LEFT_TO_RIGHT' ? '(LTR)' : '(RTL)') : ''}
-                    </span>
-                  </td>
-                  <td>
-                    {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
-                      <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
-                        All Tournaments
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
-                        {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    {!ad.venueIds || ad.venueIds.length === 0 ? (
-                      <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
-                        All Venues
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
-                        {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-main)', fontWeight: 600 }}>
-                      {ad.devices && ad.devices.length ? ad.devices.join(', ') : 'All Devices'}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
-                    {ad.sortOrder ?? 0}
-                  </td>
-                  <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
-                  </td>
-                  <td>
-                    <span
-                      onClick={() => handleToggleStatus(ad)}
-                      style={{
-                        cursor: 'pointer',
-                        padding: '3px 8px',
-                        borderRadius: 6,
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-                        color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
-                      }}
-                    >
-                      {ad.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                      <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
-                        <Eye size={14} />
-                      </button>
-                      <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
+
+        {adsList.length === 0 ? (
+          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.15)', borderRadius: 10, fontSize: '0.84rem' }}>
+            No {tableTitle} configured yet. Click &quot;{btnLabel}&quot; to create one.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Preview</th>
+                  <th>Title</th>
+                  <th>{isCorner ? 'Size' : 'Preset / Sizing'}</th>
+                  {isCorner && <th>Opacity</th>}
+                  {isCorner && <th>Margin</th>}
+                  {isCorner && <th>Rotation</th>}
+                  {!isCorner && <th>Fit</th>}
+                  {!isCorner && <th>Motion</th>}
+                  <th>Tournament</th>
+                  <th>Venue</th>
+                  <th>Device</th>
+                  <th>Order</th>
+                  <th>Schedule</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+              </thead>
+              <tbody>
+                {adsList.map(ad => (
+                  <tr key={ad.id}>
+                    <td>
+                      <img
+                        src={ad.imageUrl}
+                        alt={ad.title}
+                        onClick={() => setPreviewModal(ad)}
+                        style={{ width: 70, height: 32, objectFit: ad.imageFit || 'contain', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.4)' }}
+                      />
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 700 }}>{ad.title}</div>
+                      {ad.description && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{ad.description}</div>}
+                      {ad.linkUrl && <div style={{ fontSize: '0.68rem', color: '#60a5fa', textDecoration: 'underline' }}>{ad.linkUrl}</div>}
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {ad.sizePreset || (isCorner ? 'MEDIUM' : 'CUSTOM')}
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{ad.width || (isCorner ? '12%' : '100%')} × {ad.height || 'auto'}</div>
+                    </td>
+                    {isCorner && (
+                      <td>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(56,189,248,0.15)', color: '#38bdf8' }}>
+                          {ad.opacity != null ? ad.opacity : 100}%
+                        </span>
+                      </td>
+                    )}
+                    {isCorner && (
+                      <td style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                        {ad.margin || '2%'}
+                      </td>
+                    )}
+                    {isCorner && (
+                      <td>
+                        <span style={{ fontSize: '0.78rem', color: '#a78bfa', fontWeight: 600 }}>
+                          {ad.slideInterval || 8}s
+                        </span>
+                      </td>
+                    )}
+                    {!isCorner && (
+                      <td>
+                        <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
+                          {ad.imageFit || 'contain'}
+                        </span>
+                      </td>
+                    )}
+                    {!isCorner && (
+                      <td>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: accentColor }}>
+                          {ad.motionType || 'STATIC'} {ad.motionType === 'SCROLL' ? (ad.movementDirection === 'LEFT_TO_RIGHT' ? '(LTR)' : '(RTL)') : ''}
+                        </span>
+                      </td>
+                    )}
+                    <td>
+                      {!ad.tournamentIds || ad.tournamentIds.length === 0 ? (
+                        <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>
+                          All Tournaments
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.tournamentIds.map(id => tournamentMap[id] || ad.tournamentName || `Tournament #${id}`).join(', ')}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {!ad.venueIds || ad.venueIds.length === 0 ? (
+                        <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 600 }}>
+                          All Venues
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {ad.venueIds.map(id => venueMap[id] || `Venue #${id}`).join(', ')}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-main)', fontWeight: 600 }}>
+                        {ad.devices && ad.devices.length ? ad.devices.join(', ') : 'All Devices'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
+                      {ad.sortOrder ?? 0}
+                    </td>
+                    <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Always'} → {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Forever'}
+                    </td>
+                    <td>
+                      <span
+                        onClick={() => handleToggleStatus(ad)}
+                        style={{
+                          cursor: 'pointer',
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          background: ad.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                          color: ad.status === 'ACTIVE' ? '#10b981' : '#ef4444'
+                        }}
+                      >
+                        {ad.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button onClick={() => setPreviewModal(ad)} title="Preview" className="btn btn-sm" style={{ padding: '4px 8px' }}>
+                          <Eye size={14} />
+                        </button>
+                        <button onClick={() => openEditModal(ad)} title="Edit Advertisement" className="btn btn-sm" style={{ padding: '4px 8px', color: 'var(--accent-primary, #10b981)' }}>
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => handleDelete(ad.id)} title="Delete" className="btn btn-sm" style={{ padding: '4px 8px', color: '#ef4444' }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -1317,7 +1381,7 @@ const AdManagementPanel = () => {
             </div>
 
             <button
-              onClick={openCreateModal}
+              onClick={() => openCreateModal('TOP')}
               className="btn btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}
             >
@@ -3847,6 +3911,12 @@ const AdManagementPanel = () => {
             <span style={{ fontSize: '0.82rem', background: 'rgba(139,92,246,0.15)', color: '#a78bfa', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
               {streamBreakAds.length} Break
             </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {streamTopLeftAds.length} Top-Left
+            </span>
+            <span style={{ fontSize: '0.82rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '4px 10px', borderRadius: 8, fontWeight: 700 }}>
+              {streamTopRightAds.length} Top-Right
+            </span>
             <button
               type="button"
               onClick={() => openCreateModal('STREAM_TOP')}
@@ -3872,6 +3942,12 @@ const AdManagementPanel = () => {
 
         {/* 6E. Stream Match Break Ads */}
         {renderStreamTable('6E. Stream Match Break (Full-player sponsor carousel on timeout/interval)', streamBreakAds, 'STREAM_BREAK', '#8b5cf6')}
+
+        {/* 6F. Stream Corner Logo - Top Left */}
+        {renderStreamTable('6F. Stream Corner Logo - Top Left (logo over video)', streamTopLeftAds, 'STREAM_TOP_LEFT', '#38bdf8', '+ Add TOP-LEFT Logo')}
+
+        {/* 6G. Stream Corner Logo - Top Right */}
+        {renderStreamTable('6G. Stream Corner Logo - Top Right (logo over video)', streamTopRightAds, 'STREAM_TOP_RIGHT', '#10b981', '+ Add TOP-RIGHT Logo')}
       </div>
 
       {/* ── ADVANCED AD CONFIGURATION / UPLOAD MODAL ── */}
@@ -4016,6 +4092,9 @@ const AdManagementPanel = () => {
                         nextDir = 'BOTTOM_TO_TOP';
                       } else if (nextPos === 'STREAM_BREAK') {
                         nextMotion = 'STATIC';
+                      } else if (nextPos === 'STREAM_TOP_LEFT' || nextPos === 'STREAM_TOP_RIGHT') {
+                        nextMotion = 'STATIC';
+                        nextDir = 'RIGHT_TO_LEFT';
                       } else if (nextPos === 'COURT_MIDDLE') {
                         nextMotion = 'STATIC';
                         nextDir = 'RIGHT_TO_LEFT';
@@ -4023,19 +4102,22 @@ const AdManagementPanel = () => {
                         nextDir = 'BOTTOM_TO_TOP';
                       }
 
+                      const isCorner = nextPos === 'STREAM_TOP_LEFT' || nextPos === 'STREAM_TOP_RIGHT';
+
                       setFormData(prev => ({
                         ...prev,
                         position: nextPos,
                         motionType: nextMotion,
                         movementDirection: nextDir,
-                        height: nextPos === 'MOBILE_TOP' ? '64px' : nextPos === 'MOBILE_BOTTOM' ? '56px' : nextPos === 'STREAM_TOP' ? '48px' : nextPos === 'STREAM_BOTTOM' ? '52px' : nextPos === 'STREAM_BREAK' ? '100%' : nextPos === 'COURT_MIDDLE' ? '240px' : prev.height,
-                        heightValue: nextPos === 'MOBILE_TOP' ? 64 : nextPos === 'MOBILE_BOTTOM' ? 56 : nextPos === 'STREAM_TOP' ? 48 : nextPos === 'STREAM_BOTTOM' ? 52 : nextPos === 'STREAM_BREAK' ? 100 : nextPos === 'COURT_MIDDLE' ? 240 : prev.heightValue,
-                        heightUnit: nextPos === 'STREAM_BREAK' ? '%' : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? '%' : prev.heightUnit,
-                        width: nextPos === 'COURT_MIDDLE' ? '80px' : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? '140px' : nextPos === 'STREAM_BREAK' ? '100%' : prev.width,
-                        widthValue: nextPos === 'COURT_MIDDLE' ? 80 : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? 140 : nextPos === 'STREAM_BREAK' ? 100 : prev.widthValue,
-                        widthUnit: nextPos === 'COURT_MIDDLE' || nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT' ? 'px' : prev.widthUnit,
-                        imageFit: nextPos === 'COURT_MIDDLE' ? 'cover' : nextPos === 'STREAM_BREAK' ? 'contain' : prev.imageFit,
-                        sizePreset: nextPos === 'STREAM_TOP' ? 'STREAM_TOP_STRIP' : nextPos === 'STREAM_BOTTOM' ? 'STREAM_BOTTOM_STRIP' : nextPos === 'STREAM_LEFT' ? 'STREAM_SIDEBAR_LEFT' : nextPos === 'STREAM_RIGHT' ? 'STREAM_SIDEBAR_RIGHT' : nextPos === 'STREAM_BREAK' ? 'STREAM_BREAK_CARD' : prev.sizePreset
+                        height: isCorner ? 'auto' : nextPos === 'MOBILE_TOP' ? '64px' : nextPos === 'MOBILE_BOTTOM' ? '56px' : nextPos === 'STREAM_TOP' ? '48px' : nextPos === 'STREAM_BOTTOM' ? '52px' : nextPos === 'STREAM_BREAK' ? '100%' : nextPos === 'COURT_MIDDLE' ? '240px' : prev.height,
+                        heightValue: isCorner ? 100 : nextPos === 'MOBILE_TOP' ? 64 : nextPos === 'MOBILE_BOTTOM' ? 56 : nextPos === 'STREAM_TOP' ? 48 : nextPos === 'STREAM_BOTTOM' ? 52 : nextPos === 'STREAM_BREAK' ? 100 : nextPos === 'COURT_MIDDLE' ? 240 : prev.heightValue,
+                        heightUnit: isCorner ? '%' : nextPos === 'STREAM_BREAK' ? '%' : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? '%' : prev.heightUnit,
+                        width: isCorner ? '12%' : nextPos === 'COURT_MIDDLE' ? '80px' : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? '140px' : nextPos === 'STREAM_BREAK' ? '100%' : prev.width,
+                        widthValue: isCorner ? 12 : nextPos === 'COURT_MIDDLE' ? 80 : (nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT') ? 140 : nextPos === 'STREAM_BREAK' ? 100 : prev.widthValue,
+                        widthUnit: isCorner ? '%' : nextPos === 'COURT_MIDDLE' || nextPos === 'STREAM_LEFT' || nextPos === 'STREAM_RIGHT' ? 'px' : prev.widthUnit,
+                        imageFit: isCorner ? 'contain' : nextPos === 'COURT_MIDDLE' ? 'cover' : nextPos === 'STREAM_BREAK' ? 'contain' : prev.imageFit,
+                        sizePreset: isCorner ? 'CORNER_MEDIUM' : nextPos === 'STREAM_TOP' ? 'STREAM_TOP_STRIP' : nextPos === 'STREAM_BOTTOM' ? 'STREAM_BOTTOM_STRIP' : nextPos === 'STREAM_LEFT' ? 'STREAM_SIDEBAR_LEFT' : nextPos === 'STREAM_RIGHT' ? 'STREAM_SIDEBAR_RIGHT' : nextPos === 'STREAM_BREAK' ? 'STREAM_BREAK_CARD' : prev.sizePreset,
+                        slideInterval: isCorner ? 8 : prev.slideInterval
                       }));
                     }}
                     style={{ ...selectStyle, width: '100%' }}
@@ -4054,6 +4136,8 @@ const AdManagementPanel = () => {
                     <option value="STREAM_LEFT" style={optionStyle}>Stream Left Sidebar (Beside Viewer Video)</option>
                     <option value="STREAM_RIGHT" style={optionStyle}>Stream Right Sidebar (Beside Viewer Video)</option>
                     <option value="STREAM_BREAK" style={optionStyle}>Stream Match Break (Full-Player Sponsor Card)</option>
+                    <option value="STREAM_TOP_LEFT" style={optionStyle}>Stream Corner Logo - Top Left (Over Video)</option>
+                    <option value="STREAM_TOP_RIGHT" style={optionStyle}>Stream Corner Logo - Top Right (Over Video)</option>
                   </select>
                 </div>
 
@@ -4074,196 +4158,315 @@ const AdManagementPanel = () => {
                 </div>
               </div>
 
-              {/* SECTION 2: AD DIMENSIONS & FIT CONTROLS */}
-              <div style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 12,
-                padding: '1.25rem',
-                marginBottom: '1.25rem'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                  <Sliders size={16} color="var(--accent-primary, #10b981)" />
-                  <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>Dimensions &amp; Image Fit Controls</span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '0.75rem' }}>
-                  {/* Width Control */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Width</label>
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      <input
-                        type="number"
-                        min={10}
-                        max={3000}
-                        value={formData.widthValue}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          setFormData(prev => ({
-                            ...prev,
-                            sizePreset: 'CUSTOM',
-                            widthValue: val,
-                            width: `${val}${prev.widthUnit}`
-                          }));
-                        }}
-                        style={{ ...inputStyle, flex: 1 }}
-                      />
-                      <select
-                        value={formData.widthUnit}
-                        onChange={(e) => {
-                          const u = e.target.value;
-                          setFormData(prev => ({
-                            ...prev,
-                            sizePreset: 'CUSTOM',
-                            widthUnit: u,
-                            width: `${prev.widthValue}${u}`
-                          }));
-                        }}
-                        style={{ ...selectStyle, width: 70 }}
-                      >
-                        <option value="px" style={optionStyle}>px</option>
-                        <option value="%" style={optionStyle}>%</option>
-                        <option value="vw" style={optionStyle}>vw</option>
-                      </select>
-                    </div>
+              {/* SPECIALIZED CORNER LOGO SETTINGS */}
+              {isCornerLogo ? (
+                <div style={{
+                  background: 'rgba(56, 189, 248, 0.05)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  borderRadius: 12,
+                  padding: '1.25rem',
+                  marginBottom: '1.25rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                    <Sparkles size={16} color="#38bdf8" />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#38bdf8' }}>
+                      Broadcast Corner Logo Overlay Settings
+                    </span>
                   </div>
 
-                  {/* Height Control */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Height</label>
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      <input
-                        type="number"
-                        min={10}
-                        max={2000}
-                        value={formData.heightValue}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          setFormData(prev => ({
-                            ...prev,
-                            sizePreset: 'CUSTOM',
-                            heightValue: val,
-                            height: `${val}${prev.heightUnit}`
-                          }));
-                        }}
-                        style={{ ...inputStyle, flex: 1 }}
-                      />
-                      <select
-                        value={formData.heightUnit}
-                        onChange={(e) => {
-                          const u = e.target.value;
-                          setFormData(prev => ({
-                            ...prev,
-                            sizePreset: 'CUSTOM',
-                            heightUnit: u,
-                            height: `${prev.heightValue}${u}`
-                          }));
-                        }}
-                        style={{ ...selectStyle, width: 70 }}
-                      >
-                        <option value="px" style={optionStyle}>px</option>
-                        <option value="vh" style={optionStyle}>vh</option>
-                        <option value="%" style={optionStyle}>%</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Image Fit Selector */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Image Fit (Preserve Ratio)</label>
-                    <select
-                      value={formData.imageFit}
-                      onChange={(e) => setFormData(prev => ({ ...prev, imageFit: e.target.value }))}
-                      style={{ ...selectStyle, width: '100%' }}
-                    >
-                      <option value="contain" style={optionStyle}>Contain (Preserve Full Asset)</option>
-                      <option value="cover" style={optionStyle}>Cover (Fill Container Edge-to-Edge)</option>
-                      <option value="fill" style={optionStyle}>Fill (Stretch to Exactly Match)</option>
-                      <option value="scale-down" style={optionStyle}>Scale-Down</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3: MOTION & ANIMATION SETTINGS */}
-              <div style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 12,
-                padding: '1.25rem',
-                marginBottom: '1.25rem'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                  <Move size={16} color="var(--accent-secondary, #06b6d4)" />
-                  <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>Display Behavior &amp; Movement Motion</span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '0.85rem' }}>
-                  {/* Motion Type */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Motion Mode</label>
-                    <select
-                      value={formData.motionType}
-                      onChange={(e) => setFormData(prev => ({ ...prev, motionType: e.target.value }))}
-                      style={{ ...selectStyle, width: '100%' }}
-                    >
-                      <option value="STATIC" style={optionStyle}>Static (Stationary Display)</option>
-                      <option value="SCROLL" style={optionStyle}>Continuous Scroll (Marquee)</option>
-                      <option value="CAROUSEL" style={optionStyle}>Auto Carousel Slideshow</option>
-                      <option value="SLIDE" style={optionStyle}>Slide-In Transition</option>
-                      <option value="CROSSFADE" style={optionStyle}>Smooth Crossfade</option>
-                    </select>
-                  </div>
-
-                  {/* Movement Direction */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Direction</label>
-                    <select
-                      value={formData.movementDirection}
-                      disabled={formData.motionType === 'STATIC'}
-                      onChange={(e) => setFormData(prev => ({ ...prev, movementDirection: e.target.value }))}
-                      style={{ ...selectStyle, width: '100%', opacity: formData.motionType === 'STATIC' ? 0.6 : 1 }}
-                    >
-                      <option value="RIGHT_TO_LEFT" style={optionStyle}>Right → Left (Horizontal)</option>
-                      <option value="LEFT_TO_RIGHT" style={optionStyle}>Left → Right (Horizontal)</option>
-                      <option value="BOTTOM_TO_TOP" style={optionStyle}>Bottom → Top (Vertical)</option>
-                      <option value="TOP_TO_BOTTOM" style={optionStyle}>Top → Bottom (Vertical)</option>
-                    </select>
-                  </div>
-
-                  {/* Animation Speed / Slide Interval */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>
-                      {formData.motionType === 'CAROUSEL' ? 'Slide Interval (Seconds)' : 'Scroll Duration (Seconds)'}
+                  {/* Size Preset Chips: Small 8%, Medium 12% default, Large 16% */}
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 6 }}>
+                      Logo Size (% of Video Player Width • Preserves Aspect Ratio, Never Stretched)
                     </label>
-                    <input
-                      type="number"
-                      min={formData.motionType === 'CAROUSEL' ? 3 : 5}
-                      max={90}
-                      value={formData.motionType === 'CAROUSEL' ? formData.slideInterval : formData.speed}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 10;
-                        if (formData.motionType === 'CAROUSEL') {
-                          setFormData(prev => ({ ...prev, slideInterval: val }));
-                        } else {
-                          setFormData(prev => ({ ...prev, speed: val }));
-                        }
-                      }}
-                      style={{ ...inputStyle, width: '100%' }}
-                    />
+                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      {[
+                        { id: 'CORNER_SMALL', label: 'Small (8% of video width)', width: '8%', val: 8 },
+                        { id: 'CORNER_MEDIUM', label: 'Medium (12% - Recommended)', width: '12%', val: 12 },
+                        { id: 'CORNER_LARGE', label: 'Large (16% of video width)', width: '16%', val: 16 }
+                      ].map(sz => {
+                        const isSelected = formData.sizePreset === sz.id || formData.width === sz.width || formData.widthValue === sz.val;
+                        return (
+                          <button
+                            key={sz.id}
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                sizePreset: sz.id,
+                                width: sz.width,
+                                widthValue: sz.val,
+                                widthUnit: '%',
+                                height: 'auto',
+                                imageFit: 'contain'
+                              }));
+                            }}
+                            style={{
+                              padding: '6px 14px',
+                              borderRadius: 8,
+                              fontSize: '0.82rem',
+                              fontWeight: 700,
+                              border: isSelected ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.15)',
+                              background: isSelected ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)',
+                              color: isSelected ? '#38bdf8' : '#cbd5e1',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {sz.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Opacity, Margin and Rotation Interval */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Opacity (30% – 100%)</label>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#38bdf8' }}>{formData.opacity || 100}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={30}
+                        max={100}
+                        step={5}
+                        value={formData.opacity != null ? formData.opacity : 100}
+                        onChange={(e) => setFormData(prev => ({ ...prev, opacity: parseInt(e.target.value, 10) }))}
+                        style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>
+                        Margin from Video Edge
+                      </label>
+                      <select
+                        value={formData.margin || '2%'}
+                        onChange={(e) => setFormData(prev => ({ ...prev, margin: e.target.value }))}
+                        style={{ ...selectStyle, width: '100%' }}
+                      >
+                        <option value="1%" style={optionStyle}>1% (Tight to corner)</option>
+                        <option value="2%" style={optionStyle}>2% (Recommended Safe-Area)</option>
+                        <option value="3%" style={optionStyle}>3% (Spacious Safe-Area)</option>
+                        <option value="4%" style={optionStyle}>4% (Deep Inset)</option>
+                        <option value="12px" style={optionStyle}>12px (Fixed px)</option>
+                        <option value="16px" style={optionStyle}>16px (Fixed px)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>
+                        Rotation Interval (Seconds)
+                      </label>
+                      <input
+                        type="number"
+                        min={3}
+                        max={60}
+                        value={formData.slideInterval || 8}
+                        onChange={(e) => setFormData(prev => ({ ...prev, slideInterval: parseInt(e.target.value, 10) || 8 }))}
+                        style={{ ...inputStyle, width: '100%' }}
+                      />
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 4 }}>
+                        Smooth fade rotation if 2+ logos configured for this corner. Single logo stays permanently fixed.
+                      </div>
+                    </div>
                   </div>
                 </div>
+              ) : (
+                <>
+                  {/* SECTION 2: AD DIMENSIONS & FIT CONTROLS */}
+                  <div style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 12,
+                    padding: '1.25rem',
+                    marginBottom: '1.25rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                      <Sliders size={16} color="var(--accent-primary, #10b981)" />
+                      <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>Dimensions &amp; Image Fit Controls</span>
+                    </div>
 
-                {/* Pause on Hover */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', cursor: 'pointer', marginTop: '0.5rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={formData.pauseOnHover}
-                    onChange={(e) => setFormData(prev => ({ ...prev, pauseOnHover: e.target.checked }))}
-                  />
-                  <span>Pause animation / rotation when user hovers over the advertisement</span>
-                </label>
-              </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '0.75rem' }}>
+                      {/* Width Control */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Width</label>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            type="number"
+                            min={10}
+                            max={3000}
+                            value={formData.widthValue}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setFormData(prev => ({
+                                ...prev,
+                                sizePreset: 'CUSTOM',
+                                widthValue: val,
+                                width: `${val}${prev.widthUnit}`
+                              }));
+                            }}
+                            style={{ ...inputStyle, flex: 1 }}
+                          />
+                          <select
+                            value={formData.widthUnit}
+                            onChange={(e) => {
+                              const u = e.target.value;
+                              setFormData(prev => ({
+                                ...prev,
+                                sizePreset: 'CUSTOM',
+                                widthUnit: u,
+                                width: `${prev.widthValue}${u}`
+                              }));
+                            }}
+                            style={{ ...selectStyle, width: 70 }}
+                          >
+                            <option value="px" style={optionStyle}>px</option>
+                            <option value="%" style={optionStyle}>%</option>
+                            <option value="vw" style={optionStyle}>vw</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Height Control */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Height</label>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            type="number"
+                            min={10}
+                            max={2000}
+                            value={formData.heightValue}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setFormData(prev => ({
+                                ...prev,
+                                sizePreset: 'CUSTOM',
+                                heightValue: val,
+                                height: `${val}${prev.heightUnit}`
+                              }));
+                            }}
+                            style={{ ...inputStyle, flex: 1 }}
+                          />
+                          <select
+                            value={formData.heightUnit}
+                            onChange={(e) => {
+                              const u = e.target.value;
+                              setFormData(prev => ({
+                                ...prev,
+                                sizePreset: 'CUSTOM',
+                                heightUnit: u,
+                                height: `${prev.heightValue}${u}`
+                              }));
+                            }}
+                            style={{ ...selectStyle, width: 70 }}
+                          >
+                            <option value="px" style={optionStyle}>px</option>
+                            <option value="vh" style={optionStyle}>vh</option>
+                            <option value="%" style={optionStyle}>%</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Image Fit Selector */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Image Fit (Preserve Ratio)</label>
+                        <select
+                          value={formData.imageFit}
+                          onChange={(e) => setFormData(prev => ({ ...prev, imageFit: e.target.value }))}
+                          style={{ ...selectStyle, width: '100%' }}
+                        >
+                          <option value="contain" style={optionStyle}>Contain (Preserve Full Asset)</option>
+                          <option value="cover" style={optionStyle}>Cover (Fill Container Edge-to-Edge)</option>
+                          <option value="fill" style={optionStyle}>Fill (Stretch to Exactly Match)</option>
+                          <option value="scale-down" style={optionStyle}>Scale-Down</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 3: MOTION & ANIMATION SETTINGS */}
+                  <div style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 12,
+                    padding: '1.25rem',
+                    marginBottom: '1.25rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                      <Move size={16} color="var(--accent-secondary, #06b6d4)" />
+                      <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>Display Behavior &amp; Movement Motion</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '0.85rem' }}>
+                      {/* Motion Type */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Motion Mode</label>
+                        <select
+                          value={formData.motionType}
+                          onChange={(e) => setFormData(prev => ({ ...prev, motionType: e.target.value }))}
+                          style={{ ...selectStyle, width: '100%' }}
+                        >
+                          <option value="STATIC" style={optionStyle}>Static (Stationary Display)</option>
+                          <option value="SCROLL" style={optionStyle}>Continuous Scroll (Marquee)</option>
+                          <option value="CAROUSEL" style={optionStyle}>Auto Carousel Slideshow</option>
+                          <option value="SLIDE" style={optionStyle}>Slide-In Transition</option>
+                          <option value="CROSSFADE" style={optionStyle}>Smooth Crossfade</option>
+                        </select>
+                      </div>
+
+                      {/* Movement Direction */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Direction</label>
+                        <select
+                          value={formData.movementDirection}
+                          disabled={formData.motionType === 'STATIC'}
+                          onChange={(e) => setFormData(prev => ({ ...prev, movementDirection: e.target.value }))}
+                          style={{ ...selectStyle, width: '100%', opacity: formData.motionType === 'STATIC' ? 0.6 : 1 }}
+                        >
+                          <option value="RIGHT_TO_LEFT" style={optionStyle}>Right → Left (Horizontal)</option>
+                          <option value="LEFT_TO_RIGHT" style={optionStyle}>Left → Right (Horizontal)</option>
+                          <option value="BOTTOM_TO_TOP" style={optionStyle}>Bottom → Top (Vertical)</option>
+                          <option value="TOP_TO_BOTTOM" style={optionStyle}>Top → Bottom (Vertical)</option>
+                        </select>
+                      </div>
+
+                      {/* Animation Speed / Slide Interval */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>
+                          {formData.motionType === 'CAROUSEL' ? 'Slide Interval (Seconds)' : 'Scroll Duration (Seconds)'}
+                        </label>
+                        <input
+                          type="number"
+                          min={formData.motionType === 'CAROUSEL' ? 3 : 5}
+                          max={90}
+                          value={formData.motionType === 'CAROUSEL' ? formData.slideInterval : formData.speed}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10) || 10;
+                            if (formData.motionType === 'CAROUSEL') {
+                              setFormData(prev => ({ ...prev, slideInterval: val }));
+                            } else {
+                              setFormData(prev => ({ ...prev, speed: val }));
+                            }
+                          }}
+                          style={{ ...inputStyle, width: '100%' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Pause on Hover */}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', cursor: 'pointer', marginTop: '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.pauseOnHover}
+                        onChange={(e) => setFormData(prev => ({ ...prev, pauseOnHover: e.target.checked }))}
+                      />
+                      <span>Pause animation / rotation when user hovers over the advertisement</span>
+                    </label>
+                  </div>
+                </>
+              )}
 
               {/* SECTION 4: LIVE PREVIEW OF SELECTED CONFIGURATION */}
               <div style={{
@@ -4323,11 +4526,105 @@ const AdManagementPanel = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   minHeight: 180,
-                  maxHeight: 260,
+                  maxHeight: 280,
                   overflow: 'hidden',
                   position: 'relative'
                 }}>
-                  {formImagePreview ? (
+                  {isCornerLogo ? (
+                    <div style={{
+                      width: '100%',
+                      maxWidth: 400,
+                      aspectRatio: '16 / 9',
+                      background: 'radial-gradient(circle at center, #1e293b 0%, #090d16 100%)',
+                      borderRadius: 8,
+                      position: 'relative',
+                      overflow: 'hidden',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                      border: '1px solid rgba(255,255,255,0.15)'
+                    }}>
+                      {/* Live badge in video */}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 38,
+                        left: 10,
+                        background: 'rgba(239, 68, 68, 0.9)',
+                        color: '#fff',
+                        fontSize: '0.62rem',
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3
+                      }}>
+                        <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#fff' }} />
+                        LIVE BROADCAST
+                      </div>
+
+                      {/* Simulated Scoreboard at bottom */}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 8,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: 'rgba(15, 23, 42, 0.92)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: 6,
+                        padding: '3px 12px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        <span>Borivali Blasters</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 800 }}>4 - 2</span>
+                        <span>A4</span>
+                      </div>
+
+                      {/* The Corner Logo Overlay */}
+                      <div style={{
+                        position: 'absolute',
+                        top: formData.margin || '2%',
+                        left: formData.position === 'STREAM_TOP_LEFT' ? (formData.margin || '2%') : 'auto',
+                        right: formData.position === 'STREAM_TOP_RIGHT' ? (formData.margin || '2%') : 'auto',
+                        width: formData.width || '12%',
+                        opacity: (formData.opacity != null ? formData.opacity : 100) / 100,
+                        transition: 'all 0.2s ease',
+                        pointerEvents: 'none'
+                      }}>
+                        {formImagePreview ? (
+                          <img
+                            src={formImagePreview}
+                            alt="Corner Logo Preview"
+                            style={{
+                              width: '100%',
+                              height: 'auto',
+                              display: 'block',
+                              objectFit: 'contain',
+                              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))'
+                            }}
+                          />
+                        ) : (
+                          <div style={{
+                            border: '1.5px dashed #38bdf8',
+                            borderRadius: 4,
+                            padding: '4px',
+                            background: 'rgba(56, 189, 248, 0.15)',
+                            color: '#38bdf8',
+                            fontSize: '0.62rem',
+                            fontWeight: 800,
+                            textAlign: 'center'
+                          }}>
+                            {formData.position === 'STREAM_TOP_LEFT' ? 'TOP-LEFT' : 'TOP-RIGHT'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : formImagePreview ? (
                     <div style={{
                       width: formData.position === 'LEFT' || formData.position === 'RIGHT' ? '180px' : '100%',
                       maxHeight: '180px',
@@ -4368,7 +4665,7 @@ const AdManagementPanel = () => {
                     padding: '2px 8px',
                     borderRadius: 4
                   }}>
-                    Placement: <strong>{formData.position}</strong> • Sizing: <strong>{formData.width} × {formData.height}</strong> • Fit: <strong>{formData.imageFit}</strong> • Motion: <strong>{formData.motionType}</strong>
+                    Placement: <strong>{typeof formData.position === 'string' ? formData.position : 'TOP'}</strong> • Sizing: <strong>{formData.width} × {formData.height}</strong> {isCornerLogo ? `• Opacity: ${formData.opacity || 100}% • Margin: ${formData.margin || '2%'}` : `• Fit: ${formData.imageFit} • Motion: ${formData.motionType}`}
                   </div>
                 </div>
               </div>
@@ -4376,11 +4673,11 @@ const AdManagementPanel = () => {
               {/* SECTION 5: FILE UPLOAD & SCHEDULE */}
               <div style={{ marginBottom: '1.25rem' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: 4 }}>
-                  Ad Creative Image File (JPG, PNG, WebP) {editingAd ? '(Leave blank to retain existing)' : '*'}
+                  Ad Creative Image File (JPG, PNG, WebP, SVG) {editingAd ? '(Leave blank to retain existing)' : '*'}
                 </label>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/jpeg,image/png,image/webp,image/svg+xml"
                   required={!editingAd && !formImagePreview}
                   onChange={handleFileChange}
                   style={{
@@ -4392,6 +4689,22 @@ const AdManagementPanel = () => {
                     color: 'var(--text-main, #ffffff)'
                   }}
                 />
+                {isCornerLogo && (
+                  <div style={{
+                    marginTop: '0.6rem',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(56, 189, 248, 0.12)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    fontSize: '0.82rem',
+                    color: '#38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    📺 <strong>Broadcast Corner Logo:</strong> Accepted files: PNG, SVG, WebP, JPG (up to 2 MB). We recommend a transparent PNG with high contrast for a professional broadcast TV look over live video.
+                  </div>
+                )}
                 {(formData.position === 'MOBILE_TOP' || formData.position === 'MOBILE_BOTTOM') && (
                   <div style={{
                     marginTop: '0.6rem',
@@ -4408,7 +4721,7 @@ const AdManagementPanel = () => {
                     💡 <strong>Recommended Mobile Creative Size:</strong> 720×120px banner (aspect ratio ~6:1) for sharp retina display on mobile viewer screens.
                   </div>
                 )}
-                {formData.position.startsWith('STREAM_') && (
+                {typeof formData.position === 'string' && formData.position.startsWith('STREAM_') && (
                   <div style={{
                     marginTop: '0.6rem',
                     padding: '8px 12px',

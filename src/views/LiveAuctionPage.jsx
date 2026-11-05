@@ -10,6 +10,7 @@ import {
   FileText, User, ChevronRight, Award, DollarSign
 } from 'lucide-react';
 import AuctionReportsModal from '../components/auction/AuctionReportsModal';
+import OptimizedImage from '../components/common/OptimizedImage';
 
 const LiveAuctionPage = () => {
   const { auctionId, id: tournamentIdParam } = useParams();
@@ -639,7 +640,14 @@ const LiveAuctionPage = () => {
                   overflow: 'hidden'
                 }}>
                   {currentPlayer.profilePhoto ? (
-                    <img src={currentPlayer.profilePhoto} alt={currentPlayer.playerName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <OptimizedImage
+                      src={currentPlayer.profilePhoto}
+                      alt={currentPlayer.playerName}
+                      preset="avatar"
+                      width={160}
+                      height={160}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
                   ) : (
                     <User size={48} color="var(--accent-primary, #10b981)" />
                   )}

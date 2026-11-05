@@ -12,7 +12,8 @@ import {
   StreamTopAdStrip,
   StreamBottomAdStrip,
   StreamSidebarAdZone,
-  MatchBreakOverlay
+  MatchBreakOverlay,
+  StreamCornerLogo
 } from './StreamAdLayers';
 import { YellowPickleballIcon } from './LiveStreamManagerModal';
 
@@ -46,7 +47,7 @@ export default function LiveStreamPlayer({
   const [currentMatch, setCurrentMatch] = useState(activeMatch);
 
   // Stream Ads & Zone Settings State
-  const [streamAds, setStreamAds] = useState({ top: [], bottom: [], left: [], right: [], breakAds: [] });
+  const [streamAds, setStreamAds] = useState({ top: [], bottom: [], left: [], right: [], breakAds: [], topLeft: [], topRight: [] });
   const [streamSettings, setStreamSettings] = useState({
     topHeight: 48,
     bottomHeight: 52,
@@ -112,11 +113,13 @@ export default function LiveStreamPlayer({
       const res = await getStreamAdsApi({ matchId, tournamentId, venueId });
       if (res?.success && res.data) {
         setStreamAds({
-          top: res.data.top || [],
-          bottom: res.data.bottom || [],
-          left: res.data.left || [],
-          right: res.data.right || [],
-          breakAds: res.data.breakAds || []
+          top: res.data.top || res.data.streamTopAds || [],
+          bottom: res.data.bottom || res.data.streamBottomAds || [],
+          left: res.data.left || res.data.streamLeftAds || [],
+          right: res.data.right || res.data.streamRightAds || [],
+          breakAds: res.data.breakAds || res.data.streamBreakAds || [],
+          topLeft: res.data.topLeft || res.data.streamCornerTopLeftAds || [],
+          topRight: res.data.topRight || res.data.streamCornerTopRightAds || []
         });
         if (res.data.zoneSettings) {
           setStreamSettings(prev => ({ ...prev, ...res.data.zoneSettings }));
@@ -176,8 +179,17 @@ export default function LiveStreamPlayer({
   useEffect(() => {
     const onScoreChange = (payload) => {
       if (!payload) return;
-      const tId = payload.matchId || payload.matchUuid || payload.id;
-      if (tId && String(tId) !== String(matchId)) return;
+      const targetMatchId = String(matchId);
+      const isThisMatch =
+        !matchId ||
+        String(payload.matchId || '') === targetMatchId ||
+        String(payload.matchUuid || '') === targetMatchId ||
+        String(payload.matchNumericId || '') === targetMatchId ||
+        String(payload.uuid || '') === targetMatchId ||
+        String(payload.id || '') === targetMatchId ||
+        String(payload.public_id || '') === targetMatchId;
+
+      if (!isThisMatch) return;
 
       setCurrentMatch(prev => ({ ...(prev || {}), ...payload }));
 
@@ -230,7 +242,14 @@ export default function LiveStreamPlayer({
     };
 
     socket.on('score:updated', onScoreChange);
+    socket.on('match:ballEvent', onScoreChange);
+    socket.on('match:pointScored', onScoreChange);
     socket.on('match:pickleballScore', onScoreChange);
+    socket.on('match:badmintonEvent', onScoreChange);
+    socket.on('match:badmintonPoint', onScoreChange);
+    socket.on('match:footballEvent', onScoreChange);
+    socket.on('match:undone', onScoreChange);
+    socket.on('match:undoPoint', onScoreChange);
     socket.on('signage:matchUpdate', onScoreChange);
     socket.on('match:break:start', handleBreakStart);
     socket.on('match:break:end', handleBreakEnd);
@@ -241,7 +260,14 @@ export default function LiveStreamPlayer({
 
     return () => {
       socket.off('score:updated', onScoreChange);
+      socket.off('match:ballEvent', onScoreChange);
+      socket.off('match:pointScored', onScoreChange);
       socket.off('match:pickleballScore', onScoreChange);
+      socket.off('match:badmintonEvent', onScoreChange);
+      socket.off('match:badmintonPoint', onScoreChange);
+      socket.off('match:footballEvent', onScoreChange);
+      socket.off('match:undone', onScoreChange);
+      socket.off('match:undoPoint', onScoreChange);
       socket.off('signage:matchUpdate', onScoreChange);
       socket.off('match:break:start', handleBreakStart);
       socket.off('match:break:end', handleBreakEnd);
@@ -398,6 +424,7 @@ export default function LiveStreamPlayer({
 
       // Join stream room as viewer and request offer from active broadcaster
       socket.emit('stream:join', { matchId, isBroadcaster: false });
+      socket.emit('join:match', { matchId });
       socket.emit('stream:request_offer', { matchId });
 
       return () => {
@@ -424,6 +451,7 @@ export default function LiveStreamPlayer({
 
     const handleConnect = () => {
       socket.emit('stream:join', { matchId, isBroadcaster: false });
+      socket.emit('join:match', { matchId });
       socket.emit('stream:request_offer', { matchId });
       if (!isYouTube && isLive) {
         initWebRTCViewer();
@@ -431,6 +459,7 @@ export default function LiveStreamPlayer({
     };
 
     socket.emit('stream:join', { matchId, isBroadcaster: false });
+    socket.emit('join:match', { matchId });
     socket.emit('stream:request_offer', { matchId });
     socket.on('connect', handleConnect);
 
@@ -464,6 +493,7 @@ export default function LiveStreamPlayer({
 
     return () => {
       socket.emit('stream:leave', { matchId });
+      socket.emit('leave:match', { matchId });
       socket.off('connect', handleConnect);
       socket.off('stream:status', handleStatus);
       socket.off('stream:status_changed', handleStatus);
@@ -862,6 +892,24 @@ export default function LiveStreamPlayer({
               </button>
             </div>
           </div>
+
+          {/* ── CORNER LOGO ADS OVER VIDEO (TOP-LEFT & TOP-RIGHT) ── */}
+          {playbackState.adsEnabled && (
+            <>
+              <StreamCornerLogo
+                position="top-left"
+                logos={streamAds.topLeft}
+                adsEnabled={playbackState.adsEnabled}
+                isBroadcastPreview={false}
+              />
+              <StreamCornerLogo
+                position="top-right"
+                logos={streamAds.topRight}
+                adsEnabled={playbackState.adsEnabled}
+                isBroadcastPreview={false}
+              />
+            </>
+          )}
 
           {/* ── MATCH BREAK MODE OVERLAY (Full-player Sponsor Carousel) ── */}
           {breakState?.isBreak && (

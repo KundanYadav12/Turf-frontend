@@ -13,6 +13,7 @@ import {
   AlertCircle, Users, Activity, Flame, Target, Video
 } from 'lucide-react';
 import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
+import { getOptimizedImageUrl } from '../utils/imageUrl';
 
 /**
  * Team Logo or Fallback Monogram Avatar
@@ -78,8 +79,10 @@ function TeamLogoAvatar({ logoUrl, teamName = 'Team', size = 52, theme = 'dark' 
     >
       {!imgError && logoUrl ? (
         <img
-          src={logoUrl}
+          src={getOptimizedImageUrl(logoUrl, { width: 120, height: 120, fit: 'contain', quality: 85 })}
           alt={teamName}
+          loading="lazy"
+          decoding="async"
           onError={() => setImgError(true)}
           style={{
             width: '100%',
@@ -2754,7 +2757,13 @@ function SponsorsScene({ ads, theme }) {
               }}
             >
               {ad.imageUrl ? (
-                <img src={ad.imageUrl} alt={ad.title || 'Sponsor'} style={{ maxHeight: 85, maxWidth: '100%', objectFit: 'contain', marginBottom: '1rem' }} />
+                <img
+                  src={getOptimizedImageUrl(ad.imageUrl, { width: 400, fit: 'contain', quality: 82 })}
+                  alt={ad.title || 'Sponsor'}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ maxHeight: 85, maxWidth: '100%', objectFit: 'contain', marginBottom: '1rem' }}
+                />
               ) : (
                 <Sparkles size={44} color="#10b981" style={{ marginBottom: '1rem' }} />
               )}

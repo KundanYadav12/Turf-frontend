@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import { Coffee, Clock, ExternalLink, Sparkles } from 'lucide-react';
+import { getOptimizedImageUrl } from '../../utils/imageUrl';
 
 /**
  * Top Ad Strip for Live Stream Player
@@ -64,7 +65,7 @@ export function StreamTopAdStrip({
       >
         {(ad.imageUrl || ad.image_url) ? (
           <img
-            src={ad.imageUrl || ad.image_url}
+            src={getOptimizedImageUrl(ad.imageUrl || ad.image_url, { height: height, fit: fit })}
             alt={ad.title || 'Sponsor Ad'}
             style={{
               height: `calc(100% - 10px)`,
@@ -216,7 +217,7 @@ export function StreamBottomAdStrip({
       >
         {(ad.imageUrl || ad.image_url) ? (
           <img
-            src={ad.imageUrl || ad.image_url}
+            src={getOptimizedImageUrl(ad.imageUrl || ad.image_url, { height: height, fit: fit })}
             alt={ad.title || 'Sponsor Ad'}
             style={{
               height: `calc(100% - 10px)`,
@@ -389,7 +390,7 @@ export function StreamSidebarAdZone({
 
         {(currentAd.imageUrl || currentAd.image_url) ? (
           <img
-            src={currentAd.imageUrl || currentAd.image_url}
+            src={getOptimizedImageUrl(currentAd.imageUrl || currentAd.image_url, { width: 300, fit: currentAd.imageFit || 'contain' })}
             alt={currentAd.title || 'Sponsor Ad'}
             style={{
               maxWidth: '100%',
@@ -636,7 +637,7 @@ export function MatchBreakOverlay({
                 }}
               >
                 <img
-                  src={currentAd.imageUrl || currentAd.image_url}
+                  src={getOptimizedImageUrl(currentAd.imageUrl || currentAd.image_url, { width: 600, fit: currentAd.imageFit || 'contain' })}
                   alt={currentAd.title || 'Break Sponsor'}
                   style={{
                     maxHeight: 'min(240px, 45vh)',
@@ -731,3 +732,6 @@ export function MatchBreakOverlay({
     </div>
   );
 }
+
+export { StreamCornerLogo, drawCornerLogosToCanvas, resolveLogoSizePercent, resolveLogoMargin, resolveLogoOpacity } from './StreamCornerLogo';
+

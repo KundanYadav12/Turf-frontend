@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
+import { getOptimizedImageUrl } from '../../utils/imageUrl';
 
 /**
  * Modern Multi-Layout Advertising Component
@@ -200,7 +201,7 @@ export default function SignageAdSlot({
               {[...placementAds, ...placementAds].map((ad, idx) => (
                 <div key={`${ad.id}-${idx}`} style={{ width: '100%', position: 'relative', overflow: 'hidden' }}>
                   <img
-                    src={ad.imageUrl}
+                    src={getOptimizedImageUrl(ad.imageUrl, { width: 400, fit: ad.imageFit || imageFit })}
                     alt={ad.title}
                     style={{
                       width: '100%',
@@ -246,7 +247,7 @@ export default function SignageAdSlot({
           }}>
             <img
               key={activeAd.id}
-              src={activeAd.imageUrl}
+              src={getOptimizedImageUrl(activeAd.imageUrl, { width: 500, fit: activeAd.imageFit || imageFit })}
               alt={activeAd.title}
               style={{
                 width: '100%',
@@ -336,7 +337,7 @@ export default function SignageAdSlot({
                   }}
                 >
                   <img
-                    src={ad.imageUrl}
+                    src={getOptimizedImageUrl(ad.imageUrl, { height: 120, fit: ad.imageFit || imageFit })}
                     alt={ad.title}
                     style={{
                       height: '90%',
@@ -371,7 +372,7 @@ export default function SignageAdSlot({
             }}>
               <img
                 key={activeAd.id}
-                src={activeAd.imageUrl}
+                src={getOptimizedImageUrl(activeAd.imageUrl, { width: 1200, fit: activeAd.imageFit || imageFit })}
                 alt={activeAd.title}
                 style={{
                   width: activeAd.sizePreset === 'FULL_WIDTH' || activeAd.imageFit === 'fill' ? '100%' : 'auto',
@@ -461,7 +462,7 @@ export default function SignageAdSlot({
           {placementAds.map((ad) => (
             <div key={ad.id} style={{ display: 'flex', alignItems: 'center', gap: 10, height: '100%' }}>
               <img
-                src={ad.imageUrl}
+                src={getOptimizedImageUrl(ad.imageUrl, { height: 80, fit: ad.imageFit || 'contain' })}
                 alt={ad.title}
                 style={{
                   height: 'calc(100% - 12px)',
@@ -512,7 +513,7 @@ export default function SignageAdSlot({
               }}
             >
               <img
-                src={ad.imageUrl}
+                src={getOptimizedImageUrl(ad.imageUrl, { height: 80, fit: ad.imageFit || 'contain' })}
                 alt={ad.title}
                 style={{
                   height: 'calc(100% - 12px)',

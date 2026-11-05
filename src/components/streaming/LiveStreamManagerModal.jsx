@@ -10,7 +10,8 @@ import {
   Layers, Volume2, VolumeX, RotateCw, Monitor, Sparkles,
   Minimize2, Maximize2, Coffee, Clock, Plus, Minus
 } from 'lucide-react';
-import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi } from '../../services/advertisementService';
+import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi, getStreamAdsApi } from '../../services/advertisementService';
+import { StreamCornerLogo } from './StreamCornerLogo';
 
 export function YellowPickleballIcon({ size = 16, style = {} }) {
   return (
@@ -129,6 +130,40 @@ export default function LiveStreamManagerModal({
   const [breakReason, setBreakReason] = useState('Interval');
   const [breakDuration, setBreakDuration] = useState('2');
   const [breakActionLoading, setBreakActionLoading] = useState(false);
+
+  // Corner Logos State
+  const [cornerLogos, setCornerLogos] = useState({ topLeft: [], topRight: [] });
+
+  const fetchCornerLogos = useCallback(async () => {
+    if (!matchId) return;
+    try {
+      const tournamentId = matchData.tournamentId || matchData.tournament_id || matchData.tournament?.id;
+      const venueId = matchData.venueId || matchData.venue_id || matchData.venue?.id;
+      const res = await getStreamAdsApi({ matchId, tournamentId, venueId });
+      if (res?.success && res.data) {
+        setCornerLogos({
+          topLeft: res.data.topLeft || res.data.streamCornerTopLeftAds || [],
+          topRight: res.data.topRight || res.data.streamCornerTopRightAds || []
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load stream corner logos:', e.message);
+    }
+  }, [matchId, matchData]);
+
+  useEffect(() => {
+    fetchCornerLogos();
+  }, [fetchCornerLogos]);
+
+  useEffect(() => {
+    const onAdsUpdated = () => fetchCornerLogos();
+    socket.on('advertisements:updated', onAdsUpdated);
+    socket.on('stream:ads_updated', onAdsUpdated);
+    return () => {
+      socket.off('advertisements:updated', onAdsUpdated);
+      socket.off('stream:ads_updated', onAdsUpdated);
+    };
+  }, [fetchCornerLogos]);
 
   // Sync real-time score & break state in modal
   useEffect(() => {
@@ -1465,6 +1500,25 @@ export default function LiveStreamManagerModal({
                     transition: 'transform 0.1s ease-out'
                   }}
                 />
+
+                {/* ── CORNER LOGO OVERLAYS: TOP-LEFT & TOP-RIGHT ── */}
+                {cameraActive && (
+                  <>
+                    <StreamCornerLogo
+                      position="top-left"
+                      logos={cornerLogos.topLeft}
+                      adsEnabled={true}
+                      isBroadcastPreview={true}
+                    />
+                    <StreamCornerLogo
+                      position="top-right"
+                      logos={cornerLogos.topRight}
+                      adsEnabled={true}
+                      isBroadcastPreview={true}
+                      customStyle={!isFullscreen && !isPseudoFullscreen ? { marginRight: '2.5rem' } : {}}
+                    />
+                  </>
+                )}
 
                 {/* Fullscreen / Exit Fullscreen Button */}
                 <button

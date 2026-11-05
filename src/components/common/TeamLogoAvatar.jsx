@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import { getOptimizedImageUrl } from '../../utils/imageUrl';
 
 /**
  * Team Logo or Fallback Monogram Avatar
@@ -66,8 +67,10 @@ export default function TeamLogoAvatar({ logoUrl, teamName = 'Team', size = 52, 
     >
       {!imgError && logoUrl ? (
         <img
-          src={logoUrl}
+          src={getOptimizedImageUrl(logoUrl, { width: isNumeric ? size * 2 : 128, fit: 'contain', quality: 85 })}
           alt={teamName}
+          loading="lazy"
+          decoding="async"
           onError={() => setImgError(true)}
           style={{
             width: '100%',

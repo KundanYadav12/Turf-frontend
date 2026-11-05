@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getOptimizedImageUrl } from '../../../utils/imageUrl';
 import {
   buildMetadata,
   buildBreadcrumbSchema,
@@ -387,7 +388,7 @@ export default async function SportLandingPage({ params }) {
               <div key={venue.id} className="glass-panel venue-card">
                 <div className="venue-card-image">
                   <img
-                    src={venue.primaryImage || venue.images?.[0] || 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&w=600&q=80'}
+                    src={getOptimizedImageUrl(venue.primaryImage || venue.images?.[0] || 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&w=600&q=80', { width: 600, height: 200, fit: 'cover' })}
                     alt={`${venue.name} in ${venue.city}`}
                     loading="lazy"
                     width={600}

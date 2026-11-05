@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Trophy, Palette, RotateCcw, Check, Sparkles, Undo2 } from 'lucide-react';
 import { getServeState, getCourtState, parseRacquetScoreDetails, getCourtContrastColor } from './courtUtils';
 import { useBallAnimation, BALL_MOTION } from './useBallAnimation';
+import { getOptimizedImageUrl } from '../../utils/imageUrl';
 
 export { getServeState, getCourtState, parseRacquetScoreDetails, getCourtContrastColor, useBallAnimation, BALL_MOTION };
 
@@ -601,7 +602,7 @@ export default function CourtView({
             zIndex: 1
           }}>
             <img
-              src={activeAd.imageUrl}
+              src={getOptimizedImageUrl(activeAd.imageUrl, { width: 300, fit: 'contain' })}
               alt={activeAd.title || 'Sponsor'}
               style={{ maxWidth: '90%', maxHeight: '85%', objectFit: 'contain' }}
             />
@@ -623,7 +624,7 @@ export default function CourtView({
             zIndex: 1
           }}>
             <img
-              src={secondaryAd.imageUrl}
+              src={getOptimizedImageUrl(secondaryAd.imageUrl, { width: 300, fit: 'contain' })}
               alt={secondaryAd.title || 'Sponsor'}
               style={{ maxWidth: '90%', maxHeight: '85%', objectFit: 'contain' }}
             />
@@ -1199,7 +1200,7 @@ export default function CourtView({
                   >
                     {(ad.imageUrl || ad.image_url) && (
                       <img
-                        src={ad.imageUrl || ad.image_url}
+                        src={getOptimizedImageUrl(ad.imageUrl || ad.image_url, { width: 220, fit: ad.imageFit || 'cover' })}
                         alt={ad.title || 'Sponsor'}
                         style={{
                           maxWidth: '100%',
@@ -1296,7 +1297,7 @@ export default function CourtView({
                   >
                     {(ad.imageUrl || ad.image_url) && (
                       <img
-                        src={ad.imageUrl || ad.image_url}
+                        src={getOptimizedImageUrl(ad.imageUrl || ad.image_url, { width: 220, fit: ad.imageFit || 'cover' })}
                         alt={ad.title || 'Sponsor'}
                         style={{
                           maxWidth: '100%',

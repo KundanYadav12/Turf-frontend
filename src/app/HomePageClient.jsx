@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link } from '../lib/routerCompat';
 import { setSelectedSport, setSelectedCity } from '../features/venue/venueSlice';
 import { Search, MapPin, Star, ChevronRight, ShieldCheck, Zap, Award, Sparkles } from 'lucide-react';
+import OptimizedImage from '../components/common/OptimizedImage';
 
 export default function HomePageClient({ initialVenues = [], initialSports = [] }) {
   const router = useRouter();
@@ -175,10 +176,13 @@ export default function HomePageClient({ initialVenues = [], initialSports = [] 
                 style={{ cursor: 'pointer', textDecoration: 'none', display: 'block' }}
               >
                 <div className="venue-card-image">
-                  <img
+                  <OptimizedImage
                     src={v.primaryImage || '/placeholder-turf.jpg'}
                     alt={`Play at ${v.name} in ${v.city}`}
-                    loading="lazy"
+                    preset="card"
+                    width={420}
+                    height={220}
+                    fallbackSrc="/placeholder-turf.jpg"
                   />
                   <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem' }}>
                     <span className="badge badge-success" style={{ backdropFilter: 'blur(10px)' }}>

@@ -10,6 +10,7 @@ import { useTournamentLive } from '../hooks/useTournamentLive';
 import LiveMatchCard from '../components/live/LiveMatchCard';
 import TournamentAuctionTab from '../components/auction/TournamentAuctionTab';
 import { Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft, Shield, Gavel, Tv, Eye } from 'lucide-react';
+import OptimizedImage from '../components/common/OptimizedImage';
 
 const TournamentDetailPage = () => {
   const { id } = useParams();
@@ -480,7 +481,14 @@ const TournamentDetailPage = () => {
                 }}
               >
                 {tm.logo ? (
-                  <img src={tm.logo} alt={tm.name} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }} />
+                  <OptimizedImage
+                    src={tm.logo}
+                    alt={tm.name}
+                    preset="logo"
+                    width={34}
+                    height={34}
+                    style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }}
+                  />
                 ) : (
                   <Shield size={34} color="var(--accent-primary, #10b981)" />
                 )}

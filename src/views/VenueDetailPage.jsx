@@ -4,6 +4,7 @@ import { getVenueDetailsApi } from '../services/venueService';
 import { getCourtSlotsApi } from '../services/bookingService';
 import CheckoutModal from '../components/player/CheckoutModal';
 import { MapPin, Star, Clock, ShieldCheck, CheckCircle, ChevronRight } from 'lucide-react';
+import OptimizedImage from '../components/common/OptimizedImage';
 
 const VenueDetailPage = () => {
   const { idOrSlug } = useParams();
@@ -122,7 +123,15 @@ const VenueDetailPage = () => {
 
           {/* Venue Image */}
           <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', height: 'clamp(200px, 30vw, 260px)', width: '100%' }}>
-            <img src={venue.images?.[0]} alt={venue.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <OptimizedImage
+              src={venue.images?.[0]}
+              alt={venue.name}
+              preset="banner"
+              width={800}
+              height={300}
+              fallbackSrc="/placeholder-turf.jpg"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           </div>
         </div>
       </div>

@@ -5,6 +5,8 @@ import axios from 'axios';
 import { useParams } from 'next/navigation';
 import { socket } from '../../../../services/socket';
 import { YellowPickleballIcon } from '../../../../components/streaming/LiveStreamManagerModal';
+import { getStreamAdsApi } from '../../../../services/advertisementService';
+import { StreamCornerLogo } from '../../../../components/streaming/StreamCornerLogo';
 
 export default function MatchOBSOverlayPage({ params }) {
   const routeParams = useParams();
@@ -12,6 +14,26 @@ export default function MatchOBSOverlayPage({ params }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [celebration, setCelebration] = useState(null);
+  const [cornerLogos, setCornerLogos] = useState({ topLeft: [], topRight: [] });
+
+  const fetchCornerLogos = useCallback(async () => {
+    if (!matchId) return;
+    try {
+      const res = await getStreamAdsApi({ matchId, tournamentId: data?.tournamentId || data?.tournament_id });
+      if (res?.success && res.data) {
+        setCornerLogos({
+          topLeft: res.data.topLeft || res.data.streamCornerTopLeftAds || [],
+          topRight: res.data.topRight || res.data.streamCornerTopRightAds || []
+        });
+      }
+    } catch (e) {
+      console.warn('Could not load stream corner logos:', e?.message);
+    }
+  }, [matchId, data?.tournamentId, data?.tournament_id]);
+
+  useEffect(() => {
+    fetchCornerLogos();
+  }, [fetchCornerLogos]);
 
   // Fetch initial overlay data
   const fetchData = useCallback(async () => {
@@ -37,66 +59,114 @@ export default function MatchOBSOverlayPage({ params }) {
 
     socket.emit('join:match', { matchId });
 
-    const handleMatchUpdate = (payload) => {
+    const applyScorePayload = (payload) => {
+      if (!payload) return;
+      const eventMatchId = String(payload.matchId || payload.matchUuid || payload.id || payload.public_id || '');
+      const currentMatchId = String(matchId);
+      if (
+        eventMatchId &&
+        currentMatchId &&
+        eventMatchId !== currentMatchId &&
+        String(payload.matchNumericId || '') !== currentMatchId &&
+        String(payload.uuid || '') !== currentMatchId
+      ) {
+        // Belongs to a different match
+        return;
+      }
+
+      if (payload.celebration) {
+        setCelebration(payload.celebration);
+        setTimeout(() => setCelebration(null), 3000);
+      } else if (['FOUR', 'SIX', 'WICKET', 'GOAL'].includes(payload.type)) {
+        setCelebration(payload.type);
+        setTimeout(() => setCelebration(null), 3000);
+      }
+
       setData((prev) => {
         if (!prev) return prev;
+        const newScoreSummary = payload.scoreSummary || payload.liveScoreSummary || payload.live_score_summary ||
+          (payload.teamAScore !== undefined && payload.teamBScore !== undefined ? `${payload.teamAScore} - ${payload.teamBScore}` : prev.scoreSummary);
+        const newSubtext = payload.subtext !== undefined ? payload.subtext : (payload.liveSubtext !== undefined ? payload.liveSubtext : (payload.live_subtext || prev.subtext));
+        const newSportState = payload.sportState || payload.state || payload.sport_state || prev.sportState;
+
         return {
           ...prev,
           status: payload.status || prev.status,
-          scoreSummary: payload.scoreSummary || payload.live_score_summary || prev.scoreSummary,
-          subtext: payload.subtext || payload.live_subtext || prev.subtext,
-          sportState: payload.sportState || payload.sport_state || prev.sportState
+          scoreSummary: newScoreSummary,
+          subtext: newSubtext,
+          sportState: newSportState,
+          sidesSwapped: payload.sidesSwapped !== undefined ? payload.sidesSwapped : prev.sidesSwapped,
+          goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : prev.goldenPoint,
+          teamAScore: payload.teamAScore !== undefined ? payload.teamAScore : prev.teamAScore,
+          teamBScore: payload.teamBScore !== undefined ? payload.teamBScore : prev.teamBScore,
+          scores: payload.scores || prev.scores,
+          servingTeam: payload.servingTeam || (newSportState?.servingTeam) || prev.servingTeam,
+          servingPlayer: payload.servingPlayer || (newSportState?.servingPlayer) || prev.servingPlayer,
+          call: payload.call || (newSportState?.call) || prev.call
         };
       });
     };
 
-    const handleBallEvent = (eventData) => {
-      if (eventData.celebration) {
-        setCelebration(eventData.celebration);
-        setTimeout(() => setCelebration(null), 3000);
-      } else if (['FOUR', 'SIX', 'WICKET'].includes(eventData.type)) {
-        setCelebration(eventData.type);
-        setTimeout(() => setCelebration(null), 3000);
-      }
-
-      setData((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          scoreSummary: eventData.scoreSummary || prev.scoreSummary,
-          subtext: eventData.subtext || prev.subtext,
-          sportState: eventData.sportState || prev.sportState
-        };
-      });
-    };
-
-    const handlePointScored = (payload) => {
-      if (payload.celebration) {
-        setCelebration(payload.celebration);
-        setTimeout(() => setCelebration(null), 2500);
-      }
+    const handleUndo = (payload) => {
+      applyScorePayload(payload);
       fetchData();
+    };
+
+    const handleConnect = () => {
+      socket.emit('join:match', { matchId });
+      fetchData();
+      fetchCornerLogos();
     };
 
     const handleOverlayUpdated = ({ overlayConfig }) => {
       setData((prev) => prev ? { ...prev, overlayConfig } : prev);
     };
 
-    socket.on('match:update', handleMatchUpdate);
-    socket.on('ball:event', handleBallEvent);
-    socket.on('match:pointScored', handlePointScored);
-    socket.on('match:undoPoint', fetchData);
+    const handleAdsUpdated = () => {
+      fetchCornerLogos();
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('score:updated', applyScorePayload);
+    socket.on('match:update', applyScorePayload);
+    socket.on('ball:event', applyScorePayload);
+    socket.on('match:ballEvent', applyScorePayload);
+    socket.on('match:pointScored', applyScorePayload);
+    socket.on('match:pickleballScore', applyScorePayload);
+    socket.on('match:badmintonEvent', applyScorePayload);
+    socket.on('match:badmintonPoint', applyScorePayload);
+    socket.on('match:footballEvent', applyScorePayload);
+    socket.on('tournament:matchUpdated', applyScorePayload);
+    socket.on('signage:matchUpdate', applyScorePayload);
+    socket.on('match:sidesSwapped', applyScorePayload);
+    socket.on('match:undone', handleUndo);
+    socket.on('match:undoPoint', handleUndo);
     socket.on('stream:overlay_updated', handleOverlayUpdated);
+    socket.on('advertisements:updated', handleAdsUpdated);
+    socket.on('stream:ads_updated', handleAdsUpdated);
 
     return () => {
       socket.emit('leave:match', { matchId });
-      socket.off('match:update', handleMatchUpdate);
-      socket.off('ball:event', handleBallEvent);
-      socket.off('match:pointScored', handlePointScored);
-      socket.off('match:undoPoint', fetchData);
+      socket.off('connect', handleConnect);
+      socket.off('score:updated', applyScorePayload);
+      socket.off('match:update', applyScorePayload);
+      socket.off('ball:event', applyScorePayload);
+      socket.off('match:ballEvent', applyScorePayload);
+      socket.off('match:pointScored', applyScorePayload);
+      socket.off('match:pickleballScore', applyScorePayload);
+      socket.off('match:badmintonEvent', applyScorePayload);
+      socket.off('match:badmintonPoint', applyScorePayload);
+      socket.off('match:footballEvent', applyScorePayload);
+      socket.off('tournament:matchUpdated', applyScorePayload);
+      socket.off('signage:matchUpdate', applyScorePayload);
+      socket.off('match:sidesSwapped', applyScorePayload);
+      socket.off('match:undone', handleUndo);
+      socket.off('match:undoPoint', handleUndo);
       socket.off('stream:overlay_updated', handleOverlayUpdated);
+      socket.off('advertisements:updated', handleAdsUpdated);
+      socket.off('stream:ads_updated', handleAdsUpdated);
     };
-  }, [matchId, fetchData]);
+  }, [matchId, fetchData, fetchCornerLogos]);
 
   if (loading || !data) {
     return (
@@ -147,6 +217,19 @@ export default function MatchOBSOverlayPage({ params }) {
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}
     >
+      {/* ── CORNER LOGO OVERLAYS: TOP-LEFT & TOP-RIGHT (OBS BROWSER SOURCE) ── */}
+      <StreamCornerLogo
+        position="top-left"
+        logos={cornerLogos.topLeft}
+        adsEnabled={true}
+        isBroadcastPreview={true}
+      />
+      <StreamCornerLogo
+        position="top-right"
+        logos={cornerLogos.topRight}
+        adsEnabled={true}
+        isBroadcastPreview={true}
+      />
       {/* Point Celebration Banner */}
       {celebration && (
         <div

@@ -53,27 +53,64 @@ const tournamentSlice = createSlice({
       matches.forEach((m) => {
         matchIds.push(m.id);
         state.liveMatchesById[m.id] = m;
+        if (m.uuid) {
+          state.liveMatchesById[m.uuid] = m;
+        }
       });
       state.liveMatchesByTournament[tournamentId] = matchIds;
     },
     // Micro-update for a single match without triggering full page re-renders
     updateLiveMatchSummary: (state, action) => {
-      const { matchId, liveScoreSummary, liveSubtext, status } = action.payload;
-      if (state.liveMatchesById[matchId]) {
-        state.liveMatchesById[matchId].score = {
-          ...state.liveMatchesById[matchId].score,
-          summary: liveScoreSummary,
-          subtext: liveSubtext
-        };
-        if (status) state.liveMatchesById[matchId].status = status;
+      const { matchId, liveScoreSummary, liveSubtext, status, scoreSummary, subtext, sportState, scores } = action.payload;
+      const summary = scoreSummary || liveScoreSummary;
+      const sub = subtext !== undefined ? subtext : liveSubtext;
+
+      const targetMatches = [];
+      if (matchId && state.liveMatchesById[matchId]) targetMatches.push(state.liveMatchesById[matchId]);
+      if (action.payload.uuid && state.liveMatchesById[action.payload.uuid] && !targetMatches.includes(state.liveMatchesById[action.payload.uuid])) {
+        targetMatches.push(state.liveMatchesById[action.payload.uuid]);
       }
-      if (state.activeMatch && state.activeMatch.id === matchId) {
-        state.activeMatch.score = {
-          ...state.activeMatch.score,
-          summary: liveScoreSummary,
-          subtext: liveSubtext
+      if (action.payload.id && state.liveMatchesById[action.payload.id] && !targetMatches.includes(state.liveMatchesById[action.payload.id])) {
+        targetMatches.push(state.liveMatchesById[action.payload.id]);
+      }
+      if (targetMatches.length === 0) {
+        Object.values(state.liveMatchesById).forEach(m => {
+          if (m && (String(m.id) === String(matchId) || String(m.uuid) === String(matchId))) {
+            targetMatches.push(m);
+          }
+        });
+      }
+
+      targetMatches.forEach(target => {
+        target.score = {
+          ...target.score,
+          summary: summary || target.score?.summary,
+          subtext: sub !== undefined ? sub : target.score?.subtext
         };
-        if (status) state.activeMatch.status = status;
+        target.live_score_summary = summary || target.live_score_summary;
+        target.live_subtext = sub !== undefined ? sub : target.live_subtext;
+        if (status) target.status = status;
+        if (sportState) target.sportState = sportState;
+        if (scores) target.scores = scores;
+      });
+
+      if (state.activeMatch) {
+        const isMatch = String(state.activeMatch.id) === String(matchId) ||
+          String(state.activeMatch.uuid) === String(matchId) ||
+          String(state.activeMatch.id) === String(action.payload.id) ||
+          String(state.activeMatch.uuid) === String(action.payload.uuid);
+        if (isMatch) {
+          state.activeMatch.score = {
+            ...state.activeMatch.score,
+            summary: summary || state.activeMatch.score?.summary,
+            subtext: sub !== undefined ? sub : state.activeMatch.score?.subtext
+          };
+          state.activeMatch.live_score_summary = summary || state.activeMatch.live_score_summary;
+          state.activeMatch.live_subtext = sub !== undefined ? sub : state.activeMatch.live_subtext;
+          if (status) state.activeMatch.status = status;
+          if (sportState) state.activeMatch.sportState = sportState;
+          if (scores) state.activeMatch.scores = scores;
+        }
       }
     },
     setActiveMatch: (state, action) => {

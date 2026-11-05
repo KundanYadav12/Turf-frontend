@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Link } from '../../lib/routerCompat';
 import { getVenuesApi } from '../../services/venueService';
 import { Search, MapPin, Filter, Star, ChevronDown, ChevronUp } from 'lucide-react';
+import OptimizedImage from '../../components/common/OptimizedImage';
 
 export default function SearchPageClient({ initialVenues = [], searchParamsServer = {} }) {
   const router = useRouter();
@@ -157,7 +158,11 @@ export default function SearchPageClient({ initialVenues = [], searchParamsServe
                   style={{ cursor: 'pointer', textDecoration: 'none', display: 'block' }}
                 >
                   <div className="venue-card-image">
-                    <img src={v.primaryImage || '/placeholder-turf.jpg'} alt={`${v.name} in ${v.city}`} loading="lazy" />
+                    <OptimizedImage
+                      src={v.primaryImage || '/placeholder-turf.jpg'}
+                      preset="card"
+                      alt={`${v.name} in ${v.city}`}
+                    />
                     <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem' }}>
                       <span className="badge badge-success" style={{ backdropFilter: 'blur(10px)' }}>
                         <Star size={12} fill="currentColor" /> {v.rating || '4.8'} ({v.reviewCount || 12})

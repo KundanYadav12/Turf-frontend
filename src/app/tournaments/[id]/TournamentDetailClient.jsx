@@ -25,6 +25,7 @@ import TournamentFixturesManager from '../../../components/tournament/Tournament
 import TournamentStreamingPermissionsManager from '../../../components/streaming/TournamentStreamingPermissionsManager';
 import PickleballRulesTab from '../../../components/court/PickleballRulesTab';
 import PlayerScoringLeaderboard from '../../../components/tournament/PlayerScoringLeaderboard';
+import OptimizedImage from '../../../components/common/OptimizedImage';
 
 const EMPTY_ARRAY = [];
 
@@ -2024,8 +2025,11 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
                         {/* Team logo or initial */}
                         {tm.logo ? (
-                          <img
+                          <OptimizedImage
                             src={tm.logo}
+                            preset="logo"
+                            width={48}
+                            height={48}
                             alt={tm.name}
                             style={{
                               width: 48,
@@ -2620,7 +2624,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                                 style={{ cursor: isAlreadyRegistered ? 'not-allowed' : 'pointer', width: 16, height: 16, accentColor: 'var(--accent-primary, #10b981)' }}
                               />
                               {at.logoUrl ? (
-                                <img src={at.logoUrl} alt={at.name} style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
+                                <OptimizedImage src={at.logoUrl} preset="logo" width={26} height={26} alt={at.name} style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
                               ) : (
                                 <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--accent-primary, #10b981)', color: '#fff', fontSize: '0.72rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   {(at.name || 'T').charAt(0).toUpperCase()}

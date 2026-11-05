@@ -11,6 +11,7 @@ import LiveBallCelebrationOverlay from '../components/signage/LiveBallCelebratio
 import SignageAdSlot from '../components/signage/SignageAdSlot';
 import CourtView, { getCourtState, parseRacquetScoreDetails } from '../components/court/CourtView';
 import { useBallEvents } from '../hooks/useBallEvents';
+import { getOptimizedImageUrl } from '../utils/imageUrl';
 import {
   Radio,
   ArrowLeft,
@@ -239,6 +240,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
     const handleConnect = () => {
       setIsConnected(true);
       setHasConnectedOnce(true);
+      socket.emit('join:tournament', { tournamentId: id });
       fetchLiveMatches();
       fetchAdvertisements();
     };
@@ -247,10 +249,12 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
       setIsConnected(false);
     };
 
+    socket.emit('join:tournament', { tournamentId: id });
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
 
     return () => {
+      socket.emit('leave:tournament', { tournamentId: id });
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
@@ -423,7 +427,14 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
 
     setMatches((prev) =>
       prev.map((m) => {
-        if (m.id === targetId || m.uuid === targetId || m.matchId === targetId) {
+        const isMatch = (
+          String(m.id || '') === String(targetId) ||
+          String(m.uuid || '') === String(targetId) ||
+          String(m.matchId || '') === String(targetId) ||
+          (data.matchNumericId && (String(m.id || '') === String(data.matchNumericId) || String(m.numeric_id || '') === String(data.matchNumericId))) ||
+          (data.uuid && (String(m.uuid || '') === String(data.uuid) || String(m.id || '') === String(data.uuid)))
+        );
+        if (isMatch) {
           if (data.eventSeq && m._eventSeq && data.eventSeq < m._eventSeq) {
             return m; // Ignore stale or out-of-order event
           }
@@ -435,6 +446,7 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
             status: data.status || m.status,
             courtColor: data.courtColor || m.courtColor,
             goldenPoint: data.goldenPoint !== undefined ? data.goldenPoint : m.goldenPoint,
+            sidesSwapped: data.sidesSwapped !== undefined ? data.sidesSwapped : m.sidesSwapped,
             score: {
               ...m.score,
               summary: data.scoreSummary || data.liveScoreSummary || m.score?.summary,
@@ -1557,8 +1569,10 @@ const MatchCardHero = ({ match }) => {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minWidth: 0 }}>
             {match.teamA?.logo ? (
               <img
-                src={match.teamA.logo}
+                src={getOptimizedImageUrl(match.teamA.logo, { width: 128, height: 128, fit: 'cover' })}
                 alt={match.teamA.name}
+                loading="lazy"
+                decoding="async"
                 style={{ width: 'clamp(44px, 4.5vw, 64px)', height: 'clamp(44px, 4.5vw, 64px)', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--display-border)' }}
               />
             ) : (
@@ -1668,8 +1682,10 @@ const MatchCardHero = ({ match }) => {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minWidth: 0 }}>
             {match.teamB?.logo ? (
               <img
-                src={match.teamB.logo}
+                src={getOptimizedImageUrl(match.teamB.logo, { width: 128, height: 128, fit: 'cover' })}
                 alt={match.teamB.name}
+                loading="lazy"
+                decoding="async"
                 style={{ width: 'clamp(44px, 4.5vw, 64px)', height: 'clamp(44px, 4.5vw, 64px)', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--display-border)' }}
               />
             ) : (

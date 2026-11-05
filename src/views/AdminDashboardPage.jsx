@@ -13,6 +13,7 @@ import PrivacyPolicyManagementPanel from '../components/admin/PrivacyPolicyManag
 import AccountDeletionManagementPanel from '../components/admin/AccountDeletionManagementPanel';
 import TVDisplayManagementPanel from '../components/admin/TVDisplayManagementPanel';
 import TournamentAnalyticsPanel from '../components/admin/TournamentAnalyticsPanel';
+import AppUpdateManagementPanel from '../components/admin/AppUpdateManagementPanel';
 
 const tdStyle     = { padding: '0.85rem 0.75rem', color: 'var(--text-main)' };
 const tdBoldStyle = { ...tdStyle, fontWeight: 700, color: 'var(--text-heading)' };
@@ -131,7 +132,7 @@ const AdminDashboardPage = () => {
 
       {/* Section Tabs */}
       <div className="touch-tabs-bar" style={{ display: 'flex', gap: '0.65rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem', overflowX: 'auto' }}>
-        {['OVERVIEW', 'TOURNAMENT_ANALYTICS', 'USERS', 'VENUES', 'ADVERTISEMENTS', 'SMART_TV', 'PRIVACY_POLICY', 'ACCOUNT_DELETIONS'].map((tab) => (
+        {['OVERVIEW', 'TOURNAMENT_ANALYTICS', 'APP_UPDATES', 'USERS', 'VENUES', 'ADVERTISEMENTS', 'SMART_TV', 'PRIVACY_POLICY', 'ACCOUNT_DELETIONS'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -144,7 +145,7 @@ const AdminDashboardPage = () => {
               flexShrink: 0
             }}
           >
-            {tab === 'TOURNAMENT_ANALYTICS' ? '🏆 TOURNAMENT VIEWS' : tab === 'ADVERTISEMENTS' ? 'STADIUM ADS' : tab === 'SMART_TV' ? '📺 SMART TV' : tab.replace('_', ' ')}
+            {tab === 'TOURNAMENT_ANALYTICS' ? '🏆 TOURNAMENT VIEWS' : tab === 'APP_UPDATES' ? '📱 APP UPDATES' : tab === 'ADVERTISEMENTS' ? 'STADIUM ADS' : tab === 'SMART_TV' ? '📺 SMART TV' : tab.replace('_', ' ')}
           </button>
         ))}
       </div>
@@ -152,6 +153,11 @@ const AdminDashboardPage = () => {
       {/* ── TOURNAMENT_ANALYTICS Tab ── */}
       {activeTab === 'TOURNAMENT_ANALYTICS' && (
         <TournamentAnalyticsPanel />
+      )}
+
+      {/* ── APP_UPDATES Tab ── */}
+      {activeTab === 'APP_UPDATES' && (
+        <AppUpdateManagementPanel />
       )}
 
       {/* ── OVERVIEW Tab ── */}
