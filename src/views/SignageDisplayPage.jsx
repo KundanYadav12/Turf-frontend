@@ -254,7 +254,6 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
     socket.on('disconnect', handleDisconnect);
 
     return () => {
-      socket.emit('leave:tournament', { tournamentId: id });
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
@@ -416,13 +415,21 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
   const handleLiveMatchUpdate = useCallback((data) => {
     if (!data) return;
 
+    const targetId = data.matchId || data.id || data.uuid;
+    const targetStr = targetId ? String(targetId).trim() : '';
+
     // Defensive check: ignore incoming update if tournament ID differs from current display
     const incomingTournId = data.tournamentId || data.tournament_id || data.tournament_uuid;
     if (incomingTournId && String(incomingTournId) !== String(id) && tournament?.id && String(incomingTournId) !== String(tournament.id)) {
-      return;
+      // Check if this match is already in our matches list; if so, always accept
+      const isOurMatch = targetStr && matches.some(m => (
+        String(m.id || '').trim() === targetStr ||
+        String(m.uuid || '').trim() === targetStr ||
+        String(m.matchId || '').trim() === targetStr
+      ));
+      if (!isOurMatch) return;
     }
 
-    const targetId = data.matchId || data.id || data.uuid;
     if (!targetId) return;
 
     setMatches((prev) =>
@@ -435,30 +442,74 @@ const SignageDisplayPage = ({ tournamentId: propsTournamentId } = {}) => {
           (data.uuid && (String(m.uuid || '') === String(data.uuid) || String(m.id || '') === String(data.uuid)))
         );
         if (isMatch) {
-          if (data.eventSeq && m._eventSeq && data.eventSeq < m._eventSeq) {
-            return m; // Ignore stale or out-of-order event
+          const scoreA = data.scoreA !== undefined ? data.scoreA : (
+            data.teamAScore !== undefined ? data.teamAScore : (
+              data.scores?.teamA !== undefined ? data.scores.teamA : (
+                data.state?.scores?.teamA !== undefined ? data.state.scores.teamA : undefined
+              )
+            )
+          );
+          const scoreB = data.scoreB !== undefined ? data.scoreB : (
+            data.teamBScore !== undefined ? data.teamBScore : (
+              data.scores?.teamB !== undefined ? data.scores.teamB : (
+                data.state?.scores?.teamB !== undefined ? data.state.scores.teamB : undefined
+              )
+            )
+          );
+
+          let derivedSummary = data.scoreSummary || data.liveScoreSummary || data.summary;
+          if (!derivedSummary && scoreA !== undefined && scoreB !== undefined) {
+            derivedSummary = `${scoreA} - ${scoreB}`;
           }
+          const summary = derivedSummary || m.score?.summary || m.live_score_summary || '';
+          const subtext = data.liveSubtext || data.subtext || m.score?.subtext || m.live_subtext || '';
+
+          const updatedSportState = data.sportState || data.sport_state || data.state?.sportState || data.state || {
+            ...(typeof m.sport_state === 'object' ? m.sport_state : {}),
+            ...(data.sidesSwapped !== undefined ? { sidesSwapped: data.sidesSwapped } : {})
+          };
+
+          const sidesSwappedVal = data.sidesSwapped !== undefined 
+            ? data.sidesSwapped 
+            : (data.sportState?.sidesSwapped !== undefined 
+              ? data.sportState.sidesSwapped 
+              : (data.state?.sidesSwapped !== undefined 
+                ? data.state.sidesSwapped 
+                : (updatedSportState?.sidesSwapped !== undefined ? updatedSportState.sidesSwapped : m.sidesSwapped)));
+
           return {
             ...m,
-            _eventSeq: data.eventSeq || data.seq || Date.now(),
+            _eventSeq: data.eventSeq || data.seq || (typeof m._eventSeq === 'number' ? m._eventSeq + 1 : 1),
             _lastEventType: data.type || null,
             _pointEvent: data.pointEvent || (data.type === 'POINT_SCORED' ? data : null),
             status: data.status || m.status,
             courtColor: data.courtColor || m.courtColor,
             goldenPoint: data.goldenPoint !== undefined ? data.goldenPoint : m.goldenPoint,
-            sidesSwapped: data.sidesSwapped !== undefined ? data.sidesSwapped : m.sidesSwapped,
+            sidesSwapped: sidesSwappedVal,
+            teamAScore: scoreA !== undefined ? scoreA : m.teamAScore,
+            teamBScore: scoreB !== undefined ? scoreB : m.teamBScore,
+            scoreA: scoreA !== undefined ? scoreA : m.scoreA,
+            scoreB: scoreB !== undefined ? scoreB : m.scoreB,
+            scores: (scoreA !== undefined && scoreB !== undefined) ? { teamA: scoreA, teamB: scoreB } : (data.scores || m.scores),
+            live_score_summary: summary,
+            liveScoreSummary: summary,
+            scoreSummary: summary,
+            live_subtext: subtext,
+            liveSubtext: subtext,
+            sport_state: updatedSportState,
+            sportState: updatedSportState,
             score: {
               ...m.score,
-              summary: data.scoreSummary || data.liveScoreSummary || m.score?.summary,
-              subtext: data.liveSubtext || data.subtext || m.score?.subtext,
-              details: data.state || data.details || m.score?.details
+              summary,
+              subtext,
+              details: data.details || data.state || data.sportState || m.score?.details || updatedSportState
             }
           };
         }
         return m;
       })
     );
-  }, [id, tournament?.id]);
+  }, [id, tournament?.id, matches]);
 
   useTournamentLive(id, handleLiveMatchUpdate);
 

@@ -218,15 +218,17 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
         }
         if (d.tournament) {
           setTournament(d.tournament);
-          if (d.tournament.uuid || d.tournament.id) {
-            socket.emit('join:tournament', { tournamentId: d.tournament.uuid || d.tournament.id });
-          }
+          tournamentRef.current = d.tournament;
+          if (d.tournament.uuid) socket.emit('join:tournament', { tournamentId: d.tournament.uuid });
+          if (d.tournament.id) socket.emit('join:tournament', { tournamentId: d.tournament.id });
         }
         if (d.matches) {
           setMatches(d.matches);
+          matchesRef.current = d.matches;
           d.matches.forEach(m => {
-            const mid = m.uuid || m.id || m.matchId;
-            if (mid) socket.emit('join:match', { matchId: mid });
+            if (m.uuid) socket.emit('join:match', { matchId: m.uuid });
+            if (m.id) socket.emit('join:match', { matchId: m.id });
+            if (m.internalId) socket.emit('join:match', { matchId: m.internalId });
           });
         }
         if (d.fixtures) setFixtures(d.fixtures);
@@ -257,26 +259,47 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
   }, [displayId]);
 
   const matchesRef = useRef(matches);
+  const tournamentRef = useRef(tournament);
   useEffect(() => {
     matchesRef.current = matches;
   }, [matches]);
+  useEffect(() => {
+    tournamentRef.current = tournament;
+  }, [tournament]);
 
-  // Check for active live streams across tournament matches (stable interval, no re-trigger on score update)
+  // Check for active live streams across tournament matches (strictly scoped to this tournament)
   const checkLiveStreams = useCallback(async () => {
     try {
-      const res = await axios.get('/api/streams/active');
-      if (res.data?.success && res.data.data?.length > 0) {
-        const active = res.data.data[0];
-        setTvStreamData(active);
-        setTvStreamMode(true);
-        const matchObj = matchesRef.current.find(m => (m.uuid === active.matchId || m.id === active.matchId));
-        if (matchObj) setTvStreamMatch(matchObj);
+      const tourParam = tournamentRef.current?.uuid || tournamentRef.current?.id || displayId;
+      const res = await axios.get(`/api/streams/active${tourParam ? `?tournamentId=${tourParam}` : ''}`);
+      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        // STRICT CHECK: only pick stream if it belongs to one of this tournament's matches
+        const activeStream = res.data.data.find(s => {
+          return matchesRef.current.some(m => (
+            String(m.uuid || '') === String(s.matchId) ||
+            String(m.id || '') === String(s.matchId)
+          ));
+        });
+
+        if (activeStream) {
+          const matchObj = matchesRef.current.find(m => (
+            String(m.uuid || '') === String(activeStream.matchId) ||
+            String(m.id || '') === String(activeStream.matchId)
+          ));
+          setTvStreamData(activeStream);
+          if (matchObj) setTvStreamMatch(matchObj);
+        } else {
+          setTvStreamData(null);
+          setTvStreamMode(false);
+          setTvStreamMatch(null);
+        }
       } else {
         setTvStreamData(null);
         setTvStreamMode(false);
+        setTvStreamMatch(null);
       }
     } catch (e) {}
-  }, []);
+  }, [displayId]);
 
   useEffect(() => {
     checkLiveStreams();
@@ -290,6 +313,34 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     }
     fetchDisplaySnapshot();
   }, [fetchDisplaySnapshot]);
+
+  // 2b. Persistent Room Subscription Effect (Guaranteed to survive React Strict Mode and socket reconnects)
+  useEffect(() => {
+    const doJoin = () => {
+      if (displayId) {
+        socket.emit('join:tournament', { tournamentId: displayId });
+        socket.emit('join:match', { matchId: displayId });
+      }
+      if (tournamentRef.current?.uuid) {
+        socket.emit('join:tournament', { tournamentId: tournamentRef.current.uuid });
+      }
+      if (tournamentRef.current?.id) {
+        socket.emit('join:tournament', { tournamentId: tournamentRef.current.id });
+      }
+      matchesRef.current.forEach(m => {
+        if (m.uuid) socket.emit('join:match', { matchId: m.uuid });
+        if (m.id) socket.emit('join:match', { matchId: m.id });
+        if (m.internalId) socket.emit('join:match', { matchId: m.internalId });
+      });
+    };
+
+    doJoin();
+    socket.on('connect', doJoin);
+
+    return () => {
+      socket.off('connect', doJoin);
+    };
+  }, [displayId]);
 
   // 3. Socket.IO Real-Time Subscriptions
   useEffect(() => {
@@ -305,47 +356,140 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     const onMatchUpdate = (payload) => {
       if (!payload) return;
 
-      // Defensive check: ignore updates from other tournaments
-      const incomingTournId = payload.tournamentId || payload.tournament_id || payload.tournament_uuid;
-      if (incomingTournId && tournament?.id && String(incomingTournId) !== String(tournament.id) && String(incomingTournId) !== String(tournament.uuid)) {
-        return;
+      const targetId = payload.matchId || payload.id || payload.uuid || payload.matchUuid;
+      const targetStr = targetId ? String(targetId).trim() : '';
+
+      // Strict tournament check using tournamentRef or displayId
+      const incomingTournId = payload.tournamentId || payload.tournament_id || payload.tournamentUuid || payload.tournament_uuid;
+      const currentTour = tournamentRef.current;
+      if (incomingTournId && (currentTour || displayId)) {
+        const inIdStr = String(incomingTournId).trim();
+        const curIdStr = currentTour?.id ? String(currentTour.id).trim() : '';
+        const curUuidStr = currentTour?.uuid ? String(currentTour.uuid).trim() : '';
+        const dispIdStr = String(displayId || '').trim();
+
+        const matchesTourn = (
+          (curIdStr && inIdStr === curIdStr) ||
+          (curUuidStr && inIdStr === curUuidStr) ||
+          (dispIdStr && inIdStr === dispIdStr)
+        );
+
+        // If this match is already in our tournament matches, always accept the update
+        const isOurMatch = targetStr && matchesRef.current.some(m => (
+          String(m.id || '').trim() === targetStr ||
+          String(m.uuid || '').trim() === targetStr ||
+          String(m.internalId || '').trim() === targetStr ||
+          (payload.matchUuid && String(m.uuid || '').trim() === String(payload.matchUuid).trim()) ||
+          (payload.matchNumericId && String(m.internalId || '').trim() === String(payload.matchNumericId).trim())
+        ));
+
+        if (!isOurMatch && (curIdStr || curUuidStr || dispIdStr) && !matchesTourn) {
+          return; // Ignore update from an unrelated tournament
+        }
       }
 
-      const targetId = payload.matchId || payload.id || payload.uuid;
       if (!targetId) return;
 
-      setMatches(prev => prev.map(m => {
-        if (m.id === targetId || m.matchId === targetId || m.uuid === targetId) {
-          // Monotonic sequence check: ignore stale or out-of-order events
-          if (payload.eventSeq && m._eventSeq && payload.eventSeq < m._eventSeq) {
-            return m;
-          }
-          return {
-            ...m,
-            _eventSeq: payload.eventSeq || payload.seq || Date.now(),
-            _lastEventType: payload.type || null,
-            _pointEvent: payload.pointEvent || (payload.type === 'POINT_SCORED' ? payload : null),
-            status: payload.status || m.status,
-            courtColor: payload.courtColor || m.courtColor,
-            goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : m.goldenPoint,
-            sidesSwapped: payload.sidesSwapped !== undefined ? payload.sidesSwapped : m.sidesSwapped,
-            sport_state: payload.sportState || payload.sport_state || {
+      let matchedAny = false;
+
+      setMatches(prev => {
+        const next = prev.map(m => {
+          const mIdStr = String(m.id || '').trim();
+          const mUuidStr = String(m.uuid || '').trim();
+          const mMatchIdStr = String(m.matchId || '').trim();
+          const mIntIdStr = String(m.internalId || '').trim();
+          const mNumStr = String(m.matchNumber || '').trim();
+
+          const isMatch = (
+            mIdStr === targetStr ||
+            mUuidStr === targetStr ||
+            mMatchIdStr === targetStr ||
+            mIntIdStr === targetStr ||
+            (payload.matchUuid && (mUuidStr === String(payload.matchUuid).trim() || mIdStr === String(payload.matchUuid).trim())) ||
+            (payload.matchNumericId && (mIntIdStr === String(payload.matchNumericId).trim() || mIdStr === String(payload.matchNumericId).trim())) ||
+            (payload.uuid && (mUuidStr === String(payload.uuid).trim() || mIdStr === String(payload.uuid).trim())) ||
+            (payload.matchNumber && mNumStr && mNumStr === String(payload.matchNumber).trim())
+          );
+
+          if (isMatch) {
+            matchedAny = true;
+
+            const scoreA = payload.scoreA !== undefined ? payload.scoreA : (
+              payload.teamAScore !== undefined ? payload.teamAScore : (
+                payload.scores?.teamA !== undefined ? payload.scores.teamA : (
+                  payload.state?.scores?.teamA !== undefined ? payload.state.scores.teamA : undefined
+                )
+              )
+            );
+            const scoreB = payload.scoreB !== undefined ? payload.scoreB : (
+              payload.teamBScore !== undefined ? payload.teamBScore : (
+                payload.scores?.teamB !== undefined ? payload.scores.teamB : (
+                  payload.state?.scores?.teamB !== undefined ? payload.state.scores.teamB : undefined
+                )
+              )
+            );
+
+            let derivedSummary = payload.scoreSummary || payload.liveScoreSummary || payload.summary;
+            if (!derivedSummary && scoreA !== undefined && scoreB !== undefined) {
+              derivedSummary = `${scoreA} - ${scoreB}`;
+            }
+            const summary = derivedSummary || m.score?.summary || m.live_score_summary || '';
+            const subtext = payload.subtext !== undefined ? payload.subtext : (payload.liveSubtext !== undefined ? payload.liveSubtext : (m.score?.subtext || m.live_subtext || ''));
+
+            const updatedSportState = payload.sportState || payload.sport_state || payload.state?.sportState || payload.state || {
               ...(typeof m.sport_state === 'object' ? m.sport_state : {}),
               ...(payload.sidesSwapped !== undefined ? { sidesSwapped: payload.sidesSwapped } : {})
-            },
-            score: {
-              ...m.score,
-              summary: payload.scoreSummary || payload.liveScoreSummary || payload.summary || m.score?.summary,
-              subtext: payload.subtext || payload.liveSubtext || m.score?.subtext,
-              details: payload.details || payload.state || m.score?.details
-            }
-          };
-        }
-        return m;
-      }));
+            };
+
+            const sidesSwappedVal = payload.sidesSwapped !== undefined 
+              ? payload.sidesSwapped 
+              : (payload.sportState?.sidesSwapped !== undefined 
+                ? payload.sportState.sidesSwapped 
+                : (payload.state?.sidesSwapped !== undefined 
+                  ? payload.state.sidesSwapped 
+                  : (updatedSportState?.sidesSwapped !== undefined ? updatedSportState.sidesSwapped : m.sidesSwapped)));
+
+            return {
+              ...m,
+              _eventSeq: payload.eventSeq || payload.seq || (typeof m._eventSeq === 'number' ? m._eventSeq + 1 : 1),
+              _lastEventType: payload.type || null,
+              _pointEvent: payload.pointEvent || (payload.type === 'POINT_SCORED' ? payload : null),
+              status: payload.status || m.status,
+              courtColor: payload.courtColor || m.courtColor,
+              goldenPoint: payload.goldenPoint !== undefined ? payload.goldenPoint : m.goldenPoint,
+              sidesSwapped: sidesSwappedVal,
+              teamAScore: scoreA !== undefined ? scoreA : m.teamAScore,
+              teamBScore: scoreB !== undefined ? scoreB : m.teamBScore,
+              scoreA: scoreA !== undefined ? scoreA : m.scoreA,
+              scoreB: scoreB !== undefined ? scoreB : m.scoreB,
+              scores: (scoreA !== undefined && scoreB !== undefined) ? { teamA: scoreA, teamB: scoreB } : (payload.scores || m.scores),
+              live_score_summary: summary,
+              liveScoreSummary: summary,
+              scoreSummary: summary,
+              live_subtext: subtext,
+              liveSubtext: subtext,
+              sport_state: updatedSportState,
+              sportState: updatedSportState,
+              score: {
+                ...m.score,
+                summary,
+                subtext,
+                details: payload.details || payload.state || payload.sportState || m.score?.details || updatedSportState
+              }
+            };
+          }
+          return m;
+        });
+
+        return next;
+      });
+
+      // If a match was updated that was not yet in our matches array (e.g. status changed to LIVE)
+      if (!matchedAny) {
+        fetchDisplaySnapshot();
+      }
 
       // Trigger Celebration Animation if 4, 6, WICKET, GOAL, or MATCH_POINT
-      // IMPORTANT: Clear celebration immediately on UNDO; do not celebrate undos
       if (payload.type === 'UNDO') {
         setCelebration(null);
       } else {
@@ -355,7 +499,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
           if (['4', 'FOUR', '6', 'SIX', 'WICKET', 'W', 'GOAL', 'MATCH_POINT'].includes(ev)) {
             setCelebration({
               type: ev.includes('4') ? 'FOUR' : ev.includes('6') ? 'SIX' : ev.includes('W') ? 'WICKET' : ev.includes('GOAL') ? 'GOAL' : 'FOUR',
-              matchNumber: payload.matchNumber || targetNum || 1,
+              matchNumber: payload.matchNumber || 1,
               timestamp: Date.now()
             });
             setTimeout(() => setCelebration(null), 3500);
@@ -387,14 +531,19 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('score:updated', onMatchUpdate);
     socket.on('signage:matchUpdate', onMatchUpdate);
     socket.on('signage:emitMatchUpdate', onMatchUpdate);
     socket.on('tournament:matchUpdated', onMatchUpdate);
     socket.on('match:pickleballScore', onMatchUpdate);
     socket.on('match:sidesSwapped', onMatchUpdate);
     socket.on('match:badmintonEvent', onMatchUpdate);
+    socket.on('match:badmintonPoint', onMatchUpdate);
+    socket.on('match:footballEvent', onMatchUpdate);
     socket.on('match:ballEvent', onMatchUpdate);
     socket.on('match:pointScored', onMatchUpdate);
+    socket.on('match:undone', onMatchUpdate);
+    socket.on('match:undoPoint', onMatchUpdate);
     socket.on('signage:pointScored', onMatchUpdate);
     socket.on('signage:tvConfigUpdated', onConfigUpdate);
     socket.on('signage:playbackUpdated', onPlaybackUpdate);
@@ -411,13 +560,20 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     const onStreamStatus = (payload) => {
       const data = payload?.stream || payload;
       if (data?.status === 'LIVE' || data?.status === 'PREVIEW' || data?.isLive) {
-        setTvStreamData(data);
-        setTvStreamMode(true);
-        const matchObj = matchesRef.current.find(m => (m.uuid === data.matchId || m.id === data.matchId));
-        if (matchObj) setTvStreamMatch(matchObj);
+        // STRICT CHECK: only switch stream if this match belongs to our current tournament
+        const matchObj = matchesRef.current.find(m => (
+          String(m.uuid || '') === String(data.matchId) ||
+          String(m.id || '') === String(data.matchId)
+        ));
+        if (matchObj) {
+          setTvStreamData(data);
+          setTvStreamMatch(matchObj);
+          setTvStreamMode(true);
+        }
       } else if (data?.status === 'ENDED' || data?.status === 'OFFLINE' || data?.isLive === false) {
         setTvStreamData(null);
         setTvStreamMode(false);
+        setTvStreamMatch(null);
       }
     };
 
@@ -431,14 +587,19 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       socket.off('stream:status', onStreamStatus);
       socket.off('stream:status_changed', onStreamStatus);
       socket.off('stream:ended', onStreamStatus);
+      socket.off('score:updated', onMatchUpdate);
       socket.off('signage:matchUpdate', onMatchUpdate);
       socket.off('signage:emitMatchUpdate', onMatchUpdate);
       socket.off('tournament:matchUpdated', onMatchUpdate);
       socket.off('match:pickleballScore', onMatchUpdate);
       socket.off('match:sidesSwapped', onMatchUpdate);
       socket.off('match:badmintonEvent', onMatchUpdate);
+      socket.off('match:badmintonPoint', onMatchUpdate);
+      socket.off('match:footballEvent', onMatchUpdate);
       socket.off('match:ballEvent', onMatchUpdate);
       socket.off('match:pointScored', onMatchUpdate);
+      socket.off('match:undone', onMatchUpdate);
+      socket.off('match:undoPoint', onMatchUpdate);
       socket.off('signage:pointScored', onMatchUpdate);
       socket.off('signage:tvConfigUpdated', onConfigUpdate);
       socket.off('signage:playbackUpdated', onPlaybackUpdate);
@@ -452,7 +613,7 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
       socket.off('tournament:matchDisplayUpdated', fetchDisplaySnapshot);
       socket.off('display:matchesUpdated', fetchDisplaySnapshot);
     };
-  }, [fetchDisplaySnapshot]);
+  }, [fetchDisplaySnapshot, displayId]);
 
   // 4. Scene Rotation Engine
   const activeScenes = config.activeScenes || ['SCOREBOARD', 'FIXTURES', 'STANDINGS', 'LEADERBOARD', 'SPONSORS', 'RESULTS'];

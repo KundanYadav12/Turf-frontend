@@ -1,6 +1,6 @@
 'use client';
 import React, { memo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../../lib/routerCompat';
 import CricketLiveCard from './CricketLiveCard';
 import FootballLiveCard from './FootballLiveCard';
 import BadmintonLiveCard from './BadmintonLiveCard';
@@ -159,7 +159,7 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
           </Link>
 
           <Link
-            to={`/matches/${matchIdentifier}/scorer`}
+            to={sportSlug?.toLowerCase() === 'pickleball' ? `/matches/${matchIdentifier}/pickleball-scorer` : `/matches/${matchIdentifier}/scorer`}
             style={{
               fontSize: '0.78rem',
               fontWeight: 700,
@@ -170,7 +170,7 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
               gap: '4px'
             }}
           >
-            🏏 Scorer
+            {sportSlug?.toLowerCase() === 'pickleball' ? '🏓 Scorer' : sportSlug?.toLowerCase() === 'football' ? '⚽ Scorer' : sportSlug?.toLowerCase() === 'badminton' ? '🏸 Scorer' : '🏏 Scorer'}
           </Link>
 
           {isLiveStream && (

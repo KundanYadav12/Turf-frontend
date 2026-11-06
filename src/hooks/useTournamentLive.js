@@ -30,12 +30,33 @@ export const useTournamentLive = (tournamentId, onMatchUpdated) => {
 
     socket.on('tournament:matchUpdated', handleUpdate);
     socket.on('tournament:matchDisplayUpdated', handleUpdate);
+    socket.on('score:updated', handleUpdate);
+    socket.on('signage:matchUpdate', handleUpdate);
+    socket.on('match:ballEvent', handleUpdate);
+    socket.on('match:pointScored', handleUpdate);
+    socket.on('match:pickleballScore', handleUpdate);
+    socket.on('match:badmintonEvent', handleUpdate);
+    socket.on('match:badmintonPoint', handleUpdate);
+    socket.on('match:footballEvent', handleUpdate);
+    socket.on('match:undone', handleUpdate);
+    socket.on('match:undoPoint', handleUpdate);
+    socket.on('match:sidesSwapped', handleUpdate);
 
-    // 3. MANDATORY CLEANUP: Leave room on unmount or tournament change
+    // 3. CLEANUP: Detach event listeners on unmount or tournament change
     return () => {
-      socket.emit('leave:tournament', { tournamentId });
       socket.off('tournament:matchUpdated', handleUpdate);
       socket.off('tournament:matchDisplayUpdated', handleUpdate);
+      socket.off('score:updated', handleUpdate);
+      socket.off('signage:matchUpdate', handleUpdate);
+      socket.off('match:ballEvent', handleUpdate);
+      socket.off('match:pointScored', handleUpdate);
+      socket.off('match:pickleballScore', handleUpdate);
+      socket.off('match:badmintonEvent', handleUpdate);
+      socket.off('match:badmintonPoint', handleUpdate);
+      socket.off('match:footballEvent', handleUpdate);
+      socket.off('match:undone', handleUpdate);
+      socket.off('match:undoPoint', handleUpdate);
+      socket.off('match:sidesSwapped', handleUpdate);
     };
   }, [tournamentId]);
 };
