@@ -19,10 +19,12 @@ import {
   Send,
   ShieldCheck 
 } from 'lucide-react';
+import { useBranding } from '../components/providers/BrandingProvider';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { appName, logoUrl } = useBranding();
 
   // Mode: 'login' | 'forgot'
   const [mode, setMode] = useState('login');
@@ -222,9 +224,9 @@ const LoginPage = () => {
           <>
             {/* Header */}
             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-              <div className="brand-logo" style={{ justifyContent: 'center', marginBottom: '0.75rem' }}>
-                <Trophy size={32} color="var(--accent-primary)" />
-                <span>TurfSpot</span>
+              <div className="brand-logo" style={{ justifyContent: 'center', marginBottom: '0.75rem', gap: '0.65rem' }}>
+                <img src={logoUrl || "/logo.png"} alt={`${appName} Logo`} style={{ width: 44, height: 44, borderRadius: '12px', objectFit: 'contain' }} />
+                <span>{appName}</span>
               </div>
               <h2 style={{ fontSize: '1.6rem' }}>Welcome Back</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.3rem' }}>
@@ -351,7 +353,7 @@ const LoginPage = () => {
             <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
               <div className="brand-logo" style={{ justifyContent: 'center', marginBottom: '0.75rem' }}>
                 <KeyRound size={32} color="var(--accent-primary)" />
-                <span>TurfSpot</span>
+                <span>{appName}</span>
               </div>
               <h2 style={{ fontSize: '1.5rem' }}>
                 {forgotStep === 1 && 'Reset Your Password'}

@@ -68,3 +68,32 @@ export const deleteAppReleaseApi = async (releaseId) => {
   const response = await API.delete(`/admin/mobile-updates/releases/${releaseId}`);
   return response.data;
 };
+
+// Software Branding Management APIs
+export const getBrandingAdminApi = async () => {
+  const response = await API.get('/admin/branding');
+  return response.data;
+};
+
+export const updateBrandingAdminApi = async (formData) => {
+  const response = await API.put('/admin/branding', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return response.data;
+};
+
+export const resetBrandingAdminApi = async () => {
+  const response = await API.post('/admin/branding/reset');
+  return response.data;
+};
+
+export const getBrandingAuditLogsApi = async (params = {}) => {
+  const response = await API.get('/admin/branding/audit-logs', { params });
+  return response.data;
+};
+
+export const getPublicBrandingApi = async () => {
+  const response = await API.get('/branding');
+  return response.data;
+};
+

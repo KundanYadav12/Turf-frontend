@@ -50,6 +50,8 @@ const createSocket = () => {
   return socketInstance;
 };
 
+export const getSocket = () => createSocket();
+
 // Export proxy object that forwards to active socket instance
 export const socket = new Proxy({}, {
   get(target, prop) {

@@ -49,9 +49,17 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
   const isInitialMountRef = useRef(true);
   const sentinelRef = useRef(null);
 
+  const [localUser, setLocalUser] = useState(null);
+
   // Initialize Redux store with initial server data once on mount
   useEffect(() => {
     setIsMounted(true);
+    if (!user && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('turf_user') || localStorage.getItem('user');
+        if (raw) setLocalUser(JSON.parse(raw));
+      } catch {}
+    }
     if (initialTournaments.length > 0 && allTournamentIds.length === 0 && !isInitialized) {
       dispatch(setTournamentsFeed({
         items: initialTournaments,
@@ -60,10 +68,14 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
       }));
     }
     setIsInitialized(true);
-  }, []);
+  }, [user]);
 
-  const canCreateTournament = isAuthenticated && Boolean(
-    ['ADMIN', 'SUPER_ADMIN', 'VENUE_OWNER', 'PLAYER', 'USER'].includes(String(user?.role || '').toUpperCase())
+  const effectiveUser = user || localUser;
+  const effectiveAuth = isAuthenticated || Boolean(effectiveUser);
+
+  const canCreateTournament = Boolean(
+    effectiveAuth &&
+    (!effectiveUser?.role || ['ADMIN', 'SUPER_ADMIN', 'VENUE_OWNER', 'PLAYER', 'USER'].includes(String(effectiveUser.role).toUpperCase()))
   );
 
   // Core fetch function supporting cursors (for lazy loading) and filter overrides

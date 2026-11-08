@@ -5,10 +5,12 @@ import { useDispatch } from 'react-redux';
 import { registerApi } from '../services/authService';
 import { setCredentials } from '../features/auth/authSlice';
 import { Trophy, UserCheck, AlertCircle } from 'lucide-react';
+import { useBranding } from '../components/providers/BrandingProvider';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { appName, logoUrl } = useBranding();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -51,9 +53,9 @@ const RegisterPage = () => {
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div className="brand-logo" style={{ justifyContent: 'center', marginBottom: '0.75rem' }}>
-            <Trophy size={32} color="var(--accent-primary)" />
-            <span>TurfSpot</span>
+          <div className="brand-logo" style={{ justifyContent: 'center', marginBottom: '0.75rem', gap: '0.65rem' }}>
+            <img src={logoUrl || "/logo.png"} alt={`${appName} Logo`} style={{ width: 44, height: 44, borderRadius: '12px', objectFit: 'contain' }} />
+            <span>{appName}</span>
           </div>
           <h2 style={{ fontSize: '1.6rem' }}>Create Account</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.3rem' }}>

@@ -1,7 +1,9 @@
 import React from 'react';
 import { Trophy, Sparkles } from 'lucide-react';
+import { useBranding } from '../providers/BrandingProvider';
 
 const Footer = () => {
+  const { appName, logoUrl } = useBranding();
   return (
     <footer className="footer-root">
       <div className="container">
@@ -10,20 +12,19 @@ const Footer = () => {
           {/* Brand */}
           <div>
             <div className="brand-logo" style={{ marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <div style={{
-                width: 34,
-                height: 34,
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(132, 204, 22, 0.2))',
-                border: '1px solid rgba(16, 185, 129, 0.35)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <Trophy size={18} color="var(--accent-primary)" />
-              </div>
-              <span style={{ fontWeight: 800 }}>TurfSpot</span>
+              <img
+                src={logoUrl || "/logo.png"}
+                alt={`${appName} Logo`}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: '8px',
+                  objectFit: 'contain',
+                  boxShadow: '0 0 10px rgba(18, 32, 69, 0.3)',
+                  flexShrink: 0
+                }}
+              />
+              <span style={{ fontWeight: 800 }}>{appName}</span>
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: '1.6', maxWidth: 320, marginBottom: '0.85rem' }}>
               The complete sports booking, turf management, team organizing, and match scoring SaaS platform.
@@ -84,7 +85,7 @@ const Footer = () => {
           lineHeight: 1.5
         }}>
           <div>
-            © {new Date().getFullYear()} TurfSpot Platform. All rights reserved. Built with precision SaaS architecture.
+            © {new Date().getFullYear()} {appName} Platform. All rights reserved. Built with precision SaaS architecture.
           </div>
           <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
             <a href="/privacy-policy" style={{ color: 'var(--text-muted)', textDecoration: 'none' }} className="footer-link">

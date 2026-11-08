@@ -56,12 +56,18 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
     const fetchMatch = async (isBackground = false) => {
       if (!isBackground) setLoading(true);
       try {
-        const res = await axios.get(`/api/matches/${id}`);
+        const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const tournamentIdParam = urlParams?.get('tournamentId') || urlParams?.get('tournament_id');
+        const matchUrl = tournamentIdParam
+          ? `/api/matches/${id}?tournamentId=${encodeURIComponent(tournamentIdParam)}`
+          : `/api/matches/${id}`;
+        const res = await axios.get(matchUrl);
         if (res.data.success && isMounted) {
           setMatch(res.data.data);
         }
       } catch (err) {
         console.error('Failed to load match:', err);
+        if (isMounted) setMatch(null);
       } finally {
         if (isMounted && !isBackground) setLoading(false);
       }
@@ -140,6 +146,30 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
     effectiveUser?.id && match?.scorer_id && Number(effectiveUser.id) === Number(match.scorer_id)
   );
   const canManageStream = Boolean(isMounted && (isSuperAdmin || isCreator || isAssignedScorer || streamData?.canManage));
+
+  // Authoritative Scorer permission check from backend API
+  const [canScoreMatch, setCanScoreMatch] = useState(false);
+
+  useEffect(() => {
+    if (!id || !effectiveUser) {
+      setCanScoreMatch(false);
+      return;
+    }
+    let active = true;
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('turf_token') : null);
+    axios.get(`/api/matches/${id}/can-score`, {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+    })
+      .then(res => {
+        if (active && res.data?.success) {
+          setCanScoreMatch(Boolean(res.data.data?.canScore));
+        }
+      })
+      .catch(() => {
+        if (active) setCanScoreMatch(false);
+      });
+    return () => { active = false; };
+  }, [id, effectiveUser, token]);
 
   // Diagnostic logging in non-production when Go Live is hidden
   useEffect(() => {
@@ -669,28 +699,30 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
             </div>
           )}
 
-          {/* Official Scorer Console Link */}
-          <Link
-            to={`/matches/${match.uuid || id}/scorer`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              background: 'var(--accent-primary, #10b981)',
-              color: '#022c22',
-              fontWeight: 800,
-              padding: '0.5rem 1.1rem',
-              borderRadius: 10,
-              textDecoration: 'none',
-              fontSize: '0.85rem',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
-            }}
-          >
-            {match.sport?.slug === 'football' ? '⚽ Open Football Scorer' :
-             match.sport?.slug === 'badminton' ? '🏸 Open Badminton Scorer' :
-             match.sport?.slug === 'pickleball' ? '⚡ Open Pickleball Scorer' :
-             '🏏 Open Official Scorer'} <ExternalLink size={14} />
-          </Link>
+          {/* Official Scorer Console Link (Visible only if authorized) */}
+          {canScoreMatch && (
+            <Link
+              to={`/matches/${match.uuid || id}/scorer`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                background: 'var(--accent-primary, #10b981)',
+                color: '#022c22',
+                fontWeight: 800,
+                padding: '0.5rem 1.1rem',
+                borderRadius: 10,
+                textDecoration: 'none',
+                fontSize: '0.85rem',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
+              }}
+            >
+              {match.sport?.slug === 'football' ? '⚽ Open Football Scorer' :
+               match.sport?.slug === 'badminton' ? '🏸 Open Badminton Scorer' :
+               match.sport?.slug === 'pickleball' ? '⚡ Open Pickleball Scorer' :
+               '🏏 Open Official Scorer'} <ExternalLink size={14} />
+            </Link>
+          )}
         </div>
       </div>
 
@@ -908,7 +940,8 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
         })()}
       </div>
 
-      {/* Real-time Scorer Test Panel */}
+      {/* Real-time Scorer Test Panel (Authorized Scorers & Organizers only) */}
+      {canScoreMatch && (
       <div style={{
         background: 'var(--bg-card-solid, #1e293b)',
         border: '1px solid var(--border-color, rgba(255,255,255,0.08))',
@@ -1072,6 +1105,7 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Ball-by-ball Commentary Feed (Paginated Reverse Chronological) */}
       <div style={{

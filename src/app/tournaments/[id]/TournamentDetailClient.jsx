@@ -16,7 +16,7 @@ import {
   Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft,
   Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv,
   ChevronRight, Trash2, Search, Check, Filter, X, ClipboardList, Settings, AlertTriangle, Info, Clock, ExternalLink,
-  Eye, Activity, Video, Lock, BookOpen
+  Eye, Activity, Video, Lock, BookOpen, MessageSquare
 } from 'lucide-react';
 import TeamRosterDrawer from '../../../components/tournament/TeamRosterDrawer';
 import PlayerRegistrationsManager from '../../../components/tournament/PlayerRegistrationsManager';
@@ -123,7 +123,54 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   );
   const canManage = Boolean(mounted && user && (isSuperAdmin || isCreator));
   const canDeleteTournament = Boolean(mounted && user && (isSuperAdmin || isCreator));
-  const canScore = Boolean(mounted && user && (isSuperAdmin || isCreator || userRole === 'SCORER' || userRole === 'ORGANIZER'));
+
+  // Authoritative Scorer Access state
+  const [scorerAccess, setScorerAccess] = useState({
+    canScoreAny: false,
+    isSuperAdmin: false,
+    isOrganizer: false,
+    isAssignedScorer: false,
+    assignedMatchIds: []
+  });
+
+  const fetchScorerAccess = useCallback(async () => {
+    if (!isAuthenticated || !user || !tournamentId) {
+      setScorerAccess({
+        canScoreAny: false,
+        isSuperAdmin: false,
+        isOrganizer: false,
+        isAssignedScorer: false,
+        assignedMatchIds: []
+      });
+      return;
+    }
+    try {
+      const res = await axios.get(`/api/tournaments/${tournamentId}/my-scorer-access`);
+      if (res.data?.success) {
+        setScorerAccess(res.data.data);
+      }
+    } catch (err) {
+      setScorerAccess({
+        canScoreAny: false,
+        isSuperAdmin: false,
+        isOrganizer: false,
+        isAssignedScorer: false,
+        assignedMatchIds: []
+      });
+    }
+  }, [tournamentId, isAuthenticated, user]);
+
+  useEffect(() => {
+    fetchScorerAccess();
+  }, [fetchScorerAccess]);
+
+  const canScore = Boolean(
+    mounted && user && (
+      isSuperAdmin ||
+      isCreator ||
+      scorerAccess.canScoreAny
+    )
+  );
 
   // Module A1: Remove Team Confirmation State
   const [teamToRemove, setTeamToRemove] = useState(null);
@@ -1005,12 +1052,18 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
               </Link>
             )}
 
-            {/* 2b. Scorer Console (Visible ONLY to users with scoring access: Organizer, Scorer, Admin) */}
+            {/* 2b. Scorer Console (Visible ONLY to users with scoring access: Organizer, Assigned Scorer, Admin) */}
             {canScore && (
               <Link
-                href={liveMatches.length > 0
-                  ? `/matches/${liveMatches[0].uuid || liveMatches[0].id}/scorer`
-                  : `/tournaments/${tournamentId}?tab=matches`}
+                href={(() => {
+                  const targetMatch = liveMatches.find(m => canManage || scorerAccess.canScoreAny || scorerAccess.assignedMatchIds?.map(Number).includes(Number(m.id)));
+                  if (targetMatch) {
+                    return isPickleball
+                      ? `/matches/${targetMatch.uuid || targetMatch.id}/pickleball-scorer`
+                      : `/matches/${targetMatch.uuid || targetMatch.id}/scorer`;
+                  }
+                  return `/tournaments/${tournamentId}?tab=matches`;
+                })()}
                 className="btn tournament-btn-scorer-console"
                 suppressHydrationWarning
                 style={{
@@ -1024,6 +1077,24 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                 <Zap size={16} /> Scorer Console
               </Link>
             )}
+
+            {/* Tournament Chat Button */}
+            <Link
+              href={`/chat?tournament=${tournamentId}`}
+              className="btn"
+              style={{
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#ffffff',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+              }}
+              title="Open Tournament Group Chat"
+            >
+              <MessageSquare size={16} /> Tournament Chat
+            </Link>
 
             {/* 3. Smart TV Broadcast Mode (Visible to ALL users) */}
             <Link
@@ -1071,8 +1142,10 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           { key: 'teams', label: 'Registered Teams', icon: <Shield size={15} /> },
           { key: 'standings', label: 'Results & Points Table', icon: <Table size={15} /> },
           { key: 'registrations', label: 'Player Registrations', icon: <UserPlus size={15} /> },
-          { key: 'scorers', label: 'Official Scorers', icon: <ClipboardList size={15} /> },
-          { key: 'streaming', label: 'Live Streaming Access', icon: <Video size={15} /> },
+          ...(canManage ? [
+            { key: 'scorers', label: 'Official Scorers', icon: <ClipboardList size={15} /> },
+            { key: 'streaming', label: 'Live Streaming Access', icon: <Video size={15} /> }
+          ] : []),
           { key: 'awards', label: 'Awards & Leaders', icon: <Award size={15} /> },
           ...(isPickleball ? [
             { key: 'groups', label: 'Groups & Squads', icon: <Users size={15} /> },
@@ -1496,6 +1569,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
                     key={m.id}
                     match={m}
                     canManage={canManage}
+                    scorerAccess={scorerAccess}
                     onToggleDisplay={handleToggleMatchDisplay}
                   />
                 ))}
@@ -1509,6 +1583,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           <TournamentFixturesManager
             tournament={tournament}
             canManage={canManage}
+            scorerAccess={scorerAccess}
             fixtures={fixtures}
             teams={teams}
             onRefresh={loadTabData}
@@ -2321,8 +2396,8 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           />
         )}
 
-        {/* ── Official Scorers Tab ── */}
-        {activeTab === 'scorers' && (
+        {/* ── Official Scorers Tab (Organizer & Superadmin Only) ── */}
+        {activeTab === 'scorers' && canManage && (
           <OfficialScorersManager
             tournament={tournament}
             canManage={canManage}
@@ -2331,8 +2406,8 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
           />
         )}
 
-        {/* ── Live Streaming Access Tab ── */}
-        {activeTab === 'streaming' && (
+        {/* ── Live Streaming Access Tab (Organizer & Superadmin Only) ── */}
+        {activeTab === 'streaming' && canManage && (
           <TournamentStreamingPermissionsManager
             tournament={tournament}
             canManage={canManage}

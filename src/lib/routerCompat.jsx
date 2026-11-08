@@ -8,10 +8,36 @@ import {
   useParams as useNextParams,
 } from 'next/navigation';
 
-export function Link({ to, href, children, prefetch = false, ...props }) {
+export function Link({ to, href, children, prefetch = true, onMouseEnter, onTouchStart, ...props }) {
   const destination = to || href || '#';
+  const router = useNextRouter();
+
+  const handleMouseEnter = (e) => {
+    if (typeof destination === 'string' && destination.startsWith('/') && destination !== '#') {
+      try {
+        router.prefetch(destination);
+      } catch (err) {}
+    }
+    if (onMouseEnter) onMouseEnter(e);
+  };
+
+  const handleTouchStart = (e) => {
+    if (typeof destination === 'string' && destination.startsWith('/') && destination !== '#') {
+      try {
+        router.prefetch(destination);
+      } catch (err) {}
+    }
+    if (onTouchStart) onTouchStart(e);
+  };
+
   return (
-    <NextLink href={destination} prefetch={prefetch} {...props}>
+    <NextLink
+      href={destination}
+      prefetch={prefetch}
+      onMouseEnter={handleMouseEnter}
+      onTouchStart={handleTouchStart}
+      {...props}
+    >
       {children}
     </NextLink>
   );
@@ -19,17 +45,35 @@ export function Link({ to, href, children, prefetch = false, ...props }) {
 
 export function useNavigate() {
   const router = useNextRouter();
-  return useCallback((to, options = {}) => {
+  const currentPathname = useNextPathname();
+
+  const navigate = useCallback((to, options = {}) => {
     if (typeof to === 'number') {
       if (to === -1) router.back();
       return;
     }
+
+    // Prevent duplicate navigation to current exact route
+    if (typeof to === 'string' && to === currentPathname && !options?.force) {
+      return;
+    }
+
     if (options && options.replace) {
       router.replace(to);
     } else {
       router.push(to);
     }
-  }, [router]);
+  }, [router, currentPathname]);
+
+  navigate.prefetch = (to) => {
+    if (typeof to === 'string' && to.startsWith('/')) {
+      try {
+        router.prefetch(to);
+      } catch (err) {}
+    }
+  };
+
+  return navigate;
 }
 
 export function useParams() {

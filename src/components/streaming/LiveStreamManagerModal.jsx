@@ -8,10 +8,13 @@ import {
   Check, RefreshCw, Eye, EyeOff, Play, Pause, Square,
   Shield, AlertCircle, CheckCircle, Smartphone, ExternalLink,
   Layers, Volume2, VolumeX, RotateCw, Monitor, Sparkles,
-  Minimize2, Maximize2, Coffee, Clock, Plus, Minus
+  Minimize2, Maximize2, Coffee, Clock, Plus, Minus, Table, Trophy, Sliders, MoreHorizontal
 } from 'lucide-react';
 import { startMatchBreakApi, endMatchBreakApi, getMatchBreakApi, getStreamAdsApi } from '../../services/advertisementService';
-import { StreamCornerLogo } from './StreamCornerLogo';
+import { StreamCornerLogo, MatchBreakOverlay } from './StreamAdLayers';
+import StreamScoreboardStrip from './StreamScoreboardStrip';
+import StreamCelebrationBanner from './StreamCelebrationBanner';
+import StreamOverlayPanel from './StreamOverlayPanel';
 
 export function YellowPickleballIcon({ size = 16, style = {} }) {
   return (
@@ -133,6 +136,8 @@ export default function LiveStreamManagerModal({
 
   // Corner Logos State
   const [cornerLogos, setCornerLogos] = useState({ topLeft: [], topRight: [] });
+  const [breakAds, setBreakAds] = useState([]);
+  const [showFsMorePopover, setShowFsMorePopover] = useState(false);
 
   const fetchCornerLogos = useCallback(async () => {
     if (!matchId) return;
@@ -145,6 +150,7 @@ export default function LiveStreamManagerModal({
           topLeft: res.data.topLeft || res.data.streamCornerTopLeftAds || [],
           topRight: res.data.topRight || res.data.streamCornerTopRightAds || []
         });
+        setBreakAds(res.data.streamBreakAds || res.data.breakAds || []);
       }
     } catch (e) {
       console.warn('Failed to load stream corner logos:', e.message);
@@ -198,6 +204,27 @@ export default function LiveStreamManagerModal({
       if (payload.sidesSwapped !== undefined || payload.sportState?.sidesSwapped !== undefined || payload.sport_state?.sidesSwapped !== undefined) {
         setSidesSwapped(Boolean(payload.sidesSwapped ?? payload.sportState?.sidesSwapped ?? payload.sport_state?.sidesSwapped));
       }
+
+      // Feature 3: Trigger point score celebration animation on stream
+      if (payload.type !== 'UNDO' && (payload.pointEvent || payload.type === 'POINT_SCORED' || payload.celebration)) {
+        const scoringTeam = payload.pointEvent?.team || payload.scoringTeam || (payload.servingTeam === 'teamB' ? 'teamB' : 'teamA');
+        const scoringTeamName = scoringTeam === 'teamB' ? teamBName : teamAName;
+        const isMatchPoint = Boolean(payload.winnerTeamId || payload.isCompleted || payload.resultSummary);
+        const isGamePoint = Boolean(payload.isGamePoint || payload.isSetPoint);
+
+        setCelebrationEvent({
+          eventId: payload.pointEvent?.eventId || `pt-${matchId}-${payload.eventSeq || Date.now()}`,
+          eventSeq: payload.eventSeq || payload.seq,
+          matchId,
+          teamName: scoringTeamName,
+          isMatchPoint,
+          isGamePoint,
+          scoreSummary: payload.scoreSummary || payload.liveScoreSummary || (payload.teamAScore !== undefined ? `${payload.teamAScore} - ${payload.teamBScore}` : ''),
+          isServing: true,
+          teamColor: scoringTeam === 'teamB' ? '#3b82f6' : '#10b981',
+          isUndo: payload.type === 'UNDO' || payload.isUndo
+        });
+      }
     };
 
     const handleSidesSwapped = (payload) => {
@@ -205,6 +232,15 @@ export default function LiveStreamManagerModal({
       const tId = payload.matchId || payload.id;
       if (tId && String(tId) !== String(matchId)) return;
       setSidesSwapped(Boolean(payload.sidesSwapped));
+    };
+
+    const handleOverlayUpdated = (data) => {
+      if (!data) return;
+      const tId = data.matchId || data.id;
+      if (tId && String(tId) !== String(matchId)) return;
+      if (data.overlayConfig) {
+        setOverlayConfig(prev => ({ ...prev, ...data.overlayConfig }));
+      }
     };
 
     const handleBreakStart = (data) => {
@@ -228,8 +264,11 @@ export default function LiveStreamManagerModal({
     };
 
     socket.on('score:updated', onScoreChange);
+    socket.on('match:pointScored', onScoreChange);
+    socket.on('match:ballEvent', onScoreChange);
     socket.on('match:pickleballScore', onScoreChange);
     socket.on('match:sidesSwapped', handleSidesSwapped);
+    socket.on('stream:overlay_updated', handleOverlayUpdated);
     socket.on('signage:matchUpdate', onScoreChange);
     socket.on('match:break:start', handleBreakStart);
     socket.on('match:break:end', handleBreakEnd);
@@ -238,8 +277,11 @@ export default function LiveStreamManagerModal({
 
     return () => {
       socket.off('score:updated', onScoreChange);
+      socket.off('match:pointScored', onScoreChange);
+      socket.off('match:ballEvent', onScoreChange);
       socket.off('match:pickleballScore', onScoreChange);
       socket.off('match:sidesSwapped', handleSidesSwapped);
+      socket.off('stream:overlay_updated', handleOverlayUpdated);
       socket.off('signage:matchUpdate', onScoreChange);
       socket.off('match:break:start', handleBreakStart);
       socket.off('match:break:end', handleBreakEnd);
@@ -325,8 +367,34 @@ export default function LiveStreamManagerModal({
     position: 'bottom',
     theme: 'modern_dark',
     showBallByBall: true,
-    showTeamLogos: true
+    showTeamLogos: true,
+    activePanel: 'none',
+    panelTimer: 0,
+    panelUpdatedAt: null,
+    showCelebrations: true
   });
+  const overlayConfigRef = useRef(overlayConfig);
+  const panelHideTimerRef = useRef(null);
+  const hasUserExplicitlySetTimerRef = useRef(false);
+
+  useEffect(() => {
+    overlayConfigRef.current = overlayConfig;
+  }, [overlayConfig]);
+
+  const clearPanelHideTimer = useCallback(() => {
+    if (panelHideTimerRef.current) {
+      clearTimeout(panelHideTimerRef.current);
+      panelHideTimerRef.current = null;
+    }
+  }, []);
+
+  // Clean up panel timer on unmount
+  useEffect(() => {
+    return () => {
+      clearPanelHideTimer();
+    };
+  }, [clearPanelHideTimer]);
+  const [celebrationEvent, setCelebrationEvent] = useState(null);
 
   const videoPreviewRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -480,7 +548,20 @@ export default function LiveStreamManagerModal({
           setStreamStatus(d.stream.status || 'IDLE');
           setIsBroadcasting(d.stream.status === 'LIVE');
           setViewerCount(d.stream.viewerCount || 0);
-          if (d.stream.overlayConfig) setOverlayConfig(d.stream.overlayConfig);
+          if (d.stream.overlayConfig) {
+            setOverlayConfig(prev => {
+              const loaded = d.stream.overlayConfig;
+              const merged = { ...prev, ...loaded };
+              // Step 3: Default to Off (Manual) for every stream session unless explicitly set in current session
+              if (!hasUserExplicitlySetTimerRef.current) {
+                merged.panelTimer = 0;
+              }
+              if (d.stream.status !== 'LIVE') {
+                merged.activePanel = 'none';
+              }
+              return merged;
+            });
+          }
           if (d.stream.youtubeLiveUrl) setYoutubeUrl(d.stream.youtubeLiveUrl);
 
           // Select tab matching stream method
@@ -1136,8 +1217,10 @@ export default function LiveStreamManagerModal({
   };
 
   // 7. Save Overlay Config
-  const handleSaveOverlay = async (updates) => {
-    const next = { ...overlayConfig, ...updates };
+  const handleSaveOverlay = useCallback(async (updates) => {
+    const current = overlayConfigRef.current;
+    const next = { ...current, ...updates };
+    overlayConfigRef.current = next;
     setOverlayConfig(next);
     try {
       await axios.put(
@@ -1148,7 +1231,59 @@ export default function LiveStreamManagerModal({
     } catch (err) {
       console.warn('Failed to save overlay config:', err);
     }
+  }, [matchId]);
+
+  // Unified Show-on-Stream Panel Selection Handler (Modal + Fullscreen)
+  const handleSelectPanel = useCallback((panel) => {
+    clearPanelHideTimer();
+    const now = Date.now();
+
+    if (panel === 'none') {
+      handleSaveOverlay({ activePanel: 'none', panelUpdatedAt: now });
+      return;
+    }
+
+    // Set active panel explicitly ('points' or 'awards')
+    handleSaveOverlay({ activePanel: panel, panelUpdatedAt: now });
+
+    // Step 4: Countdown starts ONLY if auto-hide duration is explicitly chosen (15s, 30s, or 60s)
+    const currentTimer = Number(overlayConfigRef.current?.panelTimer || 0);
+    if (currentTimer > 0) {
+      panelHideTimerRef.current = setTimeout(() => {
+        handleSaveOverlay({ activePanel: 'none', panelUpdatedAt: Date.now() });
+      }, currentTimer * 1000);
+    }
+  }, [clearPanelHideTimer, handleSaveOverlay]);
+
+  // Unified Auto-Hide Selection Handler (Modal + Fullscreen)
+  const handleTimerChange = useCallback((newTimer) => {
+    hasUserExplicitlySetTimerRef.current = true;
+    const timerSec = Number(newTimer) || 0;
+    const now = Date.now();
+
+    handleSaveOverlay({ panelTimer: timerSec, panelUpdatedAt: now });
+    clearPanelHideTimer();
+
+    // If panel is currently visible and non-zero timer was chosen, start fresh countdown from this moment
+    const currentActive = overlayConfigRef.current?.activePanel;
+    if (currentActive && currentActive !== 'none' && timerSec > 0) {
+      panelHideTimerRef.current = setTimeout(() => {
+        handleSaveOverlay({ activePanel: 'none', panelUpdatedAt: Date.now() });
+      }, timerSec * 1000);
+    }
+  }, [clearPanelHideTimer, handleSaveOverlay]);
+
+  // Helper to parse individual scores from live score string "8 - 5"
+  const parseScoresFromLiveScore = (scoreStr) => {
+    if (!scoreStr || typeof scoreStr !== 'string') return { scoreA: 0, scoreB: 0 };
+    const parts = scoreStr.split('-').map(s => parseInt(s.trim(), 10));
+    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { scoreA: parts[0], scoreB: parts[1] };
+    }
+    return { scoreA: 0, scoreB: 0 };
   };
+
+  const { scoreA: parsedScoreA, scoreB: parsedScoreB } = parseScoresFromLiveScore(liveScore);
 
   if (isMinimized) {
     return (
@@ -1520,6 +1655,41 @@ export default function LiveStreamManagerModal({
                   </>
                 )}
 
+                {/* ── ITEM 3: MATCH BREAK MODE OVERLAY (Sponsor Carousel or Clean Card) ── */}
+                {breakState?.isBreak && (
+                  <MatchBreakOverlay
+                    breakState={breakState}
+                    breakAds={breakAds}
+                    tournamentName={matchData?.tournament?.name || matchData?.tournamentName}
+                    currentScore={liveScore}
+                    teamAName={teamAName}
+                    teamBName={teamBName}
+                  />
+                )}
+
+                {/* ── FEATURE 2: BROADCASTER OVERLAY PANEL (STANDINGS / AWARDS) ── */}
+                {cameraActive && (
+                  <StreamOverlayPanel
+                    activePanel={overlayConfig?.activePanel || 'none'}
+                    tournamentId={matchData?.tournamentId || matchData?.tournament_id || matchData?.tournament?.id}
+                    currentPlayingTeamNames={[teamAName, teamBName]}
+                    panelTimer={overlayConfig?.panelTimer || 0}
+                    panelUpdatedAt={overlayConfig?.panelUpdatedAt}
+                    onClose={() => handleSelectPanel('none')}
+                    isBroadcaster={true}
+                    isFullscreen={isFullscreen || isPseudoFullscreen}
+                  />
+                )}
+
+                {/* ── FEATURE 3: BROADCASTER SCORE CELEBRATION ANIMATION ── */}
+                {cameraActive && (
+                  <StreamCelebrationBanner
+                    celebrationEvent={celebrationEvent}
+                    enabled={overlayConfig?.showCelebrations !== false}
+                    onCelebrationComplete={() => setCelebrationEvent(null)}
+                  />
+                )}
+
                 {/* Fullscreen / Exit Fullscreen Button */}
                 <button
                   type="button"
@@ -1676,6 +1846,162 @@ export default function LiveStreamManagerModal({
                         <Square size={13} /> Stop
                       </button>
                     )}
+
+                    {/* Divider */}
+                    <div style={{ width: '1px', height: '18px', background: 'rgba(255,255,255,0.2)', margin: '0 0.15rem' }} />
+
+                    {/* ── ITEM 2: FULLSCREEN SHOW-ON-STREAM CONTROLS ── */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPanel('points')}
+                      className="btn btn-outline btn-xs"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        borderRadius: '6px',
+                        background: overlayConfig?.activePanel === 'points' ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                        borderColor: overlayConfig?.activePanel === 'points' ? '#10b981' : 'rgba(255,255,255,0.2)',
+                        color: overlayConfig?.activePanel === 'points' ? '#34d399' : '#ffffff',
+                        fontWeight: overlayConfig?.activePanel === 'points' ? 800 : 500
+                      }}
+                      title="Show Points Table on Stream"
+                    >
+                      <Table size={13} />
+                      <span>Table</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPanel('awards')}
+                      className="btn btn-outline btn-xs"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        borderRadius: '6px',
+                        background: overlayConfig?.activePanel === 'awards' ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
+                        borderColor: overlayConfig?.activePanel === 'awards' ? '#fbbf24' : 'rgba(255,255,255,0.2)',
+                        color: overlayConfig?.activePanel === 'awards' ? '#fde047' : '#ffffff',
+                        fontWeight: overlayConfig?.activePanel === 'awards' ? 800 : 500
+                      }}
+                      title="Show Awards & Leaders on Stream"
+                    >
+                      <Trophy size={13} />
+                      <span>Awards</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPanel('none')}
+                      className="btn btn-outline btn-xs"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        borderRadius: '6px',
+                        background: 'transparent',
+                        borderColor: 'rgba(255,255,255,0.2)',
+                        color: '#94a3b8',
+                        fontWeight: 500
+                      }}
+                      title="Hide Broadcast Panel"
+                    >
+                      <EyeOff size={13} />
+                      <span>Hide</span>
+                    </button>
+
+                    {/* More Popover Button */}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowFsMorePopover(prev => !prev)}
+                        className="btn btn-outline btn-xs"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          borderRadius: '6px',
+                          background: showFsMorePopover ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+                          borderColor: showFsMorePopover ? '#38bdf8' : 'rgba(255,255,255,0.2)',
+                          color: showFsMorePopover ? '#38bdf8' : '#ffffff'
+                        }}
+                        title="Stream Settings (Celebrations & Auto-Hide)"
+                      >
+                        <Sliders size={13} />
+                        <span>More</span>
+                      </button>
+
+                      {/* Small More Popover */}
+                      {showFsMorePopover && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '120%',
+                            left: 0,
+                            zIndex: 40,
+                            background: 'rgba(15, 23, 42, 0.95)',
+                            backdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: '10px',
+                            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.7)',
+                            padding: '8px 10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            minWidth: '180px'
+                          }}
+                        >
+                          {/* Celebrations Toggle */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '0.72rem', color: '#e2e8f0', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Sparkles size={12} color="#fbbf24" /> Celebrations:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveOverlay({ showCelebrations: overlayConfig?.showCelebrations === false ? true : false })}
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '0.68rem',
+                                fontWeight: 800,
+                                border: 'none',
+                                cursor: 'pointer',
+                                background: overlayConfig?.showCelebrations !== false ? '#10b981' : '#475569',
+                                color: '#ffffff'
+                              }}
+                            >
+                              {overlayConfig?.showCelebrations !== false ? 'ON' : 'OFF'}
+                            </button>
+                          </div>
+
+                          {/* Auto-Hide Dropdown */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '0.72rem', color: '#e2e8f0', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={12} color="#38bdf8" /> Auto-Hide:
+                            </span>
+                            <select
+                              value={overlayConfig?.panelTimer || 0}
+                              onChange={(e) => handleTimerChange(e.target.value)}
+                              style={{
+                                background: 'rgba(30, 41, 59, 0.8)',
+                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                borderRadius: '6px',
+                                color: '#ffffff',
+                                fontSize: '0.68rem',
+                                padding: '2px 6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value={0}>Off (Manual)</option>
+                              <option value={15}>15s</option>
+                              <option value={30}>30s</option>
+                              <option value={60}>60s</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1831,58 +2157,45 @@ export default function LiveStreamManagerModal({
                   </div>
                 )}
 
-                {/* Scoreboard Overlay Preview on Camera */}
+                {/* ── FEATURE 4: COLOURFUL SCOREBOARD LOWER-THIRD ON CAMERA ── */}
                 {cameraActive && (
-                  <div
-                    style={{
-                      position: 'absolute',
+                  <StreamScoreboardStrip
+                    leftTeam={sidesSwapped ? {
+                      name: teamBName,
+                      score: parsedScoreB,
+                      isServing: servingTeam === 'teamB',
+                      serverNum: matchData?.currentServerNum || null,
+                      logo: matchData?.team_b_logo || matchData?.teamB?.logo
+                    } : {
+                      name: teamAName,
+                      score: parsedScoreA,
+                      isServing: servingTeam === 'teamA',
+                      serverNum: matchData?.currentServerNum || null,
+                      logo: matchData?.team_a_logo || matchData?.teamA?.logo
+                    }}
+                    rightTeam={sidesSwapped ? {
+                      name: teamAName,
+                      score: parsedScoreA,
+                      isServing: servingTeam === 'teamA',
+                      serverNum: matchData?.currentServerNum || null,
+                      logo: matchData?.team_a_logo || matchData?.teamA?.logo
+                    } : {
+                      name: teamBName,
+                      score: parsedScoreB,
+                      isServing: servingTeam === 'teamB',
+                      serverNum: matchData?.currentServerNum || null,
+                      logo: matchData?.team_b_logo || matchData?.teamB?.logo
+                    }}
+                    gameInfo={matchData?.gameNumber ? `Game ${matchData.gameNumber}` : 'Game 1'}
+                    isLive={isBroadcasting}
+                    isBreak={breakState.isBreak}
+                    isBroadcaster={true}
+                    customStyle={{
                       bottom: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem',
                       left: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem',
-                      right: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem',
-                      background: 'rgba(15, 23, 42, 0.90)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '10px',
-                      padding: '0.5rem 0.85rem',
-                      border: '1px solid rgba(255, 255, 255, 0.18)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      zIndex: 25,
-                      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-                      pointerEvents: 'none'
+                      right: (isFullscreen || isPseudoFullscreen) ? '1.5rem' : '0.75rem'
                     }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.88rem', fontWeight: 800, color: '#ffffff', minWidth: 0, overflow: 'hidden' }}>
-                      {sidesSwapped ? (
-                        <>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {teamBName}
-                            {servingTeam === 'teamB' && <YellowPickleballIcon size={16} />}
-                          </span>
-                          <span style={{ color: '#64748b', fontWeight: 700, margin: '0 2px' }}>vs</span>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {teamAName}
-                            {servingTeam === 'teamA' && <YellowPickleballIcon size={16} />}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {teamAName}
-                            {servingTeam === 'teamA' && <YellowPickleballIcon size={16} />}
-                          </span>
-                          <span style={{ color: '#64748b', fontWeight: 700, margin: '0 2px' }}>vs</span>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {teamBName}
-                            {servingTeam === 'teamB' && <YellowPickleballIcon size={16} />}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 900, color: '#38bdf8', flexShrink: 0, fontVariantNumeric: 'tabular-nums', marginLeft: '0.75rem' }}>
-                      {liveScore}
-                    </div>
-                  </div>
+                  />
                 )}
               </div>
 
@@ -2019,6 +2332,143 @@ export default function LiveStreamManagerModal({
                       End Live Broadcast
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* ── FEATURE 2 & 3: SHOW ON STREAM & BROADCAST OVERLAY CONTROLS ── */}
+              <div
+                style={{
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '12px',
+                  padding: '0.65rem 0.85rem',
+                  marginTop: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    📺 Show on Stream:
+                  </span>
+
+                  <div style={{ display: 'inline-flex', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.35)', padding: '2px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    {/* Points Table Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPanel('points')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: overlayConfig?.activePanel === 'points' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+                        color: overlayConfig?.activePanel === 'points' ? '#ffffff' : '#cbd5e1',
+                        fontWeight: 700,
+                        fontSize: '0.76rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Table size={13} /> Points Table
+                    </button>
+
+                    {/* Awards & Leaders Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPanel('awards')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: overlayConfig?.activePanel === 'awards' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'transparent',
+                        color: overlayConfig?.activePanel === 'awards' ? '#ffffff' : '#cbd5e1',
+                        fontWeight: 700,
+                        fontSize: '0.76rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Trophy size={13} /> Awards & Leaders
+                    </button>
+
+                    {/* Hide Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPanel('none')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#94a3b8',
+                        fontWeight: 700,
+                        fontSize: '0.76rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <EyeOff size={13} /> Hide
+                    </button>
+                  </div>
+
+                  {/* Auto-Hide Timer Selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={13} style={{ color: '#94a3b8' }} />
+                    <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Auto-Hide:</span>
+                    <select
+                      value={overlayConfig?.panelTimer || 0}
+                      onChange={(e) => handleTimerChange(e.target.value)}
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.4)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        color: '#38bdf8',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                        padding: '2px 6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value={0}>Off (Manual)</option>
+                      <option value={15}>15s</option>
+                      <option value={30}>30s</option>
+                      <option value={60}>60s</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Celebrations Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={13} style={{ color: overlayConfig?.showCelebrations !== false ? '#facc15' : '#64748b' }} />
+                  <span style={{ fontSize: '0.74rem', color: '#cbd5e1', fontWeight: 600 }}>Celebrations:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveOverlay({ showCelebrations: overlayConfig?.showCelebrations === false ? true : false })}
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      background: overlayConfig?.showCelebrations !== false ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      color: overlayConfig?.showCelebrations !== false ? '#34d399' : '#94a3b8',
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {overlayConfig?.showCelebrations !== false ? 'ON' : 'OFF'}
+                  </button>
                 </div>
               </div>
             </div>

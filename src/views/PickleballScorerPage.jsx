@@ -19,6 +19,8 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   const id = propsMatchId || routeParams?.id || matchIdFromUrl;
 
   const reduxUser = useSelector((state) => state?.auth?.user);
+  const reduxToken = useSelector((state) => state?.auth?.token);
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -74,7 +76,28 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
   // Fetch full scorer state
   const fetchState = useCallback(async () => {
     try {
-      const res = await axios.get(`/api/matches/${id}/pickleball`);
+      const token = reduxToken || (typeof window !== 'undefined' ? localStorage.getItem('turf_token') || localStorage.getItem('token') : null);
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+      // 1. Authoritative Scorer Access Check
+      try {
+        const canScoreRes = await axios.get(`/api/matches/${id}/can-score`, { headers: authHeaders });
+        if (canScoreRes.data?.data && canScoreRes.data.data.canScore === false) {
+          setIsUnauthorized(true);
+          setError('Access Denied: Scoring controls are restricted to Superadmins, the tournament organizer, and officially assigned scorers.');
+          setLoading(false);
+          return;
+        }
+      } catch (authErr) {
+        if (authErr?.response?.status === 401 || authErr?.response?.status === 403) {
+          setIsUnauthorized(true);
+          setError(authErr?.response?.data?.message || 'Access Denied: You do not have permission to score this match.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const res = await axios.get(`/api/matches/${id}/pickleball`, { headers: authHeaders });
       if (res.data.success) {
         const d = res.data.data;
         setState(d);
@@ -744,6 +767,30 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       <div className="container" style={{ textAlign: 'center', padding: '6rem 1rem', color: 'var(--text-muted)' }}>
         <Zap size={48} className="animate-spin" color="var(--accent-primary, #10b981)" style={{ margin: '0 auto 1rem auto' }} />
         <h2>Loading Pickleball Live Scorer Console…</h2>
+      </div>
+    );
+  }
+
+  if (isUnauthorized) {
+    return (
+      <div className="container" style={{ padding: '4rem 1rem', textAlign: 'center', maxWidth: 580, margin: '2rem auto' }}>
+        <div style={{ background: 'var(--bg-card, #1e293b)', padding: '2.5rem 2rem', borderRadius: 20, border: '1px solid var(--border-color, rgba(255,255,255,0.08))', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+          <Shield size={52} color="#ef4444" style={{ margin: '0 auto 1.25rem auto' }} />
+          <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginBottom: '0.75rem', color: '#f8fafc' }}>
+            Official Scorer Access Denied
+          </h2>
+          <p style={{ color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.6, marginBottom: '1.75rem', fontSize: '0.92rem' }}>
+            {error || 'You do not have permission to score this match. Scoring controls are strictly restricted to Superadmins, the tournament organizer, and officially assigned match scorers.'}
+          </p>
+          <div style={{ display: 'flex', gap: '0.85rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link href={`/matches/${id}/live`} className="btn btn-secondary" style={{ padding: '0.65rem 1.35rem', borderRadius: 10, fontWeight: 700, textDecoration: 'none' }}>
+              View Public Live Score
+            </Link>
+            <Link href="/tournaments" className="btn btn-primary" style={{ padding: '0.65rem 1.35rem', borderRadius: 10, fontWeight: 700, textDecoration: 'none', background: '#10b981' }}>
+              Back to Tournaments
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }

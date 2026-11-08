@@ -461,12 +461,22 @@ export function MatchBreakOverlay({
   breakState = {},
   breakAds = [],
   fallbackAds = [],
-  breakInterval = 5
+  breakInterval = 5,
+  tournamentName = '',
+  currentScore = '',
+  teamAName = '',
+  teamBName = ''
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSecs, setRemainingSecs] = useState(null);
+  const [imgFailed, setImgFailed] = useState(false);
 
   const activeAds = breakAds.length > 0 ? breakAds : fallbackAds;
+
+  // Reset img error on ad change
+  useEffect(() => {
+    setImgFailed(false);
+  }, [activeIndex]);
 
   // Rotate through break ads every breakInterval seconds
   useEffect(() => {
@@ -622,7 +632,7 @@ export function MatchBreakOverlay({
               maxHeight: '100%'
             }}
           >
-            {(currentAd.imageUrl || currentAd.image_url) ? (
+            {(currentAd.imageUrl || currentAd.image_url) && !imgFailed ? (
               <a
                 href={clickUrl || '#'}
                 target={clickUrl ? '_blank' : '_self'}
@@ -637,8 +647,10 @@ export function MatchBreakOverlay({
                 }}
               >
                 <img
+                  crossOrigin="anonymous"
                   src={getOptimizedImageUrl(currentAd.imageUrl || currentAd.image_url, { width: 600, fit: currentAd.imageFit || 'contain' })}
                   alt={currentAd.title || 'Break Sponsor'}
+                  onError={() => setImgFailed(true)}
                   style={{
                     maxHeight: 'min(240px, 45vh)',
                     maxWidth: '100%',
@@ -689,7 +701,7 @@ export function MatchBreakOverlay({
             </div>
           </div>
         ) : (
-          /* Clean fallback card when zero break ads exist */
+          /* Clean fallback card when zero break ads exist (Item 3 Requirement) */
           <div
             style={{
               display: 'flex',
@@ -697,32 +709,54 @@ export function MatchBreakOverlay({
               alignItems: 'center',
               justifyContent: 'center',
               textAlign: 'center',
-              gap: '12px',
-              padding: '2rem'
+              gap: '10px',
+              padding: '1.5rem',
+              background: 'rgba(15, 23, 42, 0.85)',
+              border: '1.5px solid rgba(245, 158, 11, 0.35)',
+              borderRadius: '16px',
+              boxShadow: '0 12px 35px rgba(0,0,0,0.6)',
+              maxWidth: 'min(420px, 88%)'
             }}
           >
             <div
               style={{
-                width: 56,
-                height: 56,
+                width: 52,
+                height: 52,
                 borderRadius: '50%',
                 background: 'rgba(245, 158, 11, 0.15)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                border: '1px solid rgba(245, 158, 11, 0.3)'
+                border: '1.5px solid rgba(245, 158, 11, 0.4)'
               }}
             >
-              <Coffee size={28} color="#fbbf24" />
+              <Coffee size={26} color="#fbbf24" />
             </div>
-            <div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc' }}>
-                Match Break In Progress
-              </h3>
-              <p style={{ margin: 0, fontSize: '0.88rem', color: '#94a3b8' }}>
-                Teams are taking a quick interval. Live action will resume shortly.
-              </p>
-            </div>
+            {tournamentName && (
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {tournamentName}
+              </div>
+            )}
+            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+              Match on Break
+            </h3>
+            {currentScore && (
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                padding: '4px 12px',
+                borderRadius: '8px',
+                fontSize: '0.92rem',
+                fontWeight: 900,
+                color: '#10b981',
+                fontVariantNumeric: 'tabular-nums',
+                letterSpacing: '0.03em'
+              }}>
+                {teamAName && teamBName ? `${teamAName}  vs  ${teamBName}  •  ${currentScore}` : currentScore}
+              </div>
+            )}
+            <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.5 }}>
+              {breakState.reason ? `${breakState.reason} in progress.` : 'Interval in progress.'} Live action will resume shortly.
+            </p>
           </div>
         )}
       </div>

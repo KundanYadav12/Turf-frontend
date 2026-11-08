@@ -5,6 +5,7 @@ import axios from 'axios';
 import { store } from '../../store';
 import { rehydrateAuth, logout, isTokenExpired } from '../../features/auth/authSlice';
 import { rehydrateTheme } from '../../features/theme/themeSlice';
+import BrandingProvider from './BrandingProvider';
 
 // Global Axios Interceptors: Ensure Bearer token is attached and handle 401 session expirations
 if (typeof window !== 'undefined') {
@@ -67,9 +68,11 @@ function ThemeAndAuthSync({ children }) {
 export default function Providers({ children }) {
   return (
     <Provider store={store}>
-      <ThemeAndAuthSync>
-        {children}
-      </ThemeAndAuthSync>
+      <BrandingProvider>
+        <ThemeAndAuthSync>
+          {children}
+        </ThemeAndAuthSync>
+      </BrandingProvider>
     </Provider>
   );
 }

@@ -25,8 +25,10 @@ import {
   ChevronRight,
   Info,
   Radio,
-  Play
+  Play,
+  Share2
 } from 'lucide-react';
+import { shareMatchFixture } from '../../utils/shareUtils';
 
 const CATEGORY_STYLES = {
   League: {
@@ -141,6 +143,7 @@ const getAuthHeaders = () => {
 export default function TournamentFixturesManager({
   tournament,
   canManage,
+  scorerAccess,
   fixtures = [],
   teams = [],
   onRefresh,
@@ -148,6 +151,22 @@ export default function TournamentFixturesManager({
 }) {
   const tournamentId = tournament?.uuid || tournament?.id;
   const isPickleball = tournament?.sport?.slug === 'pickleball' || tournament?.name?.toLowerCase().includes('pickleball');
+
+  // Check if current user is authorized to score a specific fixture
+  const canUserScoreFixture = (fixture) => {
+    if (canManage) return true;
+    if (!currentUser) return false;
+    const userRole = (currentUser.role || '').toUpperCase();
+    if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') return true;
+    if (scorerAccess?.canScoreAny) return true;
+    const matchId = Number(fixture?.id || fixture?.match_id);
+    const matchUuid = fixture?.uuid;
+    if (scorerAccess?.assignedMatchIds) {
+      if (scorerAccess.assignedMatchIds.map(Number).includes(matchId)) return true;
+      if (matchUuid && scorerAccess.assignedMatchIds.includes(matchUuid)) return true;
+    }
+    return false;
+  };
 
   // View state: 'list' | 'bracket'
   const [viewMode, setViewMode] = useState('list');
@@ -161,6 +180,23 @@ export default function TournamentFixturesManager({
 
   // Action loading state (e.g. while toggling LIVE status)
   const [actionLoadingMatchId, setActionLoadingMatchId] = useState(null);
+  const [copiedMatchId, setCopiedMatchId] = useState(null);
+
+  const handleShareClick = async (fixture) => {
+    await shareMatchFixture({
+      match: fixture,
+      tournament,
+      onFeedback: ({ message }) => {
+        const id = fixture.id || fixture.uuid;
+        setCopiedMatchId(id);
+        setNotification(message);
+        setTimeout(() => {
+          setCopiedMatchId(null);
+          setNotification('');
+        }, 3000);
+      }
+    });
+  };
 
   // Available courts
   const [courts, setCourts] = useState([]);
@@ -757,7 +793,7 @@ export default function TournamentFixturesManager({
                 {bracketData.quarters.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     {bracketData.quarters.map((m) => (
-                      <BracketMatchCard key={m.id || m.uuid} match={m} isPickleball={isPickleball} />
+                      <BracketMatchCard key={m.id || m.uuid} match={m} isPickleball={isPickleball} canScore={canUserScoreFixture(m)} />
                     ))}
                   </div>
                 )}
@@ -765,14 +801,14 @@ export default function TournamentFixturesManager({
                 {/* 2. Semi-Finals Column */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3.5rem' }}>
                   {bracketData.semis.map((m) => (
-                    <BracketMatchCard key={m.id || m.uuid} match={m} isPickleball={isPickleball} />
+                    <BracketMatchCard key={m.id || m.uuid} match={m} isPickleball={isPickleball} canScore={canUserScoreFixture(m)} />
                   ))}
                 </div>
 
                 {/* 3. Final Column */}
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   {bracketData.final && (
-                    <BracketMatchCard match={bracketData.final} isFinal isPickleball={isPickleball} />
+                    <BracketMatchCard match={bracketData.final} isFinal isPickleball={isPickleball} canScore={canUserScoreFixture(bracketData.final)} />
                   )}
                 </div>
               </div>
@@ -1065,27 +1101,63 @@ export default function TournamentFixturesManager({
                       </button>
                     )}
 
-                    {/* Live Scorer Button */}
-                    <Link
-                      href={isPickleball ? `/matches/${f.id || f.uuid}/pickleball-scorer` : `/matches/${f.id || f.uuid}/scorer`}
-                      className="btn btn-primary btn-sm"
+                    {/* Live Scorer Button (Visible ONLY to authorized Scorer, Creator, or Admin) */}
+                    {canUserScoreFixture(f) && (
+                      <Link
+                        href={isPickleball ? `/matches/${f.id || f.uuid}/pickleball-scorer` : `/matches/${f.id || f.uuid}/scorer`}
+                        className="btn btn-primary btn-sm"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          background: isLive ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(16, 185, 129, 0.18)',
+                          color: isLive ? '#ffffff' : '#34d399',
+                          border: isLive ? 'none' : '1px solid rgba(16, 185, 129, 0.4)',
+                          fontWeight: 800,
+                          padding: '0.52rem 1rem',
+                          borderRadius: '10px',
+                          boxShadow: isLive ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+                          textDecoration: 'none',
+                          fontSize: '0.82rem'
+                        }}
+                      >
+                        <Zap size={14} /> Live Scorer
+                      </Link>
+                    )}
+
+                    {/* Feature 1: Share Match Fixture Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleShareClick(f)}
+                      className="btn btn-outline btn-sm"
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '0.45rem',
-                        background: isLive ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(16, 185, 129, 0.18)',
-                        color: isLive ? '#ffffff' : '#34d399',
-                        border: isLive ? 'none' : '1px solid rgba(16, 185, 129, 0.4)',
-                        fontWeight: 800,
-                        padding: '0.52rem 1rem',
+                        gap: '0.4rem',
+                        padding: '0.52rem 0.85rem',
                         borderRadius: '10px',
-                        boxShadow: isLive ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
-                        textDecoration: 'none',
-                        fontSize: '0.82rem'
+                        border: copiedMatchId === (f.id || f.uuid) ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.16)',
+                        background: copiedMatchId === (f.id || f.uuid) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                        color: copiedMatchId === (f.id || f.uuid) ? '#34d399' : 'var(--text-secondary, #cbd5e1)',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.18s ease'
                       }}
+                      title="Share public match score link"
                     >
-                      <Zap size={14} /> Live Scorer
-                    </Link>
+                      {copiedMatchId === (f.id || f.uuid) ? (
+                        <>
+                          <Check size={14} style={{ color: '#34d399' }} />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Share2 size={14} />
+                          <span>Share</span>
+                        </>
+                      )}
+                    </button>
 
                     {/* Organizer Actions */}
                     {canManage && (
@@ -1876,7 +1948,7 @@ export default function TournamentFixturesManager({
 /**
  * Visualizer Card for Bracket View
  */
-function BracketMatchCard({ match, isFinal = false, isPickleball = false }) {
+function BracketMatchCard({ match, isFinal = false, isPickleball = false, canScore = false }) {
   const cat = match.category || 'Knockout';
   const catStyle = CATEGORY_STYLES[cat] || CATEGORY_STYLES.Knockout;
   const isLive = match.status === 'LIVE';
@@ -1947,17 +2019,26 @@ function BracketMatchCard({ match, isFinal = false, isPickleball = false }) {
         )}
       </div>
 
-      {/* Footer Scorer Link */}
+      {/* Footer Scorer / Match Link */}
       <div style={{ marginTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
           {match.match_date ? `${match.match_date} ${match.start_time || ''}` : 'Scheduled'}
         </span>
-        <Link
-          href={isPickleball ? `/matches/${match.uuid || match.id}/pickleball-scorer` : `/matches/${match.uuid || match.id}/scorer`}
-          style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700, textDecoration: 'none' }}
-        >
-          Open Scorer &rarr;
-        </Link>
+        {canScore ? (
+          <Link
+            href={isPickleball ? `/matches/${match.uuid || match.id}/pickleball-scorer` : `/matches/${match.uuid || match.id}/scorer`}
+            style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700, textDecoration: 'none' }}
+          >
+            Open Scorer &rarr;
+          </Link>
+        ) : (
+          <Link
+            href={`/matches/${match.uuid || match.id}/live`}
+            style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 700, textDecoration: 'none' }}
+          >
+            View Match &rarr;
+          </Link>
+        )}
       </div>
     </div>
   );

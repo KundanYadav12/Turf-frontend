@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import LiveStreamPlayer from '../components/streaming/LiveStreamPlayer';
 import { getOptimizedImageUrl } from '../utils/imageUrl';
+import { useBranding } from '../components/providers/BrandingProvider';
 
 /**
  * Team Logo or Fallback Monogram Avatar
@@ -181,9 +182,9 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
     };
   }, []);
 
-  // Scene Rotation State
+  // Scene Rotation State (Paused by default on load, staying on SCOREBOARD scene)
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
-  const [isRotationPaused, setIsRotationPaused] = useState(false);
+  const [isRotationPaused, setIsRotationPaused] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimeoutRef = useRef(null);
 
@@ -900,7 +901,10 @@ export default function TVDisplayPage({ displayId = 'tv_arena_main_01' }) {
             {activeScenes.map((scene, idx) => (
               <button
                 key={scene}
-                onClick={() => setCurrentSceneIndex(idx)}
+                onClick={() => {
+                  setCurrentSceneIndex(idx);
+                  setIsRotationPaused(true);
+                }}
                 style={{
                   padding: '4px 10px',
                   borderRadius: 20,
@@ -2887,6 +2891,7 @@ function LeaderboardScene({ leaderboard, theme }) {
    SCENE 5: SPONSORS & ADVERTISEMENTS
    ══════════════════════════════════════════════════════════════════════ */
 function SponsorsScene({ ads, theme }) {
+  const { appName } = useBranding();
   const allAds = [...(ads.topAds || []), ...(ads.bottomAds || []), ...(ads.leftAds || []), ...(ads.rightAds || []), ...(ads.centerAds || [])];
 
   return (
@@ -2929,12 +2934,12 @@ function SponsorsScene({ ads, theme }) {
                 <Sparkles size={44} color="#10b981" style={{ marginBottom: '1rem' }} />
               )}
               <h4 style={{ margin: '0 0 0.25rem 0', fontWeight: 800, fontSize: '1.1rem' }}>{ad.title || ad.name || 'Official Partner'}</h4>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>TurfSpot Arena Sponsor</span>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{appName} Arena Sponsor</span>
             </div>
           ))
         ) : (
           <div style={{ color: '#94a3b8', fontSize: '1.1rem' }}>
-            Powered by TurfSpot Sports Platform &amp; Stadium Management.
+            Powered by {appName} Sports Platform &amp; Stadium Management.
           </div>
         )}
       </div>

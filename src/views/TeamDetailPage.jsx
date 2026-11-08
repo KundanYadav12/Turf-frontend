@@ -8,7 +8,7 @@ import {
   UserPlus, Trash2, CheckCircle2, AlertCircle, Phone,
   User, Award, ChevronRight, Activity, Clock, Search,
   Camera, Upload, Sparkles, Loader2, AtSign, Check,
-  Share2, Copy, LogOut, RefreshCw, Ban, QrCode, X
+  Share2, Copy, LogOut, RefreshCw, Ban, QrCode, X, MessageSquare
 } from 'lucide-react';
 import QRCode from 'qrcode.react';
 import { compressAndOptimizeImage } from '../lib/imageOptimizer';
@@ -493,6 +493,22 @@ export default function TeamDetailPage({ teamId }) {
 
           {/* Team Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* Team Chat Button */}
+            <Link
+              to={`/chat?team=${team.id || team.uuid}`}
+              className="btn btn-outline"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                borderColor: 'rgba(16, 185, 129, 0.4)',
+                color: '#34d399',
+                background: 'rgba(16, 185, 129, 0.08)'
+              }}
+            >
+              <MessageSquare size={16} /> Team Chat
+            </Link>
+
             {/* Share Team Link */}
             <button
               id="share-team-link-btn"

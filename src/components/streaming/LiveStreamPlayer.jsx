@@ -16,6 +16,9 @@ import {
   StreamCornerLogo
 } from './StreamAdLayers';
 import { YellowPickleballIcon } from './LiveStreamManagerModal';
+import StreamScoreboardStrip from './StreamScoreboardStrip';
+import StreamCelebrationBanner from './StreamCelebrationBanner';
+import StreamOverlayPanel from './StreamOverlayPanel';
 
 export default function LiveStreamPlayer({
   matchId,
@@ -42,6 +45,25 @@ export default function LiveStreamPlayer({
   const [webrtcConnected, setWebrtcConnected] = useState(false);
   const [webrtcError, setWebrtcError] = useState('');
   const [overlayVisible, setOverlayVisible] = useState(initialOverlay);
+  const [overlayConfig, setOverlayConfig] = useState(() => activeStream?.overlayConfig || {});
+  const [celebrationEvent, setCelebrationEvent] = useState(null);
+
+  // Auto-hide timer for viewer overlay panel (runs only if panelTimer is explicitly set to 15, 30 or 60)
+  useEffect(() => {
+    const timerSec = Number(overlayConfig?.panelTimer || 0);
+    if (timerSec <= 0 || !overlayConfig?.activePanel || overlayConfig.activePanel === 'none') {
+      return;
+    }
+
+    const elapsed = overlayConfig.panelUpdatedAt ? (Date.now() - overlayConfig.panelUpdatedAt) : 0;
+    const remainingMs = Math.max(1000, (timerSec * 1000) - elapsed);
+
+    const timer = setTimeout(() => {
+      setOverlayConfig(prev => ({ ...prev, activePanel: 'none' }));
+    }, remainingMs);
+
+    return () => clearTimeout(timer);
+  }, [overlayConfig?.activePanel, overlayConfig?.panelTimer, overlayConfig?.panelUpdatedAt]);
 
   // Real-time match state tracking for court mapping & score overlay
   const [currentMatch, setCurrentMatch] = useState(activeMatch);
@@ -200,6 +222,36 @@ export default function LiveStreamPlayer({
       } else if (payload.teamAScore !== undefined && payload.teamBScore !== undefined) {
         setLiveScore(`${payload.teamAScore} - ${payload.teamBScore}`);
       }
+
+      // Feature 3: Score celebration trigger on live stream player
+      if (payload.type !== 'UNDO' && (payload.pointEvent || payload.type === 'POINT_SCORED' || payload.celebration)) {
+        const scoringTeam = payload.pointEvent?.team || payload.scoringTeam || (payload.servingTeam === 'teamB' ? 'teamB' : 'teamA');
+        const scoringTeamName = scoringTeam === 'teamB' ? teamBName : teamAName;
+        const isMatchPoint = Boolean(payload.winnerTeamId || payload.isCompleted || payload.resultSummary);
+        const isGamePoint = Boolean(payload.isGamePoint || payload.isSetPoint);
+
+        setCelebrationEvent({
+          eventId: payload.pointEvent?.eventId || `pt-${matchId}-${payload.eventSeq || Date.now()}`,
+          eventSeq: payload.eventSeq || payload.seq,
+          matchId,
+          teamName: scoringTeamName,
+          isMatchPoint,
+          isGamePoint,
+          scoreSummary: payload.scoreSummary || payload.liveScoreSummary || (payload.teamAScore !== undefined ? `${payload.teamAScore} - ${payload.teamBScore}` : ''),
+          isServing: true,
+          teamColor: scoringTeam === 'teamB' ? '#3b82f6' : '#10b981',
+          isUndo: payload.type === 'UNDO' || payload.isUndo
+        });
+      }
+    };
+
+    const handleOverlayUpdated = (data) => {
+      if (!data) return;
+      const tId = data.matchId || data.id;
+      if (tId && String(tId) !== String(matchId)) return;
+      if (data.overlayConfig) {
+        setOverlayConfig(prev => ({ ...prev, ...data.overlayConfig }));
+      }
     };
 
     const handleBreakStart = (data) => {
@@ -257,6 +309,7 @@ export default function LiveStreamPlayer({
     socket.on('stream:break_state', handleBreakUpdated);
     socket.on('advertisements:updated', handleAdsUpdated);
     socket.on('advertisements:state_changed', handlePlaybackStateChanged);
+    socket.on('stream:overlay_updated', handleOverlayUpdated);
 
     return () => {
       socket.off('score:updated', onScoreChange);
@@ -275,6 +328,7 @@ export default function LiveStreamPlayer({
       socket.off('stream:break_state', handleBreakUpdated);
       socket.off('advertisements:updated', handleAdsUpdated);
       socket.off('advertisements:state_changed', handlePlaybackStateChanged);
+      socket.off('stream:overlay_updated', handleOverlayUpdated);
     };
   }, [matchId, fetchStreamAdsAndBreak]);
 
@@ -533,36 +587,49 @@ export default function LiveStreamPlayer({
     }
   }, [currentMatch, activeMatch]);
 
+  const currentServerNum = useMemo(() => {
+    const m = currentMatch || activeMatch;
+    return m?.pickleball?.currentServer || serveState?.currentServer || null;
+  }, [currentMatch, activeMatch, serveState]);
+
   const isTeamALeft = useMemo(() => {
     if (!serveState?.teamSides?.teamA) return true;
     return String(serveState.teamSides.teamA).toLowerCase() === 'left';
   }, [serveState]);
 
   const leftTeam = useMemo(() => {
+    const logoA = currentMatch?.team_a_logo || currentMatch?.teamA?.logo || activeMatch?.team_a_logo || activeMatch?.teamA?.logo;
+    const logoB = currentMatch?.team_b_logo || currentMatch?.teamB?.logo || activeMatch?.team_b_logo || activeMatch?.teamB?.logo;
     if (isCourtSport && serveState) {
       return isTeamALeft
-        ? { name: teamAName, score: serveState.scoreA ?? 0, isServing: Boolean(serveState.isTeamAServing) }
-        : { name: teamBName, score: serveState.scoreB ?? 0, isServing: !serveState.isTeamAServing };
+        ? { name: teamAName, score: serveState.scoreA ?? 0, isServing: Boolean(serveState.isTeamAServing), serverNum: Boolean(serveState.isTeamAServing) ? currentServerNum : null, logo: logoA }
+        : { name: teamBName, score: serveState.scoreB ?? 0, isServing: !serveState.isTeamAServing, serverNum: !serveState.isTeamAServing ? currentServerNum : null, logo: logoB };
     }
     return {
       name: teamAName,
       score: currentMatch?.scores?.teamA ?? activeMatch?.scores?.teamA ?? activeMatch?.scoreA ?? 0,
-      isServing: false
+      isServing: false,
+      serverNum: null,
+      logo: logoA
     };
-  }, [isCourtSport, serveState, isTeamALeft, teamAName, teamBName, currentMatch, activeMatch]);
+  }, [isCourtSport, serveState, isTeamALeft, teamAName, teamBName, currentMatch, activeMatch, currentServerNum]);
 
   const rightTeam = useMemo(() => {
+    const logoA = currentMatch?.team_a_logo || currentMatch?.teamA?.logo || activeMatch?.team_a_logo || activeMatch?.teamA?.logo;
+    const logoB = currentMatch?.team_b_logo || currentMatch?.teamB?.logo || activeMatch?.team_b_logo || activeMatch?.teamB?.logo;
     if (isCourtSport && serveState) {
       return isTeamALeft
-        ? { name: teamBName, score: serveState.scoreB ?? 0, isServing: !serveState.isTeamAServing }
-        : { name: teamAName, score: serveState.scoreA ?? 0, isServing: Boolean(serveState.isTeamAServing) };
+        ? { name: teamBName, score: serveState.scoreB ?? 0, isServing: !serveState.isTeamAServing, serverNum: !serveState.isTeamAServing ? currentServerNum : null, logo: logoB }
+        : { name: teamAName, score: serveState.scoreA ?? 0, isServing: Boolean(serveState.isTeamAServing), serverNum: Boolean(serveState.isTeamAServing) ? currentServerNum : null, logo: logoA };
     }
     return {
       name: teamBName,
       score: currentMatch?.scores?.teamB ?? activeMatch?.scores?.teamB ?? activeMatch?.scoreB ?? 0,
-      isServing: false
+      isServing: false,
+      serverNum: null,
+      logo: logoB
     };
-  }, [isCourtSport, serveState, isTeamALeft, teamAName, teamBName, currentMatch, activeMatch]);
+  }, [isCourtSport, serveState, isTeamALeft, teamAName, teamBName, currentMatch, activeMatch, currentServerNum]);
 
   const gameInfo = useMemo(() => {
     if (isCourtSport && serveState?.currentGame) {
@@ -570,11 +637,6 @@ export default function LiveStreamPlayer({
     }
     return 'VS';
   }, [isCourtSport, serveState]);
-
-  const currentServerNum = useMemo(() => {
-    const m = currentMatch || activeMatch;
-    return m?.pickleball?.currentServer || serveState?.currentServer || null;
-  }, [currentMatch, activeMatch, serveState]);
 
   // If stream is not live, do NOT render an empty player or play button
   if (!isLive) {
@@ -918,135 +980,44 @@ export default function LiveStreamPlayer({
               breakAds={streamAds.breakAds}
               fallbackAds={[...streamAds.top, ...streamAds.bottom, ...streamAds.left, ...streamAds.right]}
               breakInterval={streamSettings.breakInterval}
+              tournamentName={tournamentName || currentMatch?.tournament?.name || activeMatch?.tournament?.name}
+              currentScore={currentMatch?.score?.summary || liveScore}
+              teamAName={teamAName}
+              teamBName={teamBName}
             />
           )}
 
-          {/* ── LOWER-THIRD SCOREBOARD OVERLAY ── */}
+          {/* ── FEATURE 2: STREAM OVERLAY PANEL (STANDINGS / AWARDS) ── */}
+          <StreamOverlayPanel
+            activePanel={overlayConfig?.activePanel || 'none'}
+            tournamentId={currentMatch?.tournament_id || currentMatch?.tournamentId || activeMatch?.tournament_id || activeMatch?.tournamentId}
+            currentPlayingTeamNames={[teamAName, teamBName]}
+            panelTimer={overlayConfig?.panelTimer || 0}
+            panelUpdatedAt={overlayConfig?.panelUpdatedAt}
+            isBroadcaster={false}
+            isFullscreen={isFullscreen}
+          />
+
+          {/* ── FEATURE 3: SCORE CELEBRATION ANIMATION ── */}
+          <StreamCelebrationBanner
+            celebrationEvent={celebrationEvent}
+            enabled={overlayConfig?.showCelebrations !== false}
+            onCelebrationComplete={() => setCelebrationEvent(null)}
+          />
+
+          {/* ── FEATURE 4: COLOURFUL SCOREBOARD LOWER-THIRD ── */}
           {overlayVisible && !activeStream?.overlayConfig?.bakedIn && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: isYouTube ? '54px' : '36px',
-                left: 'clamp(6px, 2%, 20px)',
-                right: 'clamp(6px, 2%, 20px)',
-                zIndex: 15,
-                pointerEvents: 'none',
-                display: 'flex',
-                justifyContent: 'center'
+            <StreamScoreboardStrip
+              leftTeam={leftTeam}
+              rightTeam={rightTeam}
+              gameInfo={gameInfo}
+              isLive={isLive}
+              isBreak={breakState?.isBreak}
+              isBroadcaster={false}
+              customStyle={{
+                bottom: isYouTube ? '54px' : '36px'
               }}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  maxWidth: '680px',
-                  background: 'rgba(15, 23, 42, 0.92)',
-                  backdropFilter: 'blur(12px)',
-                  WebkitBackdropFilter: 'blur(12px)',
-                  borderRadius: '12px',
-                  border: '1.5px solid rgba(255, 255, 255, 0.16)',
-                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7)',
-                  padding: '6px 12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  pointerEvents: 'auto',
-                  color: '#ffffff'
-                }}
-              >
-                {/* Court Left Team */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 0%', minWidth: 0 }}>
-                  {leftTeam.isServing && (
-                    <YellowPickleballIcon size={16} />
-                  )}
-                  <span
-                    style={{
-                      fontWeight: 800,
-                      fontSize: 'clamp(0.82rem, 1.8vw, 0.98rem)',
-                      color: '#f8fafc',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}
-                    title={leftTeam.name}
-                  >
-                    {leftTeam.name}
-                  </span>
-                  {leftTeam.isServing && currentServerNum && (
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                      S{currentServerNum}
-                    </span>
-                  )}
-                </div>
-
-                {/* Central Score & Info Pill */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                  <span
-                    style={{
-                      fontSize: 'clamp(1.15rem, 2.5vw, 1.45rem)',
-                      fontWeight: 900,
-                      color: '#10b981',
-                      letterSpacing: '0.04em',
-                      fontVariantNumeric: 'tabular-nums'
-                    }}
-                  >
-                    {leftTeam.score}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.72rem',
-                      fontWeight: 800,
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      color: '#94a3b8',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em'
-                    }}
-                  >
-                    {gameInfo}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 'clamp(1.15rem, 2.5vw, 1.45rem)',
-                      fontWeight: 900,
-                      color: '#38bdf8',
-                      letterSpacing: '0.04em',
-                      fontVariantNumeric: 'tabular-nums'
-                    }}
-                  >
-                    {rightTeam.score}
-                  </span>
-                </div>
-
-                {/* Court Right Team */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flex: '1 1 0%', minWidth: 0 }}>
-                  {rightTeam.isServing && currentServerNum && (
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-                      S{currentServerNum}
-                    </span>
-                  )}
-                  <span
-                    style={{
-                      fontWeight: 800,
-                      fontSize: 'clamp(0.82rem, 1.8vw, 0.98rem)',
-                      color: '#f8fafc',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      textAlign: 'right'
-                    }}
-                    title={rightTeam.name}
-                  >
-                    {rightTeam.name}
-                  </span>
-                  {rightTeam.isServing && (
-                    <YellowPickleballIcon size={16} />
-                  )}
-                </div>
-              </div>
-            </div>
+            />
           )}
         </div>
 

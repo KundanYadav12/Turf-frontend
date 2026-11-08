@@ -1,21 +1,49 @@
 'use client';
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Link } from '../../lib/routerCompat';
 import CricketLiveCard from './CricketLiveCard';
 import FootballLiveCard from './FootballLiveCard';
 import BadmintonLiveCard from './BadmintonLiveCard';
 import CourtView from '../court/CourtView';
-import { Radio, Eye, EyeOff, Video } from 'lucide-react';
+import { Radio, Eye, EyeOff, Video, Share2, Check } from 'lucide-react';
 import OptimizedImage from '../common/OptimizedImage';
+import { shareMatchFixture } from '../../utils/shareUtils';
 
 /**
  * High-performance memoized Live Match Card.
  * Re-renders only when this specific match's score or status changes.
  */
-const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
+const LiveMatchCard = memo(({ match, canManage = false, scorerAccess, onToggleDisplay }) => {
   const { id, uuid, matchNumber, status, courtName, venueName, sportSlug, teamA, teamB, score, showOnDisplay = true, has_live_stream, streamStatus } = match;
   const matchIdentifier = uuid || id;
   const isLiveStream = Boolean(has_live_stream || streamStatus === 'LIVE' || match.hasLiveStream);
+  const [copied, setCopied] = useState(false);
+
+  // Authoritative Scorer permission check for this specific match
+  const canScoreMatch = Boolean(
+    canManage ||
+    scorerAccess?.canScoreAny ||
+    (scorerAccess?.assignedMatchIds && (
+      scorerAccess.assignedMatchIds.map(Number).includes(Number(id)) ||
+      (uuid && scorerAccess.assignedMatchIds.includes(uuid))
+    ))
+  );
+
+  const handleShareClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await shareMatchFixture({
+      match,
+      tournament: match.tournament || {
+        id: match.tournament_id || match.tournamentId || match.tournament_uuid,
+        name: match.tournament_name || match.tournamentName
+      },
+      onFeedback: () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }
+    });
+  };
 
   const renderSportCard = () => {
     switch (sportSlug?.toLowerCase()) {
@@ -158,20 +186,22 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
             <Radio size={12} /> Live Score
           </Link>
 
-          <Link
-            to={sportSlug?.toLowerCase() === 'pickleball' ? `/matches/${matchIdentifier}/pickleball-scorer` : `/matches/${matchIdentifier}/scorer`}
-            style={{
-              fontSize: '0.78rem',
-              fontWeight: 700,
-              color: 'var(--accent-secondary, #06b6d4)',
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            {sportSlug?.toLowerCase() === 'pickleball' ? '🏓 Scorer' : sportSlug?.toLowerCase() === 'football' ? '⚽ Scorer' : sportSlug?.toLowerCase() === 'badminton' ? '🏸 Scorer' : '🏏 Scorer'}
-          </Link>
+          {canScoreMatch && (
+            <Link
+              to={sportSlug?.toLowerCase() === 'pickleball' ? `/matches/${matchIdentifier}/pickleball-scorer` : `/matches/${matchIdentifier}/scorer`}
+              style={{
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                color: 'var(--accent-secondary, #06b6d4)',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              {sportSlug?.toLowerCase() === 'pickleball' ? '🏓 Scorer' : sportSlug?.toLowerCase() === 'football' ? '⚽ Scorer' : sportSlug?.toLowerCase() === 'badminton' ? '🏸 Scorer' : '🏏 Scorer'}
+            </Link>
+          )}
 
           {isLiveStream && (
             <Link
@@ -195,20 +225,45 @@ const LiveMatchCard = memo(({ match, canManage = false, onToggleDisplay }) => {
           )}
         </div>
 
-        <Link
-          to={`/matches/${matchIdentifier}`}
-          style={{
-            fontSize: '0.78rem',
-            fontWeight: 600,
-            color: 'var(--accent-primary, #10b981)',
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}
-        >
-          Live Display →
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            type="button"
+            onClick={handleShareClick}
+            style={{
+              background: copied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+              border: copied ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.14)',
+              borderRadius: '6px',
+              padding: '3px 8px',
+              color: copied ? '#34d399' : '#cbd5e1',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s ease'
+            }}
+            title="Share public match score link"
+          >
+            {copied ? <Check size={12} style={{ color: '#34d399' }} /> : <Share2 size={12} />}
+            <span>{copied ? 'Copied' : 'Share'}</span>
+          </button>
+
+          <Link
+            to={`/matches/${matchIdentifier}`}
+            style={{
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              color: 'var(--accent-primary, #10b981)',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            Live Display →
+          </Link>
+        </div>
       </div>
     </div>
   );

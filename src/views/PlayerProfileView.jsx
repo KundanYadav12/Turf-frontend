@@ -5,7 +5,7 @@ import {
   User, Trophy, Award, Shield, Calendar, ArrowLeft,
   Activity, Flame, CheckCircle, MapPin, Edit3, Lock,
   Phone, Mail, AlertCircle, X, ExternalLink, ChevronRight,
-  Camera, AtSign, Loader2, Upload
+  Camera, AtSign, Loader2, Upload, MessageSquare
 } from 'lucide-react';
 import { compressAndOptimizeImage } from '../lib/imageOptimizer';
 
@@ -89,22 +89,42 @@ export default function PlayerProfileView({ player }) {
           <ArrowLeft size={16} /> Back to Tournaments &amp; Community
         </Link>
 
-        {player.canEdit && (
-          <button
-            onClick={() => setIsEditModalOpen(true)}
-            className="btn btn-secondary"
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <Link
+            href={`/chat?user=${player.id}`}
+            className="btn btn-primary"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.4rem',
               padding: '0.45rem 0.95rem',
               fontSize: '0.84rem',
-              borderRadius: '8px'
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              color: '#fff',
+              textDecoration: 'none'
             }}
           >
-            <Edit3 size={14} /> Edit Athlete Profile
-          </button>
-        )}
+            <MessageSquare size={14} /> Message Player
+          </Link>
+
+          {player.canEdit && (
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="btn btn-secondary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.45rem 0.95rem',
+                fontSize: '0.84rem',
+                borderRadius: '8px'
+              }}
+            >
+              <Edit3 size={14} /> Edit Athlete Profile
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Hero Banner Header */}
