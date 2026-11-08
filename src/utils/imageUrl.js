@@ -4,10 +4,9 @@
  */
 
 const getBackendBaseUrl = () => {
-  if (typeof window !== 'undefined') {
-    return '';
-  }
-  return process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || 'http://localhost:5008';
+  // Always return empty string so image requests are relative to current site origin (/api/images/optimize).
+  // This ensures zero loopback/CORS issues and allows seamless domain migration without hardcoded URLs.
+  return '';
 };
 
 /**
