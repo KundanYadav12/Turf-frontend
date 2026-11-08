@@ -51,18 +51,51 @@ export default function AppShell({ children }) {
   }, [pathname]);
 
   if (isDisplayRoute) {
+    const isStrictTvDisplay =
+      pathname.startsWith('/display') ||
+      pathname.startsWith('/tv') ||
+      pathname.endsWith('/overlay');
+
+    if (isStrictTvDisplay) {
+      return (
+        <div
+          style={{
+            minHeight: 0,
+            height: '100dvh',
+            maxHeight: '100dvh',
+            overflow: 'hidden',
+            margin: 0,
+            padding: 0
+          }}
+        >
+          <main style={{ height: '100%', overflow: 'hidden' }}>
+            {children}
+          </main>
+        </div>
+      );
+    }
+
+    // Scorer consoles, auction live, and stream watch pages:
+    // Suppress global sidebar/navbar but allow full vertical scrolling up and down
     return (
       <div
         style={{
-          minHeight: 0,
-          height: '100dvh',
-          maxHeight: '100dvh',
-          overflow: 'hidden',
+          minHeight: '100vh',
+          width: '100%',
+          overflowX: 'hidden',
           margin: 0,
-          padding: 0
+          padding: 0,
+          background: 'var(--bg-page, #090d16)',
+          color: 'var(--text-main, #f8fafc)'
         }}
       >
-        <main style={{ height: '100%', overflow: 'hidden' }}>
+        <main
+          style={{
+            minHeight: '100vh',
+            width: '100%',
+            overflowX: 'hidden'
+          }}
+        >
           {children}
         </main>
       </div>
