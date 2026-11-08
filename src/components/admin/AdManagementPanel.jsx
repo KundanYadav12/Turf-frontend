@@ -10,6 +10,7 @@ import {
   getAdPlaybackStateApi
 } from '../../services/advertisementService';
 import { socket } from '../../services/socket';
+import { compressAndOptimizeImage, compressAdImage } from '../../lib/imageOptimizer';
 import {
   Play,
   Pause,
@@ -168,6 +169,8 @@ const AdManagementPanel = () => {
   });
   const [formImagePreview, setFormImagePreview] = useState('');
   const [zoneOrientationTab, setZoneOrientationTab] = useState('LANDSCAPE'); // 'LANDSCAPE' | 'PORTRAIT'
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
+  const [compressionInfo, setCompressionInfo] = useState('');
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -973,11 +976,45 @@ const AdManagementPanel = () => {
     });
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setFormData(prev => ({ ...prev, imageFile: file }));
+    if (!file) return;
+
+    setCompressionInfo('');
+    setModalError('');
+
+    // Instant local preview
+    try {
       setFormImagePreview(URL.createObjectURL(file));
+    } catch {}
+
+    // If SVG or under 400KB, use directly without canvas processing
+    if (file.type === 'image/svg+xml' || file.name?.toLowerCase().endsWith('.svg') || file.size < 400 * 1024) {
+      setFormData(prev => ({ ...prev, imageFile: file }));
+      setCompressionInfo(file.size > 0 ? `Original size: ${(file.size / 1024).toFixed(0)} KB (Ready)` : '');
+      return;
+    }
+
+    // Auto-compress large / high-res images in browser before upload to prevent HTTP 413 (Entity Too Large)
+    try {
+      setIsCompressingImage(true);
+      const originalKb = (file.size / 1024).toFixed(0);
+      const optimized = await compressAdImage(file);
+      if (optimized?.file) {
+        const compressedKb = (optimized.file.size / 1024).toFixed(0);
+        setFormData(prev => ({ ...prev, imageFile: optimized.file }));
+        if (optimized.previewUrl) {
+          setFormImagePreview(optimized.previewUrl);
+        }
+        setCompressionInfo(`Compressed: ${originalKb} KB → ${compressedKb} KB (${optimized.mimeType === 'image/webp' ? 'WebP' : 'JPEG'}, saved ${optimized.compressionRatio})`);
+      } else {
+        setFormData(prev => ({ ...prev, imageFile: file }));
+      }
+    } catch (optErr) {
+      console.warn('Client-side compression fallback:', optErr);
+      setFormData(prev => ({ ...prev, imageFile: file }));
+    } finally {
+      setIsCompressingImage(false);
     }
   };
 
@@ -1051,7 +1088,17 @@ const AdManagementPanel = () => {
       if (formData.endDate) payload.append('endDate', formData.endDate);
 
       if (formData.imageFile) {
-        payload.append('image', formData.imageFile);
+        let finalImage = formData.imageFile;
+        // Failsafe: if file is still larger than 700KB, perform guaranteed pre-upload compression
+        if (finalImage.size > 700 * 1024 && finalImage.type !== 'image/svg+xml') {
+          try {
+            const opt = await compressAdImage(finalImage);
+            if (opt?.file) finalImage = opt.file;
+          } catch (compErr) {
+            console.warn('Pre-submit compression fallback:', compErr);
+          }
+        }
+        payload.append('image', finalImage);
       }
 
       if (editingAd) {
@@ -1075,7 +1122,11 @@ const AdManagementPanel = () => {
         }
       }
     } catch (err) {
-      setModalError(err.response?.data?.message || err.message || 'Error saving advertisement');
+      if (err.response?.status === 413) {
+        setModalError('File size exceeds server upload limit (HTTP 413). Please choose an image under 25MB or re-select to auto-compress.');
+      } else {
+        setModalError(err.response?.data?.message || err.message || 'Error saving advertisement');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -4689,6 +4740,17 @@ const AdManagementPanel = () => {
                     color: 'var(--text-main, #ffffff)'
                   }}
                 />
+                {isCompressingImage && (
+                  <div style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="spinner-border spinner-border-sm" role="status" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                    ⚡ Optimizing image resolution & size for lightning-fast upload...
+                  </div>
+                )}
+                {!isCompressingImage && compressionInfo && (
+                  <div style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    ✓ {compressionInfo}
+                  </div>
+                )}
                 {isCornerLogo && (
                   <div style={{
                     marginTop: '0.6rem',
@@ -4964,13 +5026,15 @@ const AdManagementPanel = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
+                  disabled={actionLoading || isCompressingImage}
                   className="btn btn-primary"
                   style={{ fontWeight: 800, padding: '0.7rem 1.75rem' }}
                 >
-                  {actionLoading
-                    ? (editingAd ? 'Updating...' : 'Uploading...')
-                    : (editingAd ? 'Save & Synchronize Ad' : 'Publish & Broadcast Ad')}
+                  {isCompressingImage
+                    ? '⚡ Optimizing Image...'
+                    : actionLoading
+                      ? (editingAd ? 'Updating...' : 'Uploading...')
+                      : (editingAd ? 'Save & Synchronize Ad' : 'Publish & Broadcast Ad')}
                 </button>
               </div>
             </form>
