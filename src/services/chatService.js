@@ -2,13 +2,23 @@ import API from './api';
 
 const chatService = {
   getConversations: async () => {
-    const res = await API.get('/chat/conversations');
-    return res.data?.data?.items || [];
+    try {
+      const res = await API.get('/chat/conversations');
+      return res.data?.data?.items || [];
+    } catch (err) {
+      console.warn('Failed to load conversations:', err?.message);
+      return [];
+    }
   },
 
   getTotalUnread: async () => {
-    const res = await API.get('/chat/unread-count');
-    return res.data?.data?.totalUnread || 0;
+    try {
+      const res = await API.get('/chat/unread-count');
+      return res.data?.data?.totalUnread || 0;
+    } catch (err) {
+      console.warn('Failed to load unread count:', err?.message);
+      return 0;
+    }
   },
 
   getConversationDetails: async (id) => {
@@ -42,7 +52,10 @@ const chatService = {
   },
 
   getOrCreateDirectChat: async (targetUserId) => {
-    const res = await API.post('/chat/direct', { targetUserId });
+    const id = typeof targetUserId === 'object' && targetUserId !== null
+      ? Number(targetUserId.id || targetUserId.userId || targetUserId.targetUserId)
+      : Number(targetUserId);
+    const res = await API.post('/chat/direct', { targetUserId: id });
     return res.data?.data;
   },
 

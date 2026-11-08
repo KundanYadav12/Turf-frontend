@@ -411,61 +411,41 @@ export default function MyProfilePage() {
           max-width: 100%;
           min-width: 0;
           box-sizing: border-box;
+          border-radius: 20px;
+          overflow: hidden;
+          margin-bottom: 1.5rem;
+          position: relative;
         }
-        .profile-hero-grid {
+        .profile-banner-graphic {
+          height: clamp(95px, 16vw, 130px);
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(59, 130, 246, 0.25) 50%, rgba(139, 92, 246, 0.35) 100%);
+          position: relative;
+        }
+        .profile-hero-body {
+          position: relative;
+          z-index: 2;
           width: 100%;
           max-width: 100%;
           min-width: 0;
           box-sizing: border-box;
-          display: grid;
-          grid-template-columns: auto 1fr;
-          grid-template-areas:
-            "avatar actions"
-            "info   info";
-          column-gap: 0.75rem;
-          row-gap: 0.75rem;
-          align-items: flex-end;
-        }
-        .profile-avatar-slot {
-          grid-area: avatar;
-          position: relative;
-          width: clamp(76px, 20vw, 104px);
-          height: clamp(76px, 20vw, 104px);
-          flex-shrink: 0;
+          padding: 0 clamp(0.85rem, 3vw, 1.5rem) clamp(1rem, 2.5vw, 1.35rem);
+          margin-top: clamp(-44px, -8vw, -52px);
         }
         .profile-avatar-box {
           width: 100%;
           height: 100%;
-          border-radius: clamp(16px, 4.5vw, 24px);
+          border-radius: clamp(16px, 4.5vw, 22px);
           display: flex;
           align-items: center;
           justify-content: center;
           color: #ffffff;
           font-weight: 900;
-          font-size: clamp(1.6rem, 4vw, 2.3rem);
+          font-size: clamp(1.6rem, 4vw, 2.2rem);
           box-shadow: 0 8px 24px rgba(0,0,0,0.3);
           box-sizing: border-box;
         }
-        .profile-actions-slot {
-          grid-area: actions;
-          display: flex;
-          align-items: center;
-          gap: 0.4rem;
-          justify-self: flex-end;
-          align-self: flex-end;
-          margin-bottom: 2px;
-          flex-wrap: wrap;
-          min-width: 0;
-          z-index: 5;
-        }
-        .profile-info-slot {
-          grid-area: info;
-          min-width: 0;
-          width: 100%;
-          max-width: 100%;
-        }
         .profile-user-name {
-          font-size: clamp(1.15rem, 4.2vw, 1.75rem);
+          font-size: clamp(1.2rem, 4.2vw, 1.7rem);
           font-weight: 900;
           margin: 0;
           letter-spacing: -0.02em;
@@ -475,29 +455,152 @@ export default function MyProfilePage() {
           min-width: 0;
           max-width: 100%;
         }
+
+        /* Mobile (< 641px): Top bar has avatar left, actions right; Identity details below */
+        @media (max-width: 640px) {
+          .profile-hero-layout {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-width: 0;
+          }
+          .profile-hero-top-bar {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            width: 100%;
+            min-width: 0;
+            margin-bottom: 0.65rem;
+          }
+          .profile-avatar-slot {
+            position: relative;
+            width: clamp(76px, 20vw, 92px);
+            height: clamp(76px, 20vw, 92px);
+            flex-shrink: 0;
+          }
+          .profile-actions-slot {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            justify-content: flex-end;
+            align-self: flex-end;
+            margin-bottom: 2px;
+            flex-wrap: wrap;
+            min-width: 0;
+            z-index: 5;
+          }
+          .profile-info-slot {
+            width: 100%;
+            min-width: 0;
+          }
+          .profile-tabs-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+          }
+          .profile-tab-button {
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 0.75rem 0.2rem;
+            gap: 0.25rem;
+            min-width: 0;
+            width: 100%;
+            transition: all 0.15s ease;
+            box-sizing: border-box;
+          }
+          .profile-tab-label-short {
+            display: block;
+            font-size: clamp(0.68rem, 2.2vw, 0.74rem);
+            font-weight: 700;
+            line-height: 1.15;
+            text-align: center;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%;
+          }
+          .profile-tab-label-full {
+            display: none;
+          }
+        }
+
+        /* Desktop (≥ 641px): Ordered side-by-side flex */
         @media (min-width: 641px) {
-          .profile-hero-grid {
+          .profile-hero-layout {
             display: flex;
             align-items: flex-end;
             justify-content: space-between;
             gap: 1.25rem;
+            width: 100%;
+            min-width: 0;
+          }
+          .profile-hero-top-bar {
+            display: contents;
           }
           .profile-avatar-slot {
             order: 1;
-            width: 104px;
-            height: 104px;
+            width: 100px;
+            height: 100px;
+            flex-shrink: 0;
+            position: relative;
           }
           .profile-info-slot {
             order: 2;
             flex: 1;
+            min-width: 0;
             margin-bottom: 0.25rem;
           }
           .profile-actions-slot {
             order: 3;
             margin-left: auto;
             margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+          }
+          .profile-tabs-strip {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.25rem;
+            padding: 0 clamp(0.75rem, 2vw, 1.25rem);
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+          }
+          .profile-tab-button {
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: inline-flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.85rem clamp(0.75rem, 1.8vw, 1.25rem);
+            transition: all 0.15s ease;
+            box-sizing: border-box;
+          }
+          .profile-tab-label-short {
+            display: none;
+          }
+          .profile-tab-label-full {
+            display: inline;
+            font-size: 0.88rem;
+            font-weight: 700;
+            white-space: nowrap;
           }
         }
+
         .profile-two-col-grid {
           display: grid;
           grid-template-columns: 1fr;
@@ -512,163 +615,117 @@ export default function MyProfilePage() {
             grid-template-columns: 1fr 1fr;
           }
         }
-        .profile-tabs-scroll-strip {
-          display: flex;
-          width: 100%;
-          max-width: 100%;
-          min-width: 0;
-          box-sizing: border-box;
-          overflow-x: auto;
-          white-space: nowrap;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-          gap: 0.25rem;
-        }
-        .profile-tabs-scroll-strip::-webkit-scrollbar {
-          display: none;
-        }
-        .profile-tab-item {
-          flex-shrink: 0;
-          white-space: nowrap;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.45rem;
-          cursor: pointer;
-          border: none;
-          background: transparent;
-          transition: all 0.15s ease;
-        }
       `}</style>
 
       {/* ──────────────── Top Hero Profile Card ──────────────── */}
       <div
         className="profile-hero-card"
         style={{
-          width: '100%',
-          maxWidth: '100%',
-          minWidth: 0,
-          boxSizing: 'border-box',
           background: isLight ? '#ffffff' : '#0f172a',
-          borderRadius: '20px',
           border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)'}`,
-          boxShadow: isLight ? '0 4px 20px rgba(0,0,0,0.04)' : '0 10px 30px rgba(0,0,0,0.35)',
-          overflow: 'hidden',
-          marginBottom: '1.5rem',
-          position: 'relative'
+          boxShadow: isLight ? '0 4px 20px rgba(0,0,0,0.04)' : '0 10px 30px rgba(0,0,0,0.35)'
         }}
       >
         {/* Banner Graphic Header */}
-        <div
-          style={{
-            height: 'clamp(95px, 16vw, 130px)',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(59, 130, 246, 0.25) 50%, rgba(139, 92, 246, 0.35) 100%)',
-            position: 'relative'
-          }}
-        />
+        <div className="profile-banner-graphic" />
 
         {/* Profile Content Bar */}
-        <div
-          style={{
-            position: 'relative',
-            zIndex: 2,
-            width: '100%',
-            maxWidth: '100%',
-            minWidth: 0,
-            boxSizing: 'border-box',
-            padding: '0 clamp(0.85rem, 3vw, 1.5rem) clamp(1rem, 2.5vw, 1.5rem)',
-            marginTop: 'clamp(-44px, -8vw, -52px)'
-          }}
-        >
-          <div className="profile-hero-grid">
+        <div className="profile-hero-body">
+          <div className="profile-hero-layout">
 
-            {/* Slot 1: Avatar with Camera Trigger */}
-            <div className="profile-avatar-slot">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handlePhotoSelect}
-              />
-              <div
-                className="profile-avatar-box"
-                style={{
-                  border: `4px solid ${isLight ? '#ffffff' : '#0f172a'}`,
-                  background: profile.profilePhoto
-                    ? `url(${profile.profilePhoto}) center/cover no-repeat`
-                    : 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                }}
-              >
-                {!profile.profilePhoto && initials}
+            {/* Avatar & Action Slot (Top bar on mobile, separated on desktop) */}
+            <div className="profile-hero-top-bar">
+              {/* Avatar with Camera Trigger */}
+              <div className="profile-avatar-slot">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handlePhotoSelect}
+                />
+                <div
+                  className="profile-avatar-box"
+                  style={{
+                    border: `4px solid ${isLight ? '#ffffff' : '#0f172a'}`,
+                    background: profile.profilePhoto
+                      ? `url(${profile.profilePhoto}) center/cover no-repeat`
+                      : 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                  }}
+                >
+                  {!profile.profilePhoto && initials}
+                </div>
+
+                {/* Upload Photo Button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingPhoto}
+                  style={{
+                    position: 'absolute',
+                    bottom: -3,
+                    right: -3,
+                    background: '#10b981',
+                    color: '#ffffff',
+                    border: `2px solid ${isLight ? '#ffffff' : '#0f172a'}`,
+                    borderRadius: '50%',
+                    width: 30,
+                    height: 30,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+                    transition: 'transform 0.15s ease'
+                  }}
+                  title="Upload profile photo"
+                  aria-label="Upload profile photo"
+                >
+                  {isUploadingPhoto ? <RefreshCw size={13} className="animate-spin" /> : <Camera size={14} />}
+                </button>
               </div>
 
-              {/* Upload Photo Button */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingPhoto}
-                style={{
-                  position: 'absolute',
-                  bottom: -3,
-                  right: -3,
-                  background: '#10b981',
-                  color: '#ffffff',
-                  border: `2px solid ${isLight ? '#ffffff' : '#0f172a'}`,
-                  borderRadius: '50%',
-                  width: 30,
-                  height: 30,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-                  transition: 'transform 0.15s ease'
-                }}
-                title="Upload profile photo"
-                aria-label="Upload profile photo"
-              >
-                {isUploadingPhoto ? <RefreshCw size={13} className="animate-spin" /> : <Camera size={14} />}
-              </button>
-            </div>
+              {/* Quick Actions Header Buttons */}
+              <div className="profile-actions-slot">
+                {profile.profilePhoto && (
+                  <button
+                    onClick={handleRemovePhoto}
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: '#f87171', border: `1px solid ${isLight ? '#fca5a5' : 'rgba(239, 68, 68, 0.3)'}`, borderRadius: '10px', padding: '0.45rem 0.65rem' }}
+                    title="Remove photo"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
 
-            {/* Slot 2: Quick Actions Header Buttons */}
-            <div className="profile-actions-slot">
-              {profile.profilePhoto && (
                 <button
-                  onClick={handleRemovePhoto}
-                  className="btn btn-ghost btn-sm"
-                  style={{ color: '#f87171', border: `1px solid ${isLight ? '#fca5a5' : 'rgba(239, 68, 68, 0.3)'}`, borderRadius: '10px', padding: '0.45rem 0.65rem' }}
-                  title="Remove photo"
+                  onClick={() => setIsEditing(!isEditing)}
+                  className={`btn btn-sm ${isEditing ? 'btn-secondary' : 'btn-primary'}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: '10px', fontWeight: 700, padding: '0.45rem 0.85rem' }}
                 >
-                  <Trash2 size={15} />
+                  {isEditing ? <X size={15} /> : <Edit3 size={15} />}
+                  <span>{isEditing ? 'Cancel Edit' : 'Edit Profile'}</span>
                 </button>
-              )}
 
-              <button
-                onClick={() => setIsEditing(!isEditing)}
-                className={`btn btn-sm ${isEditing ? 'btn-secondary' : 'btn-primary'}`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: '10px', fontWeight: 700, padding: '0.45rem 0.85rem' }}
-              >
-                {isEditing ? <X size={15} /> : <Edit3 size={15} />}
-                <span>{isEditing ? 'Cancel Edit' : 'Edit Profile'}</span>
-              </button>
-
-              <button
-                onClick={handleLogout}
-                className="btn btn-secondary btn-sm"
-                style={{ borderRadius: '10px', color: '#f87171', padding: '0.45rem 0.65rem' }}
-                title="Log out"
-              >
-                <LogOut size={16} />
-              </button>
+                <button
+                  onClick={handleLogout}
+                  className="btn btn-secondary btn-sm"
+                  style={{ borderRadius: '10px', color: '#f87171', padding: '0.45rem 0.65rem' }}
+                  title="Log out"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
             </div>
 
-            {/* Slot 3: Name & Role Header (Full Width on Mobile) */}
+            {/* Name, Badges & Metadata */}
             <div className="profile-info-slot">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <h1 className="profile-user-name" style={{ color: isLight ? '#0f172a' : '#ffffff' }}>
-                  {profile.fullName}
-                </h1>
+              {/* Full Name on its own line */}
+              <h1 className="profile-user-name" style={{ color: isLight ? '#0f172a' : '#ffffff' }}>
+                {profile.fullName}
+              </h1>
+
+              {/* Badges line with graceful wrapping */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
                 <span
                   style={{
                     fontSize: '0.7rem',
@@ -697,6 +754,7 @@ export default function MyProfilePage() {
                 </span>
               </div>
 
+              {/* Metadata row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.35rem', color: isLight ? '#64748b' : '#94a3b8', fontSize: '0.82rem' }}>
                 <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>@{profile.username}</span>
                 {profile.city && (
@@ -737,92 +795,89 @@ export default function MyProfilePage() {
           )}
         </div>
 
-        {/* Navigation Tabs Header - Horizontal Swipeable on Mobile */}
+        {/* Navigation Tabs Header - Ultra-responsive grid on Mobile, Flex on Desktop */}
         <div
-          className="profile-tabs-scroll-strip"
+          className="profile-tabs-strip"
           style={{
-            width: '100%',
-            maxWidth: '100%',
-            minWidth: 0,
-            boxSizing: 'border-box',
             borderTop: `1px solid ${isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)'}`,
-            background: isLight ? '#f8fafc' : '#111827',
-            padding: '0 clamp(0.5rem, 2vw, 1rem)'
+            background: isLight ? '#f8fafc' : '#111827'
           }}
         >
+          {/* Tab 1: Personal & Contact */}
           <button
             onClick={() => { setActiveTab('details'); setIsEditing(false); }}
-            className="profile-tab-item"
+            className="profile-tab-button"
             style={{
-              padding: '0.85rem clamp(0.75rem, 2vw, 1.25rem)',
               borderBottom: activeTab === 'details' ? '3px solid #10b981' : '3px solid transparent',
               color: activeTab === 'details' ? '#10b981' : (isLight ? '#64748b' : '#94a3b8'),
-              fontWeight: activeTab === 'details' ? 800 : 600,
-              fontSize: '0.88rem'
+              fontWeight: activeTab === 'details' ? 800 : 600
             }}
           >
             <User size={16} />
-            <span>Personal &amp; Contact</span>
+            <span className="profile-tab-label-short">Personal &amp; Contact</span>
+            <span className="profile-tab-label-full">Personal &amp; Contact</span>
           </button>
 
-          {/* Role specific tab */}
+          {/* Tab 2: Role Specific Tab */}
           <button
             onClick={() => { setActiveTab('role_data'); setIsEditing(false); }}
-            className="profile-tab-item"
+            className="profile-tab-button"
             style={{
-              padding: '0.85rem clamp(0.75rem, 2vw, 1.25rem)',
               borderBottom: activeTab === 'role_data' ? '3px solid #10b981' : '3px solid transparent',
               color: activeTab === 'role_data' ? '#10b981' : (isLight ? '#64748b' : '#94a3b8'),
-              fontWeight: activeTab === 'role_data' ? 800 : 600,
-              fontSize: '0.88rem'
+              fontWeight: activeTab === 'role_data' ? 800 : 600
             }}
           >
             {userRole === 'VENUE_OWNER' ? <Building2 size={16} /> : <Trophy size={16} />}
-            <span>{userRole === 'VENUE_OWNER' ? 'My Venues & Turfs' : userRole.includes('ADMIN') ? 'Administration' : 'Sports Career & Teams'}</span>
+            <span className="profile-tab-label-short">{userRole === 'VENUE_OWNER' ? 'My Venues' : userRole.includes('ADMIN') ? 'Admin' : 'Career & Teams'}</span>
+            <span className="profile-tab-label-full">{userRole === 'VENUE_OWNER' ? 'My Venues & Turfs' : userRole.includes('ADMIN') ? 'Administration' : 'Sports Career & Teams'}</span>
           </button>
 
-          {/* Assigned Matches Tab */}
+          {/* Tab 3: Assigned Matches Tab */}
           <button
             onClick={() => { setActiveTab('assigned'); setIsEditing(false); }}
-            className="profile-tab-item"
+            className="profile-tab-button"
             style={{
-              padding: '0.85rem clamp(0.75rem, 2vw, 1.25rem)',
               borderBottom: activeTab === 'assigned' ? '3px solid #10b981' : '3px solid transparent',
               color: activeTab === 'assigned' ? '#10b981' : (isLight ? '#64748b' : '#94a3b8'),
-              fontWeight: activeTab === 'assigned' ? 800 : 600,
-              fontSize: '0.88rem'
+              fontWeight: activeTab === 'assigned' ? 800 : 600
             }}
           >
             <ClipboardList size={16} />
-            <span>Assigned Matches</span>
-            {Boolean(profile?.assignedMatches?.length > 0) && (
-              <span style={{
-                background: '#10b981',
-                color: '#ffffff',
-                fontSize: '0.7rem',
-                fontWeight: 900,
-                padding: '1px 6px',
-                borderRadius: '10px',
-                marginLeft: '0.2rem'
-              }}>
-                {profile.assignedMatches.length}
-              </span>
-            )}
+            <span className="profile-tab-label-short">
+              Assigned {Boolean(profile?.assignedMatches?.length > 0) && `(${profile.assignedMatches.length})`}
+            </span>
+            <span className="profile-tab-label-full">
+              Assigned Matches
+              {Boolean(profile?.assignedMatches?.length > 0) && (
+                <span style={{
+                  background: '#10b981',
+                  color: '#ffffff',
+                  fontSize: '0.7rem',
+                  fontWeight: 900,
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  marginLeft: '0.35rem'
+                }}>
+                  {profile.assignedMatches.length}
+                </span>
+              )}
+            </span>
           </button>
 
+          {/* Tab 4: Security & Account */}
           <button
             onClick={() => { setActiveTab('security'); setIsEditing(false); }}
-            className="profile-tab-item"
+            className="profile-tab-button"
             style={{
-              padding: '0.85rem clamp(0.75rem, 2vw, 1.25rem)',
               borderBottom: activeTab === 'security' ? '3px solid #10b981' : '3px solid transparent',
               color: activeTab === 'security' ? '#10b981' : (isLight ? '#64748b' : '#94a3b8'),
-              fontWeight: activeTab === 'security' ? 800 : 600,
-              fontSize: '0.88rem'
+              fontWeight: activeTab === 'security' ? 800 : 600
             }}
           >
             <Lock size={16} />
-            <span>Security &amp; Account</span>
+            <span className="profile-tab-label-short">Security</span>
+            <span className="profile-tab-label-full">Security &amp; Account</span>
           </button>
         </div>
       </div>
