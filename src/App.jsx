@@ -72,6 +72,7 @@ function AppContent() {
           <Route path="/auctions/:auctionId/live" element={<LiveAuctionPage />} />
           <Route path="/matches/:id" element={<MatchDetailPage />} />
           <Route path="/matches/:id/live" element={<LiveScoreViewerPage />} />
+          <Route path="/matches/:id/watch" element={<LiveScoreViewerPage />} />
           <Route path="/matches/:id/scorer" element={<CricketScorerPage />} />
           <Route path="/display/match/:id" element={<MatchDetailPage />} />
           <Route path="/display/tournament/:id" element={<SignageDisplayPage />} />

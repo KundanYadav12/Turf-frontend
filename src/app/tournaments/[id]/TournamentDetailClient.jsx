@@ -16,8 +16,9 @@ import {
   Trophy, Calendar, MapPin, Users, Radio, Monitor, ArrowLeft,
   Shield, Gavel, Table, UserPlus, Play, CheckCircle, AlertCircle, RefreshCw, Zap, Award, Tv,
   ChevronRight, Trash2, Search, Check, Filter, X, ClipboardList, Settings, AlertTriangle, Info, Clock, ExternalLink,
-  Eye, Activity, Video, Lock, BookOpen, MessageSquare
+  Eye, Activity, Video, Lock, BookOpen, MessageSquare, Pencil
 } from 'lucide-react';
+import CreateTournamentModal from '../../../components/tournament/CreateTournamentModal';
 import TeamRosterDrawer from '../../../components/tournament/TeamRosterDrawer';
 import PlayerRegistrationsManager from '../../../components/tournament/PlayerRegistrationsManager';
 import OfficialScorersManager from '../../../components/tournament/OfficialScorersManager';
@@ -82,6 +83,7 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
 
   // Delete Tournament modal & action state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [deleteImpact, setDeleteImpact] = useState(null);
   const [loadingImpact, setLoadingImpact] = useState(false);
   const [deleteConfirmationWord, setDeleteConfirmationWord] = useState('');
@@ -108,21 +110,33 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
   // Auth state from Redux - memoized individual selector subscriptions
   const user = useSelector((state) => state.auth?.user);
   const isAuthenticated = useSelector((state) => state.auth?.isAuthenticated);
+  const [localUser, setLocalUser] = useState(null);
+
+  useEffect(() => {
+    if (!user && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('turf_user') || localStorage.getItem('user');
+        if (raw) setLocalUser(JSON.parse(raw));
+      } catch {}
+    }
+  }, [user]);
+
+  const effectiveUser = user || localUser;
 
   // Organizer / Admin permission check with mounted guard to guarantee identical SSR & client hydration
-  const userRole = (user?.role || '').toUpperCase();
+  const userRole = (effectiveUser?.role || '').toUpperCase();
   const isSuperAdmin = Boolean(mounted && (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'));
   const isCreator = Boolean(
     mounted &&
-    user?.id && (
-      Number(user.id) === Number(tournament?.createdBy) ||
-      Number(user.id) === Number(tournament?.created_by) ||
-      Number(user.id) === Number(tournament?.venueOwnerId) ||
-      Number(user.id) === Number(tournament?.venue_owner_id)
+    effectiveUser?.id && (
+      Number(effectiveUser.id) === Number(tournament?.createdBy) ||
+      Number(effectiveUser.id) === Number(tournament?.created_by) ||
+      Number(effectiveUser.id) === Number(tournament?.venueOwnerId) ||
+      Number(effectiveUser.id) === Number(tournament?.venue_owner_id)
     )
   );
-  const canManage = Boolean(mounted && user && (isSuperAdmin || isCreator));
-  const canDeleteTournament = Boolean(mounted && user && (isSuperAdmin || isCreator));
+  const canManage = Boolean(mounted && effectiveUser && (isSuperAdmin || isCreator));
+  const canDeleteTournament = Boolean(mounted && effectiveUser && (isSuperAdmin || isCreator));
 
   // Authoritative Scorer Access state
   const [scorerAccess, setScorerAccess] = useState({
@@ -1115,6 +1129,29 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
               >
                 <Monitor size={16} /> Signage TV Display
               </Link>
+            )}
+
+            {/* Edit Tournament (Admin / Creator only) */}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setShowEditModal(true)}
+                className="btn"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.2))',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  color: '#38bdf8',
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  boxShadow: '0 4px 14px rgba(56, 189, 248, 0.2)'
+                }}
+                title="Edit Tournament Details"
+                suppressHydrationWarning
+              >
+                <Pencil size={16} /> Edit Tournament
+              </button>
             )}
 
             {/* Delete Tournament (Admin/Creator only) */}
@@ -3222,6 +3259,28 @@ export default function TournamentDetailClient({ tournament: initialTournament, 
         tournament={tournament}
         onRosterUpdated={loadTabData}
       />
+
+      {/* Edit Tournament Modal */}
+      {showEditModal && (
+        <CreateTournamentModal
+          isOpen={showEditModal}
+          mode="edit"
+          tournament={tournament}
+          onClose={() => setShowEditModal(false)}
+          onSuccess={(updated) => {
+            setTournament((prev) => ({ ...prev, ...updated }));
+            setShowEditModal(false);
+            setNotification('Tournament updated successfully!');
+            loadTabData(true);
+          }}
+          onTournamentUpdated={(updated) => {
+            setTournament((prev) => ({ ...prev, ...updated }));
+            setShowEditModal(false);
+            setNotification('Tournament updated successfully!');
+            loadTabData(true);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import {
   setTournamentsLoading,
   setTournamentsFeed
 } from '../../features/tournament/tournamentSlice';
-import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Eye, X, Loader2 } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Users, Radio, Search, Monitor, ArrowRight, PlusCircle, Eye, X, Loader2, Pencil } from 'lucide-react';
 import CreateTournamentModal from '../../components/tournament/CreateTournamentModal';
 
 const formatTournamentDate = (dateStr) => {
@@ -30,6 +30,8 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
   const [cityFilter, setCityFilter] = useState('');
   const [sportFilter, setSportFilter] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTournament, setEditingTournament] = useState(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -72,6 +74,8 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
 
   const effectiveUser = user || localUser;
   const effectiveAuth = isAuthenticated || Boolean(effectiveUser);
+  const userRole = String(effectiveUser?.role || '').toUpperCase();
+  const isSuperAdmin = Boolean(isMounted && (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'));
 
   const canCreateTournament = Boolean(
     effectiveAuth &&
@@ -402,6 +406,29 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
                   >
                     <Monitor size={15} />
                   </Link>
+
+                  {isMounted && (isSuperAdmin || (effectiveUser?.id && (Number(effectiveUser.id) === Number(t.createdBy || t.created_by)))) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTournament(t);
+                        setIsEditModalOpen(true);
+                      }}
+                      className="btn btn-outline btn-sm"
+                      title="Edit Tournament"
+                      style={{
+                        padding: '0.4rem 0.65rem',
+                        color: '#38bdf8',
+                        borderColor: 'rgba(56, 189, 248, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(56, 189, 248, 0.08)'
+                      }}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -452,6 +479,29 @@ export default function TournamentsPageClient({ initialTournaments = [], initial
           }}
           onTournamentCreated={() => {
             setIsCreateModalOpen(false);
+            fetchTournaments(null, false);
+          }}
+        />
+      )}
+
+      {/* Edit Tournament Modal */}
+      {isEditModalOpen && editingTournament && (
+        <CreateTournamentModal
+          isOpen={isEditModalOpen}
+          mode="edit"
+          tournament={editingTournament}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingTournament(null);
+          }}
+          onSuccess={() => {
+            setIsEditModalOpen(false);
+            setEditingTournament(null);
+            fetchTournaments(null, false);
+          }}
+          onTournamentUpdated={() => {
+            setIsEditModalOpen(false);
+            setEditingTournament(null);
             fetchTournaments(null, false);
           }}
         />

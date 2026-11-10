@@ -1,41 +1,107 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   X, Trophy, Calendar, MapPin, Users, DollarSign, Upload,
-  AlertCircle, CheckCircle, Shield, Gavel, FileText, ChevronRight
+  AlertCircle, CheckCircle, Shield, Gavel, FileText, ChevronRight,
+  Trash2, RotateCcw, Lock, Image as ImageIcon, Loader2
 } from 'lucide-react';
 
-const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, onSuccess }) => {
+const formatDateForInput = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+      return dateStr.slice(0, 10);
+    }
+    return '';
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const CreateTournamentModal = ({
+  isOpen = true,
+  onClose,
+  onTournamentCreated,
+  onTournamentUpdated,
+  onSuccess,
+  tournament = null,
+  mode = 'create'
+}) => {
   const navigate = useNavigate();
+  const isEdit = mode === 'edit' || Boolean(tournament);
 
-  const [formData, setFormData] = useState({
-    name: '',
-    sportId: 1, // Default Cricket
-    format: 'LEAGUE',
-    venueId: '',
-    startDate: '',
-    endDate: '',
-    registrationDeadline: '',
-    maxTeams: 16,
-    entryFee: 0,
-    description: '',
-    rules: '',
-    bannerUrl: '',
-    hasAuction: false,
-    status: 'PUBLISHED',
-    // Pickleball configuration
-    matchFormat: 'DOUBLES',
-    scoringMode: 'RALLY',
-    rotationRule: 'OFFICIAL',
-    targetScore: 15,
-    winByTwo: true,
-    maxScore: '',
-    rosterSize: 12,
-    groupsCount: 2
-  });
+  const getInitialFormData = () => {
+    if (tournament) {
+      let parsedSportConfig = {};
+      try {
+        parsedSportConfig = typeof tournament.sport_config === 'string'
+          ? JSON.parse(tournament.sport_config)
+          : (tournament.sportConfig || tournament.sport_config || {});
+      } catch {}
 
+      return {
+        name: tournament.name || '',
+        sportId: tournament.sport_id || tournament.sportId || tournament.sport?.id || 1,
+        format: tournament.format || 'LEAGUE',
+        venueId: tournament.venue_id || tournament.venueId || tournament.venue?.id || '',
+        startDate: formatDateForInput(tournament.start_date || tournament.startDate || tournament.dates?.start),
+        endDate: formatDateForInput(tournament.end_date || tournament.endDate || tournament.dates?.end),
+        registrationDeadline: formatDateForInput(tournament.registration_deadline || tournament.registrationDeadline),
+        maxTeams: tournament.max_teams || tournament.maxTeams || 16,
+        entryFee: tournament.entry_fee != null ? tournament.entry_fee : (tournament.entryFee != null ? tournament.entryFee : 0),
+        description: tournament.description || '',
+        rules: tournament.rules || '',
+        bannerUrl: tournament.banner_url || tournament.bannerUrl || '',
+        hasAuction: Boolean(tournament.has_auction || tournament.hasAuction),
+        status: tournament.status || 'PUBLISHED',
+        updatedAt: tournament.updated_at || tournament.updatedAt || '',
+        // Pickleball configuration
+        matchFormat: tournament.match_format || tournament.matchFormat || 'DOUBLES',
+        scoringMode: tournament.scoringMode || parsedSportConfig?.scoringMode || 'RALLY',
+        rotationRule: tournament.rotationRule || parsedSportConfig?.rotationRule || 'OFFICIAL',
+        targetScore: tournament.target_score != null ? tournament.target_score : (tournament.targetScore != null ? tournament.targetScore : 15),
+        winByTwo: tournament.win_by_two != null ? Boolean(tournament.win_by_two) : (tournament.winByTwo != null ? Boolean(tournament.winByTwo) : true),
+        maxScore: tournament.max_score || tournament.maxScore || '',
+        rosterSize: tournament.roster_size || tournament.rosterSize || 12,
+        groupsCount: tournament.groups_count || tournament.groupsCount || 2
+      };
+    }
+    return {
+      name: '',
+      sportId: 1, // Default Cricket
+      format: 'LEAGUE',
+      venueId: '',
+      startDate: '',
+      endDate: '',
+      registrationDeadline: '',
+      maxTeams: 16,
+      entryFee: 0,
+      description: '',
+      rules: '',
+      bannerUrl: '',
+      hasAuction: false,
+      status: 'PUBLISHED',
+      updatedAt: '',
+      // Pickleball configuration
+      matchFormat: 'DOUBLES',
+      scoringMode: 'RALLY',
+      rotationRule: 'OFFICIAL',
+      targetScore: 15,
+      winByTwo: true,
+      maxScore: '',
+      rosterSize: 12,
+      groupsCount: 2
+    };
+  };
+
+  const [formData, setFormData] = useState(getInitialFormData);
+  const [initialSnapshot, setInitialSnapshot] = useState(getInitialFormData);
+  const [removeBanner, setRemoveBanner] = useState(false);
   const [bannerFile, setBannerFile] = useState(null);
   const [sports, setSports] = useState([]);
   const [venues, setVenues] = useState([]);
@@ -43,6 +109,19 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Re-sync form state when tournament prop changes
+  useEffect(() => {
+    if (isOpen) {
+      const init = getInitialFormData();
+      setFormData(init);
+      setInitialSnapshot(init);
+      setRemoveBanner(false);
+      setBannerFile(null);
+      setError('');
+      setSuccess('');
+    }
+  }, [isOpen, tournament]);
 
   // Fetch sports and venues on open
   useEffect(() => {
@@ -79,6 +158,31 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     fetchOptions();
   }, [isOpen]);
 
+  // Safe-edit locks detection
+  const registeredCount = parseInt(tournament?.registeredTeamsCount ?? tournament?.registeredTeams ?? tournament?.teamsCount ?? 0, 10);
+  const fixturesCount = parseInt(tournament?.fixturesCount ?? tournament?.matchesCount ?? 0, 10);
+
+  const isSportLocked = isEdit && (registeredCount > 0 || fixturesCount > 0);
+  const isFormatLocked = isEdit && fixturesCount > 0;
+  const isAuctionLocked = isEdit && Boolean(tournament?.auctionStatus && !['DRAFT', 'UPCOMING'].includes(tournament?.auctionStatus));
+  const minAllowedTeams = isEdit ? Math.max(1, registeredCount) : 2;
+
+  // Dirty state tracking for safe discard confirmation
+  const isDirty = useMemo(() => {
+    if (bannerFile) return true;
+    if (removeBanner) return true;
+    return JSON.stringify(formData) !== JSON.stringify(initialSnapshot);
+  }, [formData, initialSnapshot, bannerFile, removeBanner]);
+
+  const handleSafeClose = () => {
+    if (isDirty) {
+      if (!window.confirm('Discard changes? Any unsaved edits will be lost.')) {
+        return;
+      }
+    }
+    if (onClose) onClose();
+  };
+
   if (!isOpen) return null;
 
   const selectedSport = sports.find((s) => String(s.id) === String(formData.sportId));
@@ -95,6 +199,20 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setBannerFile(e.target.files[0]);
+      setRemoveBanner(false);
+    }
+  };
+
+  const handleRemoveBanner = () => {
+    setBannerFile(null);
+    setRemoveBanner(true);
+    setFormData((prev) => ({ ...prev, bannerUrl: '' }));
+  };
+
+  const handleUndoRemoveBanner = () => {
+    setRemoveBanner(false);
+    if (tournament?.banner_url || tournament?.bannerUrl) {
+      setFormData((prev) => ({ ...prev, bannerUrl: tournament.banner_url || tournament.bannerUrl }));
     }
   };
 
@@ -123,8 +241,10 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     }
 
     const maxT = parseInt(formData.maxTeams, 10);
-    if (isNaN(maxT) || maxT < 2 || maxT > 64) {
-      return 'Maximum teams limit must be between 2 and 64.';
+    if (isNaN(maxT) || maxT < minAllowedTeams || maxT > 64) {
+      return isEdit
+        ? `Cannot be lower than ${minAllowedTeams} registered teams (Max 64).`
+        : 'Maximum teams limit must be between 2 and 64.';
     }
 
     const fee = parseFloat(formData.entryFee);
@@ -150,8 +270,12 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     try {
       const data = new FormData();
       data.append('name', formData.name.trim());
-      data.append('sportId', formData.sportId);
-      data.append('format', formData.format);
+      if (!isSportLocked) {
+        data.append('sportId', formData.sportId);
+      }
+      if (!isFormatLocked) {
+        data.append('format', formData.format);
+      }
       if (formData.venueId) data.append('venueId', formData.venueId);
       data.append('startDate', formData.startDate);
       data.append('endDate', formData.endDate);
@@ -160,9 +284,15 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
       data.append('entryFee', formData.entryFee);
       if (formData.description) data.append('description', formData.description.trim());
       if (formData.rules) data.append('rules', formData.rules.trim());
-      if (formData.bannerUrl) data.append('bannerUrl', formData.bannerUrl.trim());
-      data.append('hasAuction', formData.hasAuction ? 'true' : 'false');
+      if (formData.bannerUrl && !removeBanner) data.append('bannerUrl', formData.bannerUrl.trim());
+      if (removeBanner) data.append('removeBanner', 'true');
+      if (!isAuctionLocked) {
+        data.append('hasAuction', formData.hasAuction ? 'true' : 'false');
+      }
       data.append('status', formData.status);
+      if (formData.updatedAt) {
+        data.append('updatedAt', formData.updatedAt);
+      }
 
       if (isPickleball) {
         data.append('matchFormat', formData.matchFormat);
@@ -180,30 +310,50 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
       }
 
       const token = typeof window !== 'undefined' ? (localStorage.getItem('turf_token') || localStorage.getItem('token')) : null;
-      const res = await axios.post('/api/tournaments', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      const headers = {
+        'Content-Type': 'multipart/form-data',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      };
+
+      if (isEdit) {
+        const tournId = tournament.id || tournament.public_id || tournament.uuid;
+        const res = await axios.put(`/api/tournaments/${tournId}`, data, { headers });
+
+        if (res.data.success) {
+          setSuccess('Tournament updated successfully!');
+          const updated = res.data.data;
+          if (onTournamentUpdated) onTournamentUpdated(updated);
+          if (onSuccess) onSuccess(updated);
+
+          setTimeout(() => {
+            if (onClose) onClose();
+          }, 600);
         }
-      });
+      } else {
+        const res = await axios.post('/api/tournaments', data, { headers });
 
-      if (res.data.success) {
-        setSuccess('Tournament created successfully!');
-        const created = res.data.data;
-        if (onTournamentCreated) onTournamentCreated(created);
-        if (onSuccess) onSuccess(created);
+        if (res.data.success) {
+          setSuccess('Tournament created successfully!');
+          const created = res.data.data;
+          if (onTournamentCreated) onTournamentCreated(created);
+          if (onSuccess) onSuccess(created);
 
-        setTimeout(() => {
-          if (onClose) onClose();
-          if (typeof window !== 'undefined') {
-            window.location.href = `/tournaments/${created.id}`;
-          } else {
-            navigate(`/tournaments/${created.id}`);
-          }
-        }, 800);
+          setTimeout(() => {
+            if (onClose) onClose();
+            if (typeof window !== 'undefined') {
+              window.location.href = `/tournaments/${created.id}`;
+            } else {
+              navigate(`/tournaments/${created.id}`);
+            }
+          }, 800);
+        }
       }
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to create tournament. Please check your inputs.');
+      if (err?.response?.status === 409) {
+        setError('Tournament was changed by someone else, reload and try again.');
+      } else {
+        setError(err?.response?.data?.message || (isEdit ? 'Failed to update tournament. Please check your inputs.' : 'Failed to create tournament. Please check your inputs.'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -219,6 +369,13 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     fontSize: '0.9rem',
     outline: 'none',
     boxSizing: 'border-box'
+  };
+
+  const disabledInputStyle = {
+    ...inputStyle,
+    opacity: 0.65,
+    cursor: 'not-allowed',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)'
   };
 
   const selectStyle = {
@@ -248,10 +405,23 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
     color: 'var(--text-heading)'
   };
 
+  // Compute banner preview URL
+  const bannerPreviewUrl = useMemo(() => {
+    if (removeBanner) return null;
+    if (bannerFile) {
+      try {
+        return URL.createObjectURL(bannerFile);
+      } catch {
+        return null;
+      }
+    }
+    return formData.bannerUrl || null;
+  }, [bannerFile, formData.bannerUrl, removeBanner]);
+
   return (
     <div
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleSafeClose();
       }}
       style={{
         position: 'fixed',
@@ -297,7 +467,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
             </div>
             <div>
               <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--text-heading, #ffffff)' }}>
-                Create New Tournament
+                {isEdit ? 'Edit Tournament' : 'Create New Tournament'}
               </h2>
               <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted, #94a3b8)' }}>
                 Configure tournament format, venue, scheduling, team limits and bidding rules
@@ -305,7 +475,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleSafeClose}
             style={{
               background: 'transparent',
               border: 'none',
@@ -314,6 +484,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               padding: '6px',
               borderRadius: '8px'
             }}
+            title="Close"
           >
             <X size={20} />
           </button>
@@ -383,12 +554,19 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               <div>
                 <label style={labelStyle}>
                   Sport Type *
+                  {isSportLocked && (
+                    <span style={{ marginLeft: '6px', color: '#f59e0b', fontSize: '0.72rem', fontWeight: 600 }}>
+                      <Lock size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: '2px' }} /> Locked
+                    </span>
+                  )}
                 </label>
                 <select
                   name="sportId"
                   value={formData.sportId}
                   onChange={handleChange}
-                  style={selectStyle}
+                  disabled={isSportLocked}
+                  style={isSportLocked ? disabledInputStyle : selectStyle}
+                  title={isSportLocked ? 'Locked because teams or fixtures already exist' : ''}
                 >
                   {sports.length > 0 ? (
                     sports.map((s) => (
@@ -405,22 +583,39 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                     </>
                   )}
                 </select>
+                {isSportLocked && (
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Locked because teams or fixtures already exist.
+                  </p>
+                )}
               </div>
 
               <div>
                 <label style={labelStyle}>
                   Tournament Format *
+                  {isFormatLocked && (
+                    <span style={{ marginLeft: '6px', color: '#f59e0b', fontSize: '0.72rem', fontWeight: 600 }}>
+                      <Lock size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: '2px' }} /> Locked
+                    </span>
+                  )}
                 </label>
                 <select
                   name="format"
                   value={formData.format}
                   onChange={handleChange}
-                  style={selectStyle}
+                  disabled={isFormatLocked}
+                  style={isFormatLocked ? disabledInputStyle : selectStyle}
+                  title={isFormatLocked ? 'Locked because fixtures already exist' : ''}
                 >
                   <option value="LEAGUE" style={optionStyle}>League / Round-Robin</option>
                   <option value="KNOCKOUT" style={optionStyle}>Knockout / Single Elimination</option>
                   <option value="LEAGUE_KNOCKOUT" style={optionStyle}>Group Stage + Knockout</option>
                 </select>
+                {isFormatLocked && (
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Locked because fixtures already exist.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -676,17 +871,27 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               <div>
                 <label style={labelStyle}>
                   Maximum Teams *
+                  {isEdit && registeredCount > 0 && (
+                    <span style={{ marginLeft: '6px', color: 'var(--accent-primary, #10b981)', fontSize: '0.72rem', fontWeight: 600 }}>
+                      (Min {minAllowedTeams})
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
                   required
-                  min="2"
+                  min={minAllowedTeams}
                   max="64"
                   name="maxTeams"
                   value={formData.maxTeams}
                   onChange={handleChange}
                   style={inputStyle}
                 />
+                {isEdit && registeredCount > 0 && (
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Cannot be lower than {registeredCount} registered teams.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -702,11 +907,14 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   onChange={handleChange}
                   style={inputStyle}
                 />
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
+                  Applies to new registrations only. Existing registrations remain unchanged.
+                </p>
               </div>
 
               <div>
                 <label style={labelStyle}>
-                  Initial Status
+                  {isEdit ? 'Tournament Status' : 'Initial Status'}
                 </label>
                 <select
                   name="status"
@@ -716,6 +924,13 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                 >
                   <option value="PUBLISHED" style={optionStyle}>Published (Visible in Hub)</option>
                   <option value="DRAFT" style={optionStyle}>Draft (Unlisted)</option>
+                  {isEdit && (
+                    <>
+                      <option value="ONGOING" style={optionStyle}>Ongoing / In Progress</option>
+                      <option value="COMPLETED" style={optionStyle}>Completed</option>
+                      <option value="CANCELLED" style={optionStyle}>Cancelled</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
@@ -729,16 +944,24 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               border: '1px solid var(--slot-available-border, rgba(16, 185, 129, 0.25))',
               borderRadius: '10px',
               padding: '0.85rem 1.25rem',
-              marginTop: '0.5rem'
+              marginTop: '0.5rem',
+              opacity: isAuctionLocked ? 0.7 : 1
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Gavel size={20} color="var(--accent-primary, #10b981)" />
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-heading, #ffffff)' }}>
                     Enable Cricket Player Auction / Bidding
+                    {isAuctionLocked && (
+                      <span style={{ marginLeft: '8px', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 600 }}>
+                        <Lock size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> Locked
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)' }}>
-                    Add auction module with team wallets, compulsory squad size & mandatory reserve rules
+                    {isAuctionLocked
+                      ? 'Auction settings locked because player auction or bidding has started.'
+                      : 'Add auction module with team wallets, compulsory squad size & mandatory reserve rules'}
                   </div>
                 </div>
               </div>
@@ -747,7 +970,8 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                 name="hasAuction"
                 checked={formData.hasAuction}
                 onChange={handleChange}
-                style={{ width: '18px', height: '18px', accentColor: 'var(--accent-primary, #10b981)', cursor: 'pointer' }}
+                disabled={isAuctionLocked}
+                style={{ width: '18px', height: '18px', accentColor: 'var(--accent-primary, #10b981)', cursor: isAuctionLocked ? 'not-allowed' : 'pointer' }}
               />
             </div>
           </div>
@@ -758,10 +982,99 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
               4. Banner Image (Optional)
             </h3>
 
+            {/* Banner Preview if available */}
+            {bannerPreviewUrl && (
+              <div style={{
+                marginBottom: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1rem',
+                background: 'var(--bg-elevated, rgba(16, 25, 41, 0.5))',
+                padding: '0.75rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color)'
+              }}>
+                <img
+                  src={bannerPreviewUrl}
+                  alt="Tournament Banner Preview"
+                  style={{
+                    width: '120px',
+                    height: '65px',
+                    objectFit: 'cover',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.1)'
+                  }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', marginBottom: '2px' }}>
+                    {bannerFile ? bannerFile.name : 'Current Banner Image'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    {bannerFile ? `${(bannerFile.size / 1024).toFixed(0)} KB • Ready to upload` : 'Saved banner image'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveBanner}
+                  className="btn btn-sm"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    padding: '0.4rem 0.75rem',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Remove banner"
+                >
+                  <Trash2 size={13} /> Remove
+                </button>
+              </div>
+            )}
+
+            {removeBanner && (
+              <div style={{
+                marginBottom: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(239, 68, 68, 0.08)',
+                padding: '0.65rem 0.9rem',
+                borderRadius: '8px',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                fontSize: '0.82rem',
+                color: '#fca5a5'
+              }}>
+                <span>Banner marked for removal. Default sport banner will be applied.</span>
+                <button
+                  type="button"
+                  onClick={handleUndoRemoveBanner}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#38bdf8',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <RotateCcw size={13} /> Undo
+                </button>
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary, #cbd5e1)', marginBottom: '0.35rem' }}>
-                  Upload File:
+                  Upload New File:
                 </label>
                 <input
                   type="file"
@@ -783,7 +1096,10 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                   name="bannerUrl"
                   placeholder="https://images.unsplash.com/..."
                   value={formData.bannerUrl}
-                  onChange={handleChange}
+                  onChange={(e) => {
+                    setRemoveBanner(false);
+                    handleChange(e);
+                  }}
                   style={inputStyle}
                 />
               </div>
@@ -800,7 +1116,7 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
           }}>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleSafeClose}
               disabled={submitting}
               style={{
                 background: 'var(--bg-secondary, rgba(255,255,255,0.05))',
@@ -834,8 +1150,17 @@ const CreateTournamentModal = ({ isOpen = true, onClose, onTournamentCreated, on
                 boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
               }}
             >
-              <Trophy size={16} />
-              {submitting ? 'Creating Tournament...' : 'Create Tournament'}
+              {submitting ? (
+                <>
+                  <Loader2 size={16} className="spin" />
+                  {isEdit ? 'Saving Changes...' : 'Creating Tournament...'}
+                </>
+              ) : (
+                <>
+                  <Trophy size={16} />
+                  {isEdit ? 'Save Changes' : 'Create Tournament'}
+                </>
+              )}
             </button>
           </div>
         </form>
