@@ -43,6 +43,37 @@ export function YellowPickleballIcon({ size = 16, style = {} }) {
   );
 }
 
+export function parseYouTubeId(input) {
+  if (!input || typeof input !== 'string') return null;
+  let trimmed = input.trim().replace(/^["']|["']$/g, '');
+  const iframeMatch = trimmed.match(/src=["']([^"']+)["']/i);
+  if (iframeMatch) trimmed = iframeMatch[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  const studioMatch = trimmed.match(/studio\.youtube\.com\/video\/([a-zA-Z0-9_-]{11})/i);
+  if (studioMatch) return studioMatch[1];
+  const liveMatch = trimmed.match(/(?:youtube\.com|youtube-nocookie\.com)\/live\/([a-zA-Z0-9_-]{11})/i);
+  if (liveMatch) return liveMatch[1];
+  const shortMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/i);
+  if (shortMatch) return shortMatch[1];
+  const watchMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+  if (watchMatch) return watchMatch[1];
+  const embedMatch = trimmed.match(/(?:youtube\.com|youtube-nocookie\.com)\/embed\/([a-zA-Z0-9_-]{11})/i);
+  if (embedMatch) return embedMatch[1];
+  const shortsMatch = trimmed.match(/(?:youtube\.com|youtube-nocookie\.com)\/shorts\/([a-zA-Z0-9_-]{11})/i);
+  if (shortsMatch) return shortsMatch[1];
+  const genericMatch = trimmed.match(/(?:\/video\/|\/v\/)([a-zA-Z0-9_-]{11})/i);
+  if (genericMatch) return genericMatch[1];
+  return null;
+}
+
+export function isYouTubeStreamKeyOrRtmp(input) {
+  if (!input || typeof input !== 'string') return false;
+  const trimmed = input.trim();
+  const isKey = /^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/i.test(trimmed);
+  const isRtmp = /^rtmps?:\/\//i.test(trimmed);
+  return isKey || isRtmp;
+}
+
 export default function LiveStreamManagerModal({
   matchId,
   match,
@@ -1182,18 +1213,29 @@ export default function LiveStreamManagerModal({
   const handleSaveYouTube = async (e) => {
     e.preventDefault();
     if (!youtubeUrl.trim()) {
-      setErrorMsg('Please enter a valid YouTube Live URL or Video ID.');
+      setErrorMsg('Please enter a valid YouTube Live URL, Studio URL, or Video ID.');
+      return;
+    }
+
+    const detectedId = parseYouTubeId(youtubeUrl);
+    if (!detectedId) {
+      if (isYouTubeStreamKeyOrRtmp(youtubeUrl)) {
+        setErrorMsg('You entered a YouTube Stream Key or RTMP URL. This belongs in OBS Studio/streaming software to send video to YouTube. To connect the stream to TurfSpot for spectators, please paste your YouTube Video URL (e.g. from your browser address bar: studio.youtube.com/video/... or youtube.com/watch?v=...) or your 11-character Video ID.');
+      } else {
+        setErrorMsg('Invalid YouTube URL or Video ID. Supported formats: studio.youtube.com/video/ID, youtube.com/watch?v=ID, youtube.com/live/ID, youtu.be/ID, or direct 11-character Video ID.');
+      }
       return;
     }
 
     setActionLoading(true);
     setErrorMsg('');
     try {
+      const canonicalUrl = `https://www.youtube.com/watch?v=${detectedId}`;
       await axios.post(
         `/api/matches/${matchId}/stream`,
         {
           streamingMethod: 'YOUTUBE_LIVE',
-          youtubeLiveUrl: youtubeUrl.trim(),
+          youtubeLiveUrl: canonicalUrl,
           title: youtubeTitle.trim(),
           privacyStatus: youtubePrivacy
         },
@@ -1207,10 +1249,30 @@ export default function LiveStreamManagerModal({
       );
 
       await fetchStreamConfig();
-      setSuccessMsg('YouTube Live broadcast linked! Viewers on Turf will now watch your YouTube live stream.');
+      setSuccessMsg(`YouTube Live broadcast (ID: ${detectedId}) linked! Viewers on Turf will now watch your YouTube live stream.`);
       if (onStreamUpdated) onStreamUpdated();
     } catch (err) {
       setErrorMsg(err?.response?.data?.message || 'Failed to link YouTube broadcast.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnlinkYouTube = async () => {
+    setActionLoading(true);
+    setErrorMsg('');
+    try {
+      await axios.post(
+        `/api/matches/${matchId}/stream/end`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      setYoutubeUrl('');
+      await fetchStreamConfig();
+      setSuccessMsg('YouTube stream unlinked from this match.');
+      if (onStreamUpdated) onStreamUpdated();
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || 'Failed to unlink YouTube stream.');
     } finally {
       setActionLoading(false);
     }
@@ -2652,113 +2714,286 @@ export default function LiveStreamManagerModal({
           {/* ═══════════════════════════════════════════════════════════ */}
           {/* TAB 3: YOUTUBE LIVE INTEGRATION                             */}
           {/* ═══════════════════════════════════════════════════════════ */}
-          {activeTab === 'youtube' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div>
-                <h4 style={{ margin: 0, color: '#f8fafc', fontWeight: 800 }}>
-                  YouTube Live Broadcast Integration
-                </h4>
-                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
-                  Link an existing YouTube Live stream URL or broadcast ID to this match.
-                </p>
-              </div>
+          {activeTab === 'youtube' && (() => {
+            const detectedYtId = parseYouTubeId(youtubeUrl);
+            const isKeyOrRtmp = isYouTubeStreamKeyOrRtmp(youtubeUrl);
+            const activeStreamObj = streamData?.stream || streamData;
+            const currentYtId = activeStreamObj?.youtubeVideoId || parseYouTubeId(activeStreamObj?.youtubeLiveUrl || activeStreamObj?.youtubeUrl);
+            const isYtActive = (activeStreamObj?.streamingMethod === 'YOUTUBE_LIVE' || activeStreamObj?.streamingMethod === 'YOUTUBE') && activeStreamObj?.status === 'LIVE';
 
-              <form onSubmit={handleSaveYouTube} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                    YouTube Live URL or Video ID
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. https://youtube.com/live/dQw4w9WgXcQ or https://youtu.be/..."
-                    value={youtubeUrl}
-                    onChange={(e) => setYoutubeUrl(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.85rem',
-                      borderRadius: '8px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#f8fafc',
-                      fontSize: '0.88rem'
-                    }}
-                  />
-                  <span style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '0.25rem', display: 'block' }}>
-                    Supported formats: <code>youtube.com/live/ID</code>, <code>youtube.com/watch?v=ID</code>, <code>youtu.be/ID</code>
-                  </span>
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, color: '#f8fafc', fontWeight: 800 }}>
+                      YouTube Live Broadcast Integration
+                    </h4>
+                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
+                      Link your YouTube Live broadcast to this match so viewers on TurfSpot watch the stream live with interactive scoreboards and sponsor ads.
+                    </p>
+                  </div>
+
+                  {isYtActive && currentYtId && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '20px',
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        border: '1px solid #ef4444',
+                        color: '#f87171',
+                        fontWeight: 800,
+                        fontSize: '0.75rem'
+                      }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                        BROADCAST LIVE
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: '200px' }}>
+                {/* Currently Linked Stream Card */}
+                {currentYtId && isYtActive && (
+                  <div style={{
+                    padding: '1rem',
+                    borderRadius: '10px',
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <Youtube size={22} color="#ef4444" />
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+                            Currently Streaming YouTube Broadcast
+                          </span>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#ffffff' }}>
+                            {activeStreamObj?.title || 'YouTube Live Match'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <a
+                          href={`https://www.youtube.com/watch?v=${currentYtId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.35rem 0.75rem',
+                            borderRadius: '6px',
+                            background: 'rgba(255,255,255,0.08)',
+                            color: '#60a5fa',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            textDecoration: 'none'
+                          }}
+                        >
+                          <ExternalLink size={14} /> Open on YouTube
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={handleUnlinkYouTube}
+                          disabled={actionLoading}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.35rem 0.75rem',
+                            borderRadius: '6px',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            color: '#f87171',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Unlink Broadcast
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '0.78rem', color: '#cbd5e1' }}>
+                      Linked Video ID: <code style={{ color: '#facc15', background: 'rgba(0,0,0,0.4)', padding: '2px 6px', borderRadius: '4px' }}>{currentYtId}</code>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveYouTube} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div>
                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                      Stream Title (Optional)
+                      YouTube Live URL, Studio URL, or Video ID
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Grand Final Match Live"
-                      value={youtubeTitle}
-                      onChange={(e) => setYoutubeTitle(e.target.value)}
+                      placeholder="e.g. studio.youtube.com/video/RG7ws07JlY4 or youtube.com/watch?v=... or Video ID"
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '0.55rem 0.85rem',
+                        padding: '0.65rem 0.85rem',
                         borderRadius: '8px',
                         background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.15)',
+                        border: detectedYtId
+                          ? '1px solid rgba(34, 197, 94, 0.6)'
+                          : isKeyOrRtmp
+                          ? '1px solid rgba(245, 158, 11, 0.6)'
+                          : '1px solid rgba(255,255,255,0.15)',
                         color: '#f8fafc',
-                        fontSize: '0.85rem'
+                        fontSize: '0.88rem'
                       }}
                     />
-                  </div>
 
-                  <div style={{ width: '150px' }}>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
-                      Privacy Setting
-                    </label>
-                    <select
-                      value={youtubePrivacy}
-                      onChange={(e) => setYoutubePrivacy(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.55rem 2.5rem 0.55rem 0.85rem',
+                    {/* Feedback: Valid Video ID detected */}
+                    {detectedYtId && (
+                      <div style={{
+                        marginTop: '0.5rem',
+                        padding: '0.5rem 0.75rem',
                         borderRadius: '8px',
-                        backgroundColor: 'var(--bg-card, #0f172a)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        color: '#f8fafc',
-                        fontSize: '0.85rem'
-                      }}
-                    >
-                      <option value="PUBLIC">Public</option>
-                      <option value="UNLISTED">Unlisted</option>
-                      <option value="PRIVATE">Private</option>
-                    </select>
+                        background: 'rgba(34, 197, 94, 0.12)',
+                        border: '1px solid rgba(34, 197, 94, 0.35)',
+                        fontSize: '0.8rem',
+                        color: '#86efac',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}>
+                        <CheckCircle size={16} color="#22c55e" />
+                        <span>
+                          Valid YouTube broadcast detected! Video ID: <strong style={{ color: '#ffffff', letterSpacing: '0.5px' }}>{detectedYtId}</strong>
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Feedback: User pasted Stream Key or RTMP URL */}
+                    {isKeyOrRtmp && (
+                      <div style={{
+                        marginTop: '0.6rem',
+                        padding: '0.85rem 1rem',
+                        borderRadius: '8px',
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        fontSize: '0.82rem',
+                        color: '#fef3c7',
+                        lineHeight: 1.5
+                      }}>
+                        <div style={{ fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.35rem' }}>
+                          <AlertCircle size={16} color="#fbbf24" />
+                          YouTube Stream Key / Ingest URL Detected
+                        </div>
+                        <div style={{ color: '#f1f5f9' }}>
+                          The text you entered (<code style={{ background: 'rgba(0,0,0,0.5)', padding: '2px 6px', borderRadius: '4px', color: '#fde68a' }}>{youtubeUrl.trim()}</code>) is a YouTube RTMP stream key. Stream keys are entered in <strong>OBS Studio / encoder software</strong> to send video to YouTube.
+                        </div>
+                        <div style={{ marginTop: '0.5rem', color: '#cbd5e1' }}>
+                          To link this stream to TurfSpot for spectators to watch:
+                          <ol style={{ margin: '0.35rem 0 0 1.2rem', padding: 0 }}>
+                            <li>Look at your browser address bar in YouTube Studio (e.g. <code style={{ color: '#67e8f9' }}>https://studio.youtube.com/video/.../livestreaming</code>)</li>
+                            <li>Or click the <strong>Share</strong> arrow in YouTube Studio to copy the link (<code style={{ color: '#67e8f9' }}>https://youtu.be/...</code>)</li>
+                            <li>Or paste your 11-character Video ID directly (e.g. <code style={{ color: '#67e8f9' }}>RG7ws07JlY4</code>)</li>
+                          </ol>
+                        </div>
+                      </div>
+                    )}
+
+                    {!detectedYtId && !isKeyOrRtmp && (
+                      <span style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '0.35rem', display: 'block' }}>
+                        Supported formats: <code>studio.youtube.com/video/ID</code>, <code>youtube.com/watch?v=ID</code>, <code>youtube.com/live/ID</code>, <code>youtu.be/ID</code>, or direct 11-character Video ID
+                      </span>
+                    )}
                   </div>
-                </div>
 
-                {/* YouTube Requirements Notice */}
-                <div style={{ padding: '0.85rem 1rem', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', fontSize: '0.8rem', color: '#cbd5e1' }}>
-                  <strong style={{ color: '#f87171', display: 'block', marginBottom: '0.2rem' }}>
-                    📌 YouTube Live Requirements:
-                  </strong>
-                  • Ensure your YouTube channel has live streaming enabled (may take up to 24 hrs for brand new accounts).<br />
-                  • If streaming from OBS to YouTube, copy the OBS Browser Source overlay from the External Camera tab for automatic on-screen scoreboards.
-                </div>
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: '200px' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                        Stream Title (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Grand Final Match Live"
+                        value={youtubeTitle}
+                        onChange={(e) => setYoutubeTitle(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.85rem',
+                          borderRadius: '8px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          color: '#f8fafc',
+                          fontSize: '0.85rem'
+                        }}
+                      />
+                    </div>
 
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="btn btn-primary btn-sm"
-                  style={{
-                    borderRadius: '8px',
-                    fontWeight: 700,
-                    padding: '0.6rem 1.25rem',
-                    background: 'linear-gradient(135deg, #ef4444, #b91c1c)'
-                  }}
-                >
-                  Link & Activate YouTube Live Stream
-                </button>
-              </form>
-            </div>
-          )}
+                    <div style={{ width: '150px' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                        Privacy Setting
+                      </label>
+                      <select
+                        value={youtubePrivacy}
+                        onChange={(e) => setYoutubePrivacy(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 2.5rem 0.55rem 0.85rem',
+                          borderRadius: '8px',
+                          backgroundColor: 'var(--bg-card, #0f172a)',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          color: '#f8fafc',
+                          fontSize: '0.85rem'
+                        }}
+                      >
+                        <option value="PUBLIC">Public</option>
+                        <option value="UNLISTED">Unlisted</option>
+                        <option value="PRIVATE">Private</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* YouTube Live OBS & Streaming Guide */}
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    borderRadius: '10px',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    fontSize: '0.8rem',
+                    color: '#cbd5e1',
+                    lineHeight: 1.45
+                  }}>
+                    <strong style={{ color: '#f87171', display: 'block', marginBottom: '0.3rem' }}>
+                      📌 Streaming to YouTube with OBS & Turf Scoreboard:
+                    </strong>
+                    1. In OBS Studio: Open <em>Settings &gt; Stream</em> &gt; Service: <strong>YouTube - RTMPS</strong>, then paste your Stream Key.<br />
+                    2. In TurfSpot: Switch to the <strong>Scoreboard Overlay</strong> tab &gt; copy the OBS Browser Source link &gt; add it to OBS for real-time scores on your video.<br />
+                    3. Paste your YouTube Video link above and click Link &amp; Activate. Spectators across web and mobile will immediately watch your match!
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={actionLoading}
+                    className="btn btn-primary btn-sm"
+                    style={{
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      padding: '0.65rem 1.25rem',
+                      background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.35)',
+                      cursor: actionLoading ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {actionLoading ? 'Linking Broadcast...' : (isYtActive ? 'Update YouTube Live Link' : 'Link & Activate YouTube Live Stream')}
+                  </button>
+                </form>
+              </div>
+            );
+          })()}
 
           {/* ═══════════════════════════════════════════════════════════ */}
           {/* TAB 4: SCOREBOARD OVERLAY CONFIG                            */}

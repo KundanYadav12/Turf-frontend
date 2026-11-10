@@ -251,23 +251,6 @@ const LoginPage = () => {
               </div>
             )}
 
-            {/* Demo Credentials Box */}
-            <div style={{
-              background: 'var(--accent-primary-glow)',
-              border: '1px dashed var(--border-glow)',
-              padding: '0.85rem',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.78rem',
-              color: 'var(--accent-primary)',
-              marginBottom: '1.5rem',
-              lineHeight: 1.7
-            }}>
-              <strong>🎮 Demo Login:</strong><br />
-              Player: <code style={{ background: 'var(--bg-tag)', padding: '0 4px', borderRadius: 4 }}>player@turf.com</code> / <code style={{ background: 'var(--bg-tag)', padding: '0 4px', borderRadius: 4 }}>admin123</code><br />
-              Owner: <code style={{ background: 'var(--bg-tag)', padding: '0 4px', borderRadius: 4 }}>owner@turf.com</code> / <code style={{ background: 'var(--bg-tag)', padding: '0 4px', borderRadius: 4 }}>admin123</code><br />
-              Admin: <code style={{ background: 'var(--bg-tag)', padding: '0 4px', borderRadius: 4 }}>admin@turf.com</code> / <code style={{ background: 'var(--bg-tag)', padding: '0 4px', borderRadius: 4 }}>admin123</code>
-            </div>
-
             <form onSubmit={handleLoginSubmit}>
               <div className="form-group">
                 <label className="form-label">Email Address</label>
