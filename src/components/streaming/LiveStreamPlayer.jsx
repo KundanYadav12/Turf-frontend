@@ -20,6 +20,29 @@ import StreamScoreboardStrip from './StreamScoreboardStrip';
 import StreamCelebrationBanner from './StreamCelebrationBanner';
 import StreamOverlayPanel from './StreamOverlayPanel';
 
+function parseYouTubeId(input) {
+  if (!input || typeof input !== 'string') return null;
+  let trimmed = input.trim().replace(/^["']|["']$/g, '');
+  const iframeMatch = trimmed.match(/src=["']([^"']+)["']/i);
+  if (iframeMatch) trimmed = iframeMatch[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  const studioMatch = trimmed.match(/studio\.youtube\.com\/video\/([a-zA-Z0-9_-]{11})/i);
+  if (studioMatch) return studioMatch[1];
+  const liveMatch = trimmed.match(/(?:youtube\.com|youtube-nocookie\.com)\/live\/([a-zA-Z0-9_-]{11})/i);
+  if (liveMatch) return liveMatch[1];
+  const shortMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/i);
+  if (shortMatch) return shortMatch[1];
+  const watchMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+  if (watchMatch) return watchMatch[1];
+  const embedMatch = trimmed.match(/(?:youtube\.com|youtube-nocookie\.com)\/embed\/([a-zA-Z0-9_-]{11})/i);
+  if (embedMatch) return embedMatch[1];
+  const shortsMatch = trimmed.match(/(?:youtube\.com|youtube-nocookie\.com)\/shorts\/([a-zA-Z0-9_-]{11})/i);
+  if (shortsMatch) return shortsMatch[1];
+  const genericMatch = trimmed.match(/(?:\/video\/|\/v\/)([a-zA-Z0-9_-]{11})/i);
+  if (genericMatch) return genericMatch[1];
+  return null;
+}
+
 export default function LiveStreamPlayer({
   matchId,
   stream,
@@ -92,14 +115,8 @@ export default function LiveStreamPlayer({
   const streamingMethod = activeStream?.streamingMethod || stream?.streamingMethod || 'MOBILE_CAMERA';
   const isYouTube = streamingMethod === 'YOUTUBE_LIVE' || streamingMethod === 'YOUTUBE' || Boolean(activeStream?.youtubeUrl || activeStream?.youtubeLiveUrl);
   const isHls = streamingMethod === 'EXTERNAL_RTMP' && Boolean(activeStream?.playbackUrl);
-  const isLive = streamStatus === 'LIVE';
-
-  const youtubeVideoId = activeStream?.youtubeVideoId || (() => {
-    const raw = activeStream?.youtubeUrl || activeStream?.youtubeLiveUrl || stream?.youtubeUrl;
-    if (!raw) return null;
-    const matchYt = String(raw).match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|live\/)([^#&?]*).*/);
-    return (matchYt && matchYt[2].length === 11) ? matchYt[2] : raw;
-  })();
+  const youtubeVideoId = activeStream?.youtubeVideoId || parseYouTubeId(activeStream?.youtubeUrl || activeStream?.youtubeLiveUrl || stream?.youtubeUrl);
+  const isLive = streamStatus === 'LIVE' || (isYouTube && Boolean(youtubeVideoId));
 
   // Keep stream status in sync with props
   useEffect(() => {

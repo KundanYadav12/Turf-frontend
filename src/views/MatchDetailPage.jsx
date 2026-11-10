@@ -729,7 +729,8 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
       {/* Live Stream Broadcasting / Viewing Banner & Player */}
       {(() => {
         const activeStream = streamData?.stream || streamData;
-        const isLive = activeStream && (activeStream.status === 'LIVE' || activeStream.status === 'PREVIEW' || activeStream.isLive || (activeStream.streamingMethod === 'YOUTUBE' && activeStream.youtubeUrl));
+        const isYouTube = activeStream?.streamingMethod === 'YOUTUBE_LIVE' || activeStream?.streamingMethod === 'YOUTUBE' || Boolean(activeStream?.youtubeVideoId || activeStream?.youtubeLiveUrl || activeStream?.youtubeUrl);
+        const isLive = activeStream && (activeStream.status === 'LIVE' || activeStream.status === 'PREVIEW' || activeStream.isLive || (isYouTube && (activeStream.youtubeVideoId || activeStream.youtubeLiveUrl || activeStream.youtubeUrl)));
         if (!isLive) return null;
 
         return (
