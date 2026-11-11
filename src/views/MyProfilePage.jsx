@@ -253,21 +253,32 @@ export default function MyProfilePage() {
     setPhotoMessage(null);
 
     try {
-      // Client-side image compression
-      const compressedBlob = await compressAndOptimizeImage(file, {
-        maxWidth: 512,
-        maxHeight: 512,
-        quality: 0.85
-      });
+      // 1. Safely extract file to upload with client-side compression
+      let fileToUpload = file;
+      try {
+        const optimized = await compressAndOptimizeImage(file, {
+          maxWidth: 512,
+          maxHeight: 512,
+          quality: 0.85
+        });
+        if (optimized?.file instanceof Blob) {
+          fileToUpload = optimized.file;
+        }
+      } catch (compErr) {
+        console.warn('Client-side compression skipped, uploading original file:', compErr);
+        fileToUpload = file;
+      }
 
+      // 2. Build form data with actual File/Blob object
       const photoFormData = new FormData();
-      photoFormData.append('photo', compressedBlob, 'avatar.webp');
+      const fileName = fileToUpload.name || (file.name ? file.name : 'avatar.webp');
+      photoFormData.append('photo', fileToUpload, fileName);
 
-      const authToken = token || localStorage.getItem('turf_token');
+      const authToken = token || (typeof window !== 'undefined' ? (localStorage.getItem('turf_token') || localStorage.getItem('token')) : null);
       const res = await axios.post('/api/users/profile-photo', photoFormData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${authToken}`
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
         }
       });
 
@@ -278,9 +289,11 @@ export default function MyProfilePage() {
         dispatch(updateUser({ profilePhoto: newPhotoUrl, photoThumbnail: newPhotoUrl }));
         setPhotoMessage({ type: 'success', text: 'Photo updated successfully!' });
         setTimeout(() => setPhotoMessage(null), 3000);
+      } else {
+        setPhotoMessage({ type: 'error', text: res.data?.message || 'Failed to upload photo.' });
       }
     } catch (err) {
-      setPhotoMessage({ type: 'error', text: err.response?.data?.message || 'Failed to upload photo.' });
+      setPhotoMessage({ type: 'error', text: err.response?.data?.message || err.message || 'Failed to upload photo.' });
     } finally {
       setIsUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -292,9 +305,9 @@ export default function MyProfilePage() {
     if (!confirm('Remove profile photo and restore default avatar?')) return;
     setIsUploadingPhoto(true);
     try {
-      const authToken = token || localStorage.getItem('turf_token');
+      const authToken = token || (typeof window !== 'undefined' ? (localStorage.getItem('turf_token') || localStorage.getItem('token')) : null);
       const res = await axios.delete('/api/users/profile-photo', {
-        headers: { Authorization: `Bearer ${authToken}` }
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
       });
       if (res.data?.success) {
         clearApiCache('/users/profile');
@@ -302,9 +315,11 @@ export default function MyProfilePage() {
         dispatch(updateUser({ profilePhoto: null, photoThumbnail: null }));
         setPhotoMessage({ type: 'success', text: 'Photo removed.' });
         setTimeout(() => setPhotoMessage(null), 3000);
+      } else {
+        setPhotoMessage({ type: 'error', text: res.data?.message || 'Failed to remove photo.' });
       }
     } catch (err) {
-      setPhotoMessage({ type: 'error', text: 'Failed to remove photo.' });
+      setPhotoMessage({ type: 'error', text: err.response?.data?.message || err.message || 'Failed to remove photo.' });
     } finally {
       setIsUploadingPhoto(false);
     }
