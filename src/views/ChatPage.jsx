@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Link, useNavigate } from '../lib/routerCompat';
 import chatService from '../services/chatService';
 import { getSocket } from '../services/socket';
+import { useBranding } from '../components/providers/BrandingProvider';
 import {
   MessageSquare, Send, Image as ImageIcon, Search, Users, Shield,
   X, CornerUpLeft, Trash2, Edit2, ChevronDown, ArrowLeft,
@@ -158,6 +159,7 @@ export default function ChatPage() {
   const themeMode = useSelector((state) => state.theme?.mode) || 'dark';
   const isLight = themeMode === 'light';
   const navigate = useNavigate();
+  const { showChatImageUpload } = useBranding();
   const searchParams = useSearchParams();
 
   // URL query params
@@ -1666,24 +1668,28 @@ export default function ChatPage() {
                   flexShrink: 0
                 }}
               >
-                {/* Attach File Button */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={handleAttachmentSelect}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '0.5rem', borderRadius: '10px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  title="Attach images"
-                >
-                  <ImageIcon size={18} />
-                </button>
+                {/* Attach File Button (Controlled via Super Admin feature toggle) */}
+                {showChatImageUpload !== false && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={handleAttachmentSelect}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '0.5rem', borderRadius: '10px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title="Attach images"
+                    >
+                      <ImageIcon size={18} />
+                    </button>
+                  </>
+                )}
 
                 {/* Auto-growing Textarea */}
                 <textarea

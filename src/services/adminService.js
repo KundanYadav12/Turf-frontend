@@ -1,4 +1,4 @@
-import API from './api';
+import API, { clearApiCache } from './api';
 
 export const getAdminDashboardApi = async () => {
   const response = await API.get('/admin/dashboard');
@@ -94,6 +94,13 @@ export const getBrandingAuditLogsApi = async (params = {}) => {
 
 export const getPublicBrandingApi = async () => {
   const response = await API.get('/branding');
+  return response.data;
+};
+
+export const updateFeatureTogglesApi = async (toggles) => {
+  clearApiCache('branding');
+  const response = await API.put('/admin/features', toggles);
+  clearApiCache('branding');
   return response.data;
 };
 
