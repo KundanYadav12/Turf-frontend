@@ -20,7 +20,7 @@ const Navbar = ({
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { appName, logoUrl } = useBranding();
+  const { appName, logoUrl, showExploreVenues, showMyBookings } = useBranding();
 
   const [isMounted, setIsMounted] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -104,12 +104,14 @@ const Navbar = ({
 
           {/* Desktop Nav Links (Hidden on mobile) */}
           <ul className="nav-links-desktop">
-            <li>
-              <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
-                Explore Venues
-              </Link>
-            </li>
-            {isMounted && isAuthenticated && (
+            {showExploreVenues !== false && (
+              <li>
+                <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
+                  Explore Venues
+                </Link>
+              </li>
+            )}
+            {isMounted && isAuthenticated && showMyBookings !== false && (
               <li>
                 <Link to="/my-bookings" className={`nav-link ${location.pathname === '/my-bookings' ? 'active' : ''}`}>
                   My Bookings

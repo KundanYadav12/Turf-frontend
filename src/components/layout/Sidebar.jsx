@@ -133,7 +133,7 @@ export default function Sidebar({
   const { user, isAuthenticated } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { appName, appTagline, logoUrl } = useBranding();
+  const { appName, appTagline, logoUrl, showExploreVenues, showMyBookings } = useBranding();
 
   const [mounted, setMounted] = useState(false);
   const [openSubmenus, setOpenSubmenus] = useState({});
@@ -207,10 +207,12 @@ export default function Sidebar({
 
   // Check if item is authorized for user
   const isItemAuthorized = useCallback((item) => {
+    if (item.id === 'venues' && showExploreVenues === false) return false;
+    if (item.id === 'bookings' && showMyBookings === false) return false;
     if (!item.roles || item.roles.includes('*')) return true;
     if (!isAuthenticated) return false;
     return item.roles.includes(userRole);
-  }, [isAuthenticated, userRole]);
+  }, [isAuthenticated, userRole, showExploreVenues, showMyBookings]);
 
   // Filter sections and items based on permissions
   const visibleSections = useMemo(() => {

@@ -1,5 +1,5 @@
 'use client';
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getPublicBrandingApi } from '../../services/adminService';
 import { getSocket } from '../../services/socket';
 
@@ -9,6 +9,10 @@ const DEFAULT_BRANDING = {
   logoUrl: '/logo.png',
   faviconUrl: '/favicon.ico',
   contactEmail: 'support@turfspot.com',
+  showExploreVenues: true,
+  showMyBookings: true,
+  showChatImageUpload: true,
+  disableRightClick: false,
   updatedAt: null,
   isCustomLogo: false,
   isCustomFavicon: false
@@ -85,6 +89,15 @@ export default function BrandingProvider({ children }) {
     }
   }, [applyBrandingToDocument]);
 
+  const updateBrandingState = useCallback((newBranding) => {
+    if (!newBranding) return;
+    setBranding((prev) => ({
+      ...prev,
+      ...newBranding
+    }));
+    applyBrandingToDocument(newBranding);
+  }, [applyBrandingToDocument]);
+
   // Initial fetch on mount
   useEffect(() => {
     fetchBranding();
@@ -124,15 +137,103 @@ export default function BrandingProvider({ children }) {
     };
   }, [applyBrandingToDocument, fetchBranding]);
 
+  // Security Feature: Mouse Right-Click & DevTools Prevention Toggle
+  const [securityToast, setSecurityToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
+
+  const showSecurityWarning = useCallback((message = 'Right click is disabled') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setSecurityToast(message);
+    toastTimeoutRef.current = setTimeout(() => {
+      setSecurityToast(null);
+    }, 2000);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (!branding.disableRightClick) {
+      return;
+    }
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showSecurityWarning('Right click is disabled');
+      return false;
+    };
+
+    const handleKeyDown = (e) => {
+      // F12
+      if (e.key === 'F12' || e.keyCode === 123) {
+        e.preventDefault();
+        e.stopPropagation();
+        showSecurityWarning('Right click is disabled');
+        return false;
+      }
+      // Ctrl+Shift+I / J / C (Inspect / Console)
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        showSecurityWarning('Right click is disabled');
+        return false;
+      }
+      // Ctrl+U (View Source)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault();
+        e.stopPropagation();
+        showSecurityWarning('Right click is disabled');
+        return false;
+      }
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu, { capture: true });
+    document.addEventListener('keydown', handleKeyDown, { capture: true });
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu, { capture: true });
+      document.removeEventListener('keydown', handleKeyDown, { capture: true });
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, [branding.disableRightClick, showSecurityWarning]);
+
   return (
     <BrandingContext.Provider
       value={{
         ...branding,
         loading,
-        refreshBranding: fetchBranding
+        refreshBranding: fetchBranding,
+        updateBrandingState
       }}
     >
       {children}
+      {securityToast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 999999,
+            backgroundColor: '#0f172a',
+            color: '#f8fafc',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+            padding: '10px 18px',
+            borderRadius: '10px',
+            fontSize: '13px',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          <span>{securityToast}</span>
+        </div>
+      )}
     </BrandingContext.Provider>
   );
 }
