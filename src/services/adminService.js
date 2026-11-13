@@ -54,6 +54,14 @@ export const createAppReleaseApi = async (formData) => {
   return response.data;
 };
 
+export const updateAppReleaseApi = async (releaseId, formData) => {
+  const isFormData = typeof FormData !== 'undefined' && formData instanceof FormData;
+  const response = await API.put(`/admin/mobile-updates/releases/${releaseId}`, formData, isFormData ? {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  } : {});
+  return response.data;
+};
+
 export const publishAppReleaseApi = async (releaseId) => {
   const response = await API.post(`/admin/mobile-updates/releases/${releaseId}/publish`);
   return response.data;

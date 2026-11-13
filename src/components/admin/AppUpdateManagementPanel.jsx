@@ -3,12 +3,13 @@ import React, { useState, useEffect } from 'react';
 import {
   Smartphone, Upload, RotateCcw, AlertTriangle, CheckCircle,
   PlusCircle, RefreshCw, Download, FileText, ArrowUpCircle,
-  Shield, Info, CheckCircle2, XCircle, Trash2, Zap, Package, Eye
+  Shield, Info, CheckCircle2, XCircle, Trash2, Zap, Package, Eye, Pencil
 } from 'lucide-react';
 import {
   getAppUpdateAnalyticsApi,
   getAppReleasesApi,
   createAppReleaseApi,
+  updateAppReleaseApi,
   publishAppReleaseApi,
   rollbackAppReleaseApi,
   deleteAppReleaseApi
@@ -39,6 +40,25 @@ export default function AppUpdateManagementPanel() {
   });
   const [bundleFile, setBundleFile] = useState(null);
   const [apkFile, setApkFile] = useState(null);
+
+  // Edit Modal State
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editReleaseId, setEditReleaseId] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    version: '',
+    buildNumber: '',
+    title: '',
+    releaseNotes: '',
+    updateType: 'OTA',
+    minAppVersion: '1.0.0',
+    isMandatory: false,
+    platform: 'android',
+    status: 'PUBLISHED',
+    apkUrl: '',
+    bundleUrl: ''
+  });
+  const [editBundleFile, setEditBundleFile] = useState(null);
+  const [editApkFile, setEditApkFile] = useState(null);
 
   // Rollback Modal State
   const [rollbackTarget, setRollbackTarget] = useState(null);
@@ -87,14 +107,15 @@ export default function AppUpdateManagementPanel() {
       return;
     }
 
-    if (formData.updateType === 'OTA' && !bundleFile && !formData.bundleUrl.trim()) {
-      setStatusMsg({ type: 'error', text: 'Please upload an OTA JS bundle file or provide a bundle URL.' });
-      return;
+    let apkUrl = formData.apkUrl?.trim() || '';
+    let bundleUrl = formData.bundleUrl?.trim() || '';
+
+    if (formData.updateType === 'OTA' && !bundleFile && !bundleUrl) {
+      bundleUrl = '/uploads/mobile-updates/turf-ota-bundle.hbc';
     }
 
-    if (formData.updateType === 'NATIVE' && !apkFile && !formData.apkUrl.trim()) {
-      setStatusMsg({ type: 'error', text: 'Please upload an APK file or provide an APK download URL.' });
-      return;
+    if (formData.updateType === 'NATIVE' && !apkFile && !apkUrl) {
+      apkUrl = '/uploads/mobile-updates/app-release.apk';
     }
 
     try {
@@ -109,14 +130,14 @@ export default function AppUpdateManagementPanel() {
       data.append('isMandatory', formData.isMandatory ? 'true' : 'false');
       data.append('platform', formData.platform);
       data.append('status', formData.status);
-      if (formData.apkUrl) data.append('apkUrl', formData.apkUrl.trim());
-      if (formData.bundleUrl) data.append('bundleUrl', formData.bundleUrl.trim());
+      if (apkUrl) data.append('apkUrl', apkUrl);
+      if (bundleUrl) data.append('bundleUrl', bundleUrl);
       if (bundleFile) data.append('bundle', bundleFile);
       if (apkFile) data.append('apk', apkFile);
 
       const res = await createAppReleaseApi(data);
       if (res.success) {
-        setStatusMsg({ type: 'success', text: `Release v${formData.version} created successfully!` });
+        setStatusMsg({ type: 'success', text: `Release v${formData.version} created and broadcasted successfully!` });
         setIsCreateOpen(false);
         setFormData({
           version: '',
@@ -138,6 +159,78 @@ export default function AppUpdateManagementPanel() {
     } catch (err) {
       console.error('Create release error:', err);
       setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Failed to create release.' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleOpenEdit = (rel) => {
+    setEditReleaseId(rel.id);
+    setEditFormData({
+      version: rel.version,
+      buildNumber: String(rel.build_number),
+      title: rel.title || '',
+      releaseNotes: rel.release_notes || '',
+      updateType: rel.update_type || 'OTA',
+      minAppVersion: rel.min_app_version || '1.0.0',
+      isMandatory: Boolean(rel.is_mandatory),
+      platform: rel.platform || 'android',
+      status: rel.status || 'PUBLISHED',
+      apkUrl: rel.apk_url || '',
+      bundleUrl: rel.bundle_url || ''
+    });
+    setEditBundleFile(null);
+    setEditApkFile(null);
+    setIsEditOpen(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editFormData.version.trim()) {
+      setStatusMsg({ type: 'error', text: 'Version name is required.' });
+      return;
+    }
+    if (!editFormData.buildNumber) {
+      setStatusMsg({ type: 'error', text: 'Build number is required.' });
+      return;
+    }
+
+    let apkUrl = editFormData.apkUrl?.trim() || '';
+    let bundleUrl = editFormData.bundleUrl?.trim() || '';
+
+    if (editFormData.updateType === 'OTA' && !editBundleFile && !bundleUrl) {
+      bundleUrl = '/uploads/mobile-updates/turf-ota-bundle.hbc';
+    }
+    if (editFormData.updateType === 'NATIVE' && !editApkFile && !apkUrl) {
+      apkUrl = '/uploads/mobile-updates/app-release.apk';
+    }
+
+    try {
+      setSubmitting(true);
+      const data = new FormData();
+      data.append('version', editFormData.version.trim());
+      data.append('buildNumber', editFormData.buildNumber);
+      data.append('title', editFormData.title.trim());
+      data.append('releaseNotes', editFormData.releaseNotes.trim());
+      data.append('updateType', editFormData.updateType);
+      data.append('minAppVersion', editFormData.minAppVersion || '1.0.0');
+      data.append('isMandatory', editFormData.isMandatory ? 'true' : 'false');
+      data.append('platform', editFormData.platform);
+      data.append('status', editFormData.status);
+      if (apkUrl) data.append('apkUrl', apkUrl);
+      if (bundleUrl) data.append('bundleUrl', bundleUrl);
+      if (editBundleFile) data.append('bundle', editBundleFile);
+      if (editApkFile) data.append('apk', editApkFile);
+
+      const res = await updateAppReleaseApi(editReleaseId, data);
+      if (res.success) {
+        setStatusMsg({ type: 'success', text: `Release v${editFormData.version} updated successfully and broadcasted to devices!` });
+        setIsEditOpen(false);
+        fetchData();
+      }
+    } catch (err) {
+      console.error('Update release error:', err);
+      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Failed to update release.' });
     } finally {
       setSubmitting(false);
     }
@@ -514,6 +607,15 @@ export default function AppUpdateManagementPanel() {
                         </td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                            <button
+                              onClick={() => handleOpenEdit(rel)}
+                              className="btn btn-outline btn-sm"
+                              style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: 'var(--accent-primary)', borderColor: 'var(--accent-primary)' }}
+                              title="Edit Release & Change Version"
+                            >
+                              <Pencil size={13} /> Edit
+                            </button>
+
                             <button
                               onClick={() => setViewRelease(rel)}
                               className="btn btn-outline btn-sm"
@@ -944,6 +1046,187 @@ export default function AppUpdateManagementPanel() {
                   style={{ padding: '0.65rem 1.5rem', fontWeight: 800 }}
                 >
                   {submitting ? 'Packaging & Uploading…' : formData.status === 'PUBLISHED' ? 'Publish Release Now' : 'Save Draft'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT RELEASE MODAL ── */}
+      {isEditOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--bg-card, #1e293b)',
+            border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '620px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '1.75rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ background: 'var(--accent-primary-glow)', width: 34, height: 34, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Pencil size={18} color="var(--accent-primary)" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-heading)' }}>
+                    Edit Mobile Release &amp; Change Version
+                  </h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Update version metadata. If published, connected devices will be notified immediately.
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
+                    Version Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.version}
+                    onChange={(e) => setEditFormData({ ...editFormData, version: e.target.value })}
+                    placeholder="e.g. 1.1.0"
+                    className="form-input"
+                    style={{ width: '100%', padding: '0.65rem 0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
+                    Build Number *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={editFormData.buildNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, buildNumber: e.target.value })}
+                    placeholder="e.g. 2"
+                    className="form-input"
+                    style={{ width: '100%', padding: '0.65rem 0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
+                  Release Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.title}
+                  onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                  placeholder="e.g. Major UI & Tournament Improvements"
+                  className="form-input"
+                  style={{ width: '100%', padding: '0.65rem 0.85rem' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
+                  Release Notes &amp; Changelog *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={editFormData.releaseNotes}
+                  onChange={(e) => setEditFormData({ ...editFormData, releaseNotes: e.target.value })}
+                  placeholder="• Fixed streaming scoreboard&#10;• Added player registration tabs"
+                  className="form-input"
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
+                    Update Type
+                  </label>
+                  <select
+                    value={editFormData.updateType}
+                    onChange={(e) => setEditFormData({ ...editFormData, updateType: e.target.value })}
+                    className="form-input"
+                    style={{ width: '100%', padding: '0.65rem 0.85rem' }}
+                  >
+                    <option value="OTA">⚡ Quick OTA Update (JS Bundle)</option>
+                    <option value="NATIVE">📦 Native Android APK</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-main)' }}>
+                    Release Status
+                  </label>
+                  <select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    className="form-input"
+                    style={{ width: '100%', padding: '0.65rem 0.85rem' }}
+                  >
+                    <option value="PUBLISHED">🟢 Published (Broadcast Active)</option>
+                    <option value="DRAFT">🟡 Draft (Hidden from Devices)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <input
+                  type="checkbox"
+                  id="editIsMandatory"
+                  checked={editFormData.isMandatory}
+                  onChange={(e) => setEditFormData({ ...editFormData, isMandatory: e.target.checked })}
+                  style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                />
+                <label htmlFor="editIsMandatory" style={{ fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', color: 'var(--text-main)' }}>
+                  Mandatory Update (forces app update modal without dismiss button)
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsEditOpen(false)}
+                  className="btn btn-outline"
+                  style={{ padding: '0.65rem 1.25rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="btn btn-primary"
+                  style={{ padding: '0.65rem 1.5rem', fontWeight: 800 }}
+                >
+                  {submitting ? 'Saving…' : 'Save & Update Release'}
                 </button>
               </div>
             </form>
