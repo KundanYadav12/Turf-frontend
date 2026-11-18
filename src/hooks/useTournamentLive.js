@@ -30,6 +30,7 @@ export const useTournamentLive = (tournamentId, onMatchUpdated) => {
 
     socket.on('tournament:matchUpdated', handleUpdate);
     socket.on('tournament:matchDisplayUpdated', handleUpdate);
+    socket.on('tournament:standingsUpdated', handleUpdate);
     socket.on('score:updated', handleUpdate);
     socket.on('signage:matchUpdate', handleUpdate);
     socket.on('match:ballEvent', handleUpdate);
@@ -46,6 +47,7 @@ export const useTournamentLive = (tournamentId, onMatchUpdated) => {
     return () => {
       socket.off('tournament:matchUpdated', handleUpdate);
       socket.off('tournament:matchDisplayUpdated', handleUpdate);
+      socket.off('tournament:standingsUpdated', handleUpdate);
       socket.off('score:updated', handleUpdate);
       socket.off('signage:matchUpdate', handleUpdate);
       socket.off('match:ballEvent', handleUpdate);

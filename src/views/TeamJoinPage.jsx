@@ -2,17 +2,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import axios from 'axios';
 import confetti from 'canvas-confetti';
+import { setCredentials } from '../features/auth/authSlice';
 import {
   Shield, Users, Trophy, MapPin, User, CheckCircle2,
   AlertCircle, ArrowRight, LogIn, UserPlus, Sparkles,
-  ArrowLeft, Share2, Copy, Check
+  ArrowLeft, Share2, Copy, Check, MessageSquare, X, Lock, Mail, Phone
 } from 'lucide-react';
 
 export default function TeamJoinPage({ code }) {
   const router = useRouter();
+  const dispatch = useDispatch();
   const { user, token, isAuthenticated } = useSelector((state) => state.auth);
 
   const [team, setTeam] = useState(null);
@@ -22,6 +24,17 @@ export default function TeamJoinPage({ code }) {
   const [joinSuccess, setJoinSuccess] = useState(false);
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [conversationId, setConversationId] = useState(null);
+
+  // In-page Auth Modal states for new users
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('SIGNUP'); // 'SIGNUP' | 'LOGIN'
+  const [authFullName, setAuthFullName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   // Fetch team invite preview
   const fetchInviteInfo = useCallback(async () => {
@@ -35,6 +48,8 @@ export default function TeamJoinPage({ code }) {
         setTeam(res.data.data);
         if (res.data.data.isMember) {
           setAlreadyMember(true);
+        } else if (!token) {
+          setShowAuthModal(true);
         }
       }
     } catch (err) {
@@ -49,10 +64,11 @@ export default function TeamJoinPage({ code }) {
     fetchInviteInfo();
   }, [fetchInviteInfo]);
 
-  // Handle Join Team
-  const handleJoinTeam = async () => {
-    if (!isAuthenticated) {
-      router.push(`/login?redirect=/teams/join/${code}`);
+  // Handle Join Team (can be called with newly issued token after registration/login)
+  const handleJoinTeam = async (overrideToken = null) => {
+    const activeToken = overrideToken || token;
+    if (!activeToken) {
+      setShowAuthModal(true);
       return;
     }
 
@@ -60,10 +76,13 @@ export default function TeamJoinPage({ code }) {
     setErrorMsg('');
 
     try {
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+      const config = { headers: { Authorization: `Bearer ${activeToken}` } };
       const res = await axios.post(`/api/teams/join/${code}`, {}, config);
 
       if (res.data.success) {
+        if (res.data.conversationId) {
+          setConversationId(res.data.conversationId);
+        }
         if (res.data.alreadyMember) {
           setAlreadyMember(true);
         } else {
@@ -85,6 +104,54 @@ export default function TeamJoinPage({ code }) {
       setErrorMsg(err?.response?.data?.message || 'Failed to join team. Please try again.');
     } finally {
       setJoining(false);
+    }
+  };
+
+  // Handle in-page Registration or Login with immediate automatic squad & group chat joining
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+
+    try {
+      if (authMode === 'SIGNUP') {
+        if (!authPhone || !authPhone.trim()) {
+          setAuthError('Phone number is required for registration.');
+          setAuthLoading(false);
+          return;
+        }
+
+        const regRes = await axios.post('/api/auth/register', {
+          fullName: authFullName,
+          email: authEmail,
+          phone: authPhone,
+          password: authPassword,
+          role: 'PLAYER'
+        });
+
+        if (regRes.data.success) {
+          dispatch(setCredentials(regRes.data.data));
+          setShowAuthModal(false);
+          // Automatically join squad & group chat immediately
+          await handleJoinTeam(regRes.data.data.token);
+        }
+      } else {
+        const loginRes = await axios.post('/api/auth/login', {
+          email: authEmail,
+          password: authPassword
+        });
+
+        if (loginRes.data.success) {
+          dispatch(setCredentials(loginRes.data.data));
+          setShowAuthModal(false);
+          // Automatically join squad & group chat immediately
+          await handleJoinTeam(loginRes.data.data.token);
+        }
+      }
+    } catch (err) {
+      setAuthError(err?.response?.data?.message || 'Authentication failed. Please check your credentials.');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -337,10 +404,21 @@ export default function TeamJoinPage({ code }) {
               Welcome to {team.name}!
             </h3>
             <p style={{ fontSize: '0.88rem', color: '#34d399', margin: '0 0 1rem 0' }}>
-              You have successfully joined the team. This team is now saved in your <strong>My Teams</strong> list.
+              You have successfully joined the team and the official team chat group!
             </p>
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-              <Link href={`/teams/${team.id}`} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link
+                href={`/chat?conversationId=${conversationId || team.conversationId || ''}`}
+                className="btn btn-outline"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <MessageSquare size={16} /> Open Team Chat Group
+              </Link>
+              <Link
+                href={`/teams/${team.id}`}
+                className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
                 View Squad Roster <ArrowRight size={16} />
               </Link>
             </div>
@@ -366,9 +444,22 @@ export default function TeamJoinPage({ code }) {
             <p style={{ fontSize: '0.85rem', color: '#93c5fd', margin: '0 0 1rem 0' }}>
               You are already an active player or owner of {team.name}.
             </p>
-            <Link href={`/teams/${team.id}`} className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-              Open Team Page <ArrowRight size={16} />
-            </Link>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link
+                href={`/chat?conversationId=${team.conversationId || conversationId || ''}`}
+                className="btn btn-outline"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <MessageSquare size={16} /> Open Team Chat Group
+              </Link>
+              <Link
+                href={`/teams/${team.id}`}
+                className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                View Squad Roster <ArrowRight size={16} />
+              </Link>
+            </div>
           </div>
         )}
 
@@ -395,7 +486,7 @@ export default function TeamJoinPage({ code }) {
         {/* Action Buttons */}
         {!joinSuccess && !alreadyMember && (
           <div>
-            {!isAuthenticated ? (
+            {!token ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <div
                   style={{
@@ -408,31 +499,34 @@ export default function TeamJoinPage({ code }) {
                     fontSize: '0.85rem'
                   }}
                 >
-                  Sign in or create an account to join this squad.
+                  Create an account or sign in to join {team.name} immediately.
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <Link
-                    href={`/login?redirect=/teams/join/${code}`}
-                    className="btn btn-primary"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                  >
-                    <LogIn size={16} /> Sign In
-                  </Link>
-
-                  <Link
-                    href={`/register?redirect=/teams/join/${code}`}
-                    className="btn btn-outline"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                  >
-                    <UserPlus size={16} /> Register
-                  </Link>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('SIGNUP');
+                    setShowAuthModal(true);
+                  }}
+                  className="btn btn-primary"
+                  style={{
+                    width: '100%',
+                    padding: '0.9rem',
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  <UserPlus size={18} /> Join Team (Sign Up / Sign In)
+                </button>
               </div>
             ) : (
               <button
                 id="join-team-btn"
-                onClick={handleJoinTeam}
+                onClick={() => handleJoinTeam()}
                 disabled={joining}
                 className="btn btn-primary"
                 style={{
@@ -492,6 +586,199 @@ export default function TeamJoinPage({ code }) {
           </button>
         </div>
       </div>
+
+      {/* Auth Modal for New / Unauthenticated Users */}
+      {showAuthModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAuthModal(false);
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '440px',
+              borderRadius: '20px',
+              padding: '1.75rem',
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+              position: 'relative'
+            }}
+          >
+            <button
+              onClick={() => setShowAuthModal(false)}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.3rem 0.75rem',
+                  borderRadius: '999px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#10b981',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  marginBottom: '0.5rem'
+                }}
+              >
+                <Sparkles size={13} /> Squad Invite Link
+              </div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 0.25rem 0' }}>
+                Join {team.name}
+              </h3>
+              <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: 0 }}>
+                {authMode === 'SIGNUP' ? 'Create your player profile to join team and chat' : 'Sign in to join team and chat'}
+              </p>
+            </div>
+
+            {/* Mode Toggle */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '10px' }}>
+              <button
+                type="button"
+                onClick={() => { setAuthMode('SIGNUP'); setAuthError(''); }}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: authMode === 'SIGNUP' ? 'var(--accent-primary, #10b981)' : 'transparent',
+                  color: authMode === 'SIGNUP' ? '#fff' : '#94a3b8'
+                }}
+              >
+                New Player (Sign Up)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthMode('LOGIN'); setAuthError(''); }}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: authMode === 'LOGIN' ? 'var(--accent-primary, #10b981)' : 'transparent',
+                  color: authMode === 'LOGIN' ? '#fff' : '#94a3b8'
+                }}
+              >
+                Existing User (Sign In)
+              </button>
+            </div>
+
+            {authError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#f87171', background: 'rgba(239,68,68,0.1)', padding: '0.6rem 0.8rem', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '1rem' }}>
+                <AlertCircle size={15} />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {authMode === 'SIGNUP' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                    Full Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Rahul Sharma"
+                    value={authFullName}
+                    onChange={(e) => setAuthFullName(e.target.value)}
+                    className="form-input"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.88rem' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                  Email Address <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.88rem' }}
+                />
+              </div>
+
+              {authMode === 'SIGNUP' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                    Phone Number <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="e.g. +91 9876543210"
+                    value={authPhone}
+                    onChange={(e) => setAuthPhone(e.target.value)}
+                    className="form-input"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.88rem' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                  Password <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Minimum 6 characters"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.88rem' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', fontWeight: 700, fontSize: '0.92rem' }}
+              >
+                {authLoading ? 'Joining...' : authMode === 'SIGNUP' ? 'Create Account & Join Squad' : 'Sign In & Join Squad'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
     </div>
   );
 }
