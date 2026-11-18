@@ -779,6 +779,5 @@ export default function TeamJoinPage({ code }) {
         </div>
       )}
     </div>
-    </div>
   );
 }
