@@ -7,7 +7,8 @@ import {
   getVenuesAdminApi,
   updateVenueStatusApi
 } from '../services/adminService';
-import { Shield, Users, Building2, DollarSign, Tv } from 'lucide-react';
+import getSocket from '../services/socket';
+import { Shield, Users, Building2, DollarSign, Tv, Radio, Phone, Clock, Sparkles } from 'lucide-react';
 import AdManagementPanel from '../components/admin/AdManagementPanel';
 import PrivacyPolicyManagementPanel from '../components/admin/PrivacyPolicyManagementPanel';
 import AccountDeletionManagementPanel from '../components/admin/AccountDeletionManagementPanel';
@@ -28,7 +29,50 @@ const AdminDashboardPage = () => {
   const [activeTab, setActiveTab] = useState('OVERVIEW');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetchAdminData(); }, []);
+  useEffect(() => {
+    fetchAdminData();
+
+    // Real-time synchronization
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleActiveCount = (data) => {
+      if (data && typeof data.activeUsers === 'number') {
+        setStats((prev) => (prev ? { ...prev, activeUsers: data.activeUsers } : prev));
+      }
+    };
+
+    const handleUserRegistered = (newUser) => {
+      if (!newUser) return;
+      setUsers((prev) => {
+        const exists = prev.some((u) => u.id === newUser.id);
+        if (exists) return prev;
+        return [newUser, ...prev];
+      });
+      setStats((prev) => (prev ? { ...prev, totalUsers: (prev.totalUsers || 0) + 1 } : prev));
+    };
+
+    const handleUserLogin = ({ user: loginUser }) => {
+      if (!loginUser) return;
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === loginUser.id
+            ? { ...u, lastLoginAt: loginUser.lastLoginAt || new Date().toISOString() }
+            : u
+        )
+      );
+    };
+
+    socket.on('admin:active_users_count', handleActiveCount);
+    socket.on('user:registered', handleUserRegistered);
+    socket.on('user:login', handleUserLogin);
+
+    return () => {
+      socket.off('admin:active_users_count', handleActiveCount);
+      socket.off('user:registered', handleUserRegistered);
+      socket.off('user:login', handleUserLogin);
+    };
+  }, []);
 
   const fetchAdminData = async () => {
     try {
@@ -91,8 +135,17 @@ const AdminDashboardPage = () => {
 
   // KPI cards config
   const kpis = [
+    {
+      label: 'Logged-in / Active Users',
+      value: stats.activeUsers ?? 1,
+      color: '#10b981',
+      iconBg: 'rgba(16, 185, 129, 0.15)',
+      icon: <Radio size={18} color="#10b981" />,
+      liveBadge: true,
+      highlight: true
+    },
     { label: 'Total Platform Volume', value: `₹${stats.totalVolume}`, color: 'var(--text-heading)', iconBg: 'var(--btn-secondary-bg)', icon: <DollarSign size={18} color="var(--text-muted)" /> },
-    { label: 'Platform Commission (10%)', value: `₹${stats.totalCommission}`, color: 'var(--accent-primary)', iconBg: 'var(--accent-primary-glow)', icon: <DollarSign size={18} color="var(--accent-primary)" />, highlight: true },
+    { label: 'Platform Commission (10%)', value: `₹${stats.totalCommission}`, color: 'var(--accent-primary)', iconBg: 'var(--accent-primary-glow)', icon: <DollarSign size={18} color="var(--accent-primary)" /> },
     { label: 'Registered Users', value: stats.totalUsers, color: 'var(--text-heading)', iconBg: 'rgba(6,182,212,0.12)', icon: <Users size={18} color="var(--accent-secondary)" /> },
     { label: 'Listed Venues', value: stats.totalVenues, color: 'var(--text-heading)', iconBg: 'rgba(139,92,246,0.12)', icon: <Building2 size={18} color="var(--accent-purple)" /> },
   ];
@@ -122,7 +175,26 @@ const AdminDashboardPage = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{kpi.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{kpi.label}</span>
+                {kpi.liveBadge && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    padding: '2px 6px',
+                    borderRadius: 999,
+                    background: 'rgba(16,185,129,0.15)',
+                    color: '#10b981',
+                    border: '1px solid rgba(16,185,129,0.35)'
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }} />
+                    LIVE
+                  </span>
+                )}
+              </div>
               <div style={{ background: kpi.iconBg, width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {kpi.icon}
               </div>
@@ -208,13 +280,30 @@ const AdminDashboardPage = () => {
       {/* ── USERS Tab ── */}
       {activeTab === 'USERS' && (
         <div className="glass-panel" style={{ padding: 'clamp(1rem, 2.5vw, 1.5rem)' }}>
-          <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>User Management</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.15rem', margin: '0 0 0.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Users size={20} color="var(--accent-primary)" /> Registered Platform Users ({users.length})
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Real-time user insights, mandatory phone numbers, registration timestamps, and last active logins.
+              </p>
+            </div>
+            <span style={{ fontSize: '0.8rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(16,185,129,0.1)', padding: '0.35rem 0.75rem', borderRadius: '999px', border: '1px solid rgba(16,185,129,0.25)', fontWeight: 600 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
+              Live Real-Time Sync Active
+            </span>
+          </div>
+
           <div className="table-responsive">
-            <table className="data-table" style={{ minWidth: 550 }}>
+            <table className="data-table" style={{ minWidth: 850 }}>
               <thead>
                 <tr>
                   <th>Full Name</th>
                   <th>Email</th>
+                  <th>Phone Number</th>
+                  <th>Registered At</th>
+                  <th>Last Login</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th>Action</th>
@@ -223,8 +312,30 @@ const AdminDashboardPage = () => {
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id} style={trStyle}>
-                    <td style={tdBoldStyle}>{u.fullName}</td>
+                    <td style={tdBoldStyle}>{u.fullName || 'Anonymous'}</td>
                     <td style={tdStyle}>{u.email}</td>
+                    <td style={{ ...tdStyle, color: u.phone && u.phone !== 'N/A' ? 'var(--text-heading)' : 'var(--text-muted)' }}>
+                      {u.phone && u.phone !== 'N/A' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+                          <Phone size={13} color="var(--accent-primary)" /> {u.phone}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Not provided</span>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      {u.createdAt ? new Date(u.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: '0.82rem' }}>
+                      {u.lastLoginAt ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: '#34d399', fontWeight: 600 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                          {new Date(u.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-dim)' }}>Never</span>
+                      )}
+                    </td>
                     <td style={tdStyle}><span className="badge badge-info">{u.role}</span></td>
                     <td style={tdStyle}>
                       <span className={`badge ${u.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}`}>{u.status}</span>

@@ -910,10 +910,10 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Sparkles size={16} color="#fef08a" />
                     <span>
-                      GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • 2 in a row wins
+                      GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • Win by 2
                     </span>
                   </div>
-                  {match.goldenPoint?.streakCount > 0 && match.goldenPoint?.streakTeam && (
+                  {((match.goldenPoint?.leadCount || match.goldenPoint?.streakCount) > 0) && (match.goldenPoint?.leadTeam || match.goldenPoint?.streakTeam) && (
                     <span style={{
                       background: 'rgba(0,0,0,0.3)',
                       padding: '2px 8px',
@@ -922,7 +922,7 @@ const MatchDetailPage = ({ matchId: propsMatchId, initialMatch = null }) => {
                       fontWeight: 800,
                       color: '#fef08a'
                     }}>
-                      🔥 {match.goldenPoint.streakTeam === 'teamA' ? match.teamA?.name : match.teamB?.name} streak {match.goldenPoint.streakCount}/2
+                      🔥 {(match.goldenPoint.leadTeam || match.goldenPoint.streakTeam) === 'teamA' ? match.teamA?.name : match.teamB?.name} lead {match.goldenPoint.leadCount || match.goldenPoint.streakCount}/2
                     </span>
                   )}
                 </div>

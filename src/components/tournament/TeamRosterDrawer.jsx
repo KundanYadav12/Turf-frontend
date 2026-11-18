@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   X, Search, Users, Shield, Crown, Star, UserPlus,
   RefreshCw, AlertCircle, CheckCircle, ChevronDown, ChevronUp,
-  Sparkles, Award, Zap, Pencil, Trash2
+  Sparkles, Award, Zap, Pencil, Trash2, Link as LinkIcon, Copy, Check, UserCheck
 } from 'lucide-react';
 import {
   getSportRoles,
@@ -41,6 +41,13 @@ export default function TeamRosterDrawer({
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [deleteConfirmPlayer, setDeleteConfirmPlayer] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [clearDummyLoading, setClearDummyLoading] = useState(false);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [searchUserQuery, setSearchUserQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [addMode, setAddMode] = useState('FIND'); // 'FIND' | 'MANUAL'
 
   const sportSlug = tournament?.sport?.slug || tournament?.sportSlug || (tournament?.sport?.name ? tournament.sport.name.toLowerCase() : '') || 'cricket';
   const isCricket = sportSlug.includes('cricket');
@@ -154,6 +161,83 @@ export default function TeamRosterDrawer({
     setShowAddPlayer(true);
   };
 
+  // Debounced search for registered platform users to add
+  useEffect(() => {
+    if (!searchUserQuery || searchUserQuery.trim().length < 2) {
+      setUserSearchResults([]);
+      setIsSearchingUsers(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingUsers(true);
+      try {
+        const token = typeof window !== 'undefined'
+          ? (localStorage.getItem('turf_token') || localStorage.getItem('token'))
+          : null;
+        const res = await axios.get(
+          `/api/users/search?q=${encodeURIComponent(searchUserQuery.trim())}&limit=8`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+        if (res.data?.success) {
+          setUserSearchResults(res.data.data || []);
+        }
+      } catch (e) {
+        console.warn('Failed to search users:', e);
+      } finally {
+        setIsSearchingUsers(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchUserQuery]);
+
+  const handleSelectSearchedUser = (u) => {
+    setSelectedUserId(u.id);
+    setNewPlayerName(u.full_name || u.username);
+    if (u.jersey_number) setNewPlayerJersey(String(u.jersey_number));
+    setUserSearchResults([]);
+    setSearchUserQuery('');
+  };
+
+  const handleClearDummies = async () => {
+    if (!window.confirm('Are you sure you want to remove all unassigned dummy players (e.g. X1..X12) from this squad?')) {
+      return;
+    }
+    setClearDummyLoading(true);
+    try {
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('turf_token') || localStorage.getItem('token'))
+        : null;
+      const res = await axios.post(
+        `/api/tournaments/${tournament.id}/teams/${team.id}/clear-dummies`,
+        {},
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      if (res.data?.success) {
+        await fetchRoster();
+        if (onRosterUpdated) onRosterUpdated();
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to clear dummy players.');
+    } finally {
+      setClearDummyLoading(false);
+    }
+  };
+
+  const handleCopyInviteLink = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const inviteLink = team?.invite_code || team?.inviteCode
+      ? `${origin}/teams/join/${team.invite_code || team.inviteCode}`
+      : `${origin}/tournaments/${tournament?.uuid || tournament?.id}?joinTeam=${team?.uuid || team?.id}`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(inviteLink);
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2500);
+    }
+  };
+
   const handleCancelEdit = () => {
     setEditingPlayerId(null);
     setNewPlayerName('');
@@ -161,6 +245,9 @@ export default function TeamRosterDrawer({
     setNewPlayerLeadership('PLAYER');
     setNewPlayerBattingStyle('');
     setNewPlayerBowlingStyle('');
+    setSelectedUserId(null);
+    setSearchUserQuery('');
+    setUserSearchResults([]);
     setAddError('');
     setAddSuccess('');
     setShowAddPlayer(false);
@@ -196,7 +283,8 @@ export default function TeamRosterDrawer({
         isCaptain: newPlayerLeadership === 'CAPTAIN',
         isViceCaptain: newPlayerLeadership === 'VICE_CAPTAIN',
         battingStyle: isCricket ? newPlayerBattingStyle || null : null,
-        bowlingStyle: isCricket ? newPlayerBowlingStyle || null : null
+        bowlingStyle: isCricket ? newPlayerBowlingStyle || null : null,
+        userId: selectedUserId || null
       };
 
       const isEdit = Boolean(editingPlayerId);
@@ -300,6 +388,10 @@ export default function TeamRosterDrawer({
     });
     return counts;
   }, [allPlayers, sportSlug]);
+
+  const dummyPlayersCount = useMemo(() => {
+    return allPlayers.filter(p => !p.user_id && !p.userId).length;
+  }, [allPlayers]);
 
   if (!isOpen) return null;
 
@@ -488,6 +580,58 @@ export default function TeamRosterDrawer({
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#0284c7', fontWeight: 600 }}>
                     <Star size={12} /> VC: <strong style={{ color: 'var(--text-heading)' }}>{viceCaptainName}</strong>
                   </span>
+                )}
+              </div>
+
+              {/* Quick Actions Strip: Copy Invite Link + Clear Dummies */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleCopyInviteLink}
+                  style={{
+                    background: copiedInvite ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    border: copiedInvite ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.15)',
+                    color: copiedInvite ? '#34d399' : 'var(--text-main, #ffffff)',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Copy team registration / invite link to share with players"
+                >
+                  {copiedInvite ? <Check size={12} /> : <LinkIcon size={12} />}
+                  <span>{copiedInvite ? 'Invite Link Copied!' : 'Copy Invite Link'}</span>
+                </button>
+
+                {dummyPlayersCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearDummies}
+                    disabled={clearDummyLoading}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      color: '#f87171',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      padding: '0.25rem 0.6rem',
+                      borderRadius: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      cursor: clearDummyLoading ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Remove all auto-generated / dummy players from this squad"
+                  >
+                    {clearDummyLoading ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                    <span>{clearDummyLoading ? 'Clearing...' : `Clear Dummy Players (${dummyPlayersCount})`}</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -693,6 +837,189 @@ export default function TeamRosterDrawer({
                 }}
               >
                 <CheckCircle size={14} /> {addSuccess}
+              </div>
+            )}
+
+            {!editingPlayerId && (
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setAddMode('FIND')}
+                  style={{
+                    flex: 1,
+                    padding: '0.35rem 0.6rem',
+                    fontSize: '0.78rem',
+                    fontWeight: addMode === 'FIND' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: addMode === 'FIND' ? '1px solid var(--accent-primary, #10b981)' : '1px solid rgba(255,255,255,0.1)',
+                    background: addMode === 'FIND' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)',
+                    color: addMode === 'FIND' ? 'var(--accent-primary, #34d399)' : 'var(--text-muted, #94a3b8)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔍 Find Registered User
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMode('MANUAL')}
+                  style={{
+                    flex: 1,
+                    padding: '0.35rem 0.6rem',
+                    fontSize: '0.78rem',
+                    fontWeight: addMode === 'MANUAL' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: addMode === 'MANUAL' ? '1px solid var(--accent-primary, #10b981)' : '1px solid rgba(255,255,255,0.1)',
+                    background: addMode === 'MANUAL' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)',
+                    color: addMode === 'MANUAL' ? 'var(--accent-primary, #34d399)' : 'var(--text-muted, #94a3b8)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✏️ Manual Name
+                </button>
+              </div>
+            )}
+
+            {addMode === 'FIND' && !editingPlayerId && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted, #94a3b8)', marginBottom: '0.25rem' }}>
+                  Search Player by Name, Username, or Phone
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search
+                    size={15}
+                    style={{
+                      position: 'absolute',
+                      left: '0.65rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-muted)',
+                      pointerEvents: 'none'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search e.g. Rahul, @rohit, 987654..."
+                    value={searchUserQuery}
+                    onChange={(e) => setSearchUserQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.45rem 0.65rem 0.45rem 2rem',
+                      borderRadius: '6px',
+                      background: 'var(--input-bg, rgba(255, 255, 255, 0.06))',
+                      border: '1px solid var(--input-border, rgba(255, 255, 255, 0.15))',
+                      color: 'var(--text-main, #ffffff)',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                  {isSearchingUsers && (
+                    <RefreshCw
+                      size={14}
+                      className="animate-spin"
+                      style={{
+                        position: 'absolute',
+                        right: '0.65rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: 'var(--text-muted)'
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Search Results Dropdown */}
+                {userSearchResults.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: '0.35rem',
+                      maxHeight: '180px',
+                      overflowY: 'auto',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      background: 'var(--bg-modal, #1e293b)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    {userSearchResults.map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => handleSelectSearchedUser(u)}
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.6rem',
+                          borderBottom: '1px solid rgba(255,255,255,0.06)',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            background: '#10b981',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            color: '#fff',
+                            flexShrink: 0
+                          }}
+                        >
+                          {(u.full_name || u.username || 'P').charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-heading, #fff)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {u.full_name || u.username}
+                          </div>
+                          {u.username && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)' }}>
+                              @{u.username}
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--accent-primary, #34d399)', fontWeight: 600 }}>
+                          + Select
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Selected User Indicator */}
+                {selectedUserId && (
+                  <div
+                    style={{
+                      marginTop: '0.45rem',
+                      padding: '0.4rem 0.65rem',
+                      borderRadius: '6px',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.78rem',
+                      color: 'var(--accent-primary, #34d399)'
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <UserCheck size={14} /> Linked User Account: <strong>{newPlayerName}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedUserId(null); setNewPlayerName(''); }}
+                      style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

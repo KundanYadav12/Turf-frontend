@@ -23,6 +23,11 @@ const RegisterPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!phone || !phone.trim()) {
+      setError('Phone number is mandatory for registration.');
+      return;
+    }
     try {
       setLoading(true);
       const res = await registerApi({ fullName, email, phone, password, role });
@@ -136,11 +141,14 @@ const RegisterPage = () => {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Phone Number</label>
+            <label className="form-label">
+              Phone Number <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <input
               id="register-phone"
               type="tel"
-              placeholder="+91 9876543210"
+              required
+              placeholder="e.g. +91 9876543210"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="form-input"

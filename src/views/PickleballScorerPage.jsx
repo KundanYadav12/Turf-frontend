@@ -1049,7 +1049,12 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
           <div className="scorer-quick-actions" style={{ display: 'grid', gridTemplateColumns: status === 'LIVE' ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: '0.5rem', width: '100%', maxWidth: '580px' }}>
             <button
               type="button"
-              onClick={() => setShowCorrectionModal(true)}
+              onClick={() => {
+                setCorrectionScoreA(scores.teamA || 0);
+                setCorrectionScoreB(scores.teamB || 0);
+                setCorrectionNotes('');
+                setShowCorrectionModal(true);
+              }}
               className="btn btn-outline btn-sm"
               style={{
                 display: 'inline-flex',
@@ -1274,11 +1279,11 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '0.86rem' }}>
                   <Sparkles size={18} color="#fef08a" />
                   <span>
-                    GOLDEN POINT • First to {state.goldenPoint.target || '...'} • 2 in a row wins
+                    GOLDEN POINT • First to {state.goldenPoint.target || '...'} • Win by 2
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  {state.goldenPoint.streakCount > 0 && state.goldenPoint.streakTeam && (
+                  {(state.goldenPoint.leadCount > 0 || state.goldenPoint.streakCount > 0) && (state.goldenPoint.leadTeam || state.goldenPoint.streakTeam) && (
                     <span style={{
                       background: 'rgba(0,0,0,0.35)',
                       border: '1px solid rgba(255,255,255,0.25)',
@@ -1288,7 +1293,7 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                       fontWeight: 800,
                       color: '#fef08a'
                     }}>
-                      🔥 {state.goldenPoint.streakTeam === 'teamA' ? teamA.name : teamB.name} streak {state.goldenPoint.streakCount}/2
+                      🔥 {(state.goldenPoint.leadTeam || state.goldenPoint.streakTeam) === 'teamA' ? teamA.name : teamB.name} lead {state.goldenPoint.leadCount || state.goldenPoint.streakCount}/2
                     </span>
                   )}
                   {state.goldenPoint.isGamePoint && (
@@ -2059,15 +2064,23 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
                       </span>
                     )}
                     <span>
-                      {log.point_to === 'team_a' ? `Point to ${teamA.name}` : log.point_to === 'team_b' ? `Point to ${teamB.name}` : String(log.notes || '').replace('[GOLDEN POINT] ', '')}
+                      {(log.point_to === 'team_a' || log.point_to === '1' || String(log.point_to) === String(teamA.id)) ? (
+                        <>Point to <strong style={{ color: '#10b981' }}>{teamA.name}</strong></>
+                      ) : (log.point_to === 'team_b' || log.point_to === '2' || String(log.point_to) === String(teamB.id)) ? (
+                        <>Point to <strong style={{ color: '#3b82f6' }}>{teamB.name}</strong></>
+                      ) : (
+                        String(log.notes || '').replace('[GOLDEN POINT] ', '')
+                      )}
                       {log.scored_by_player_name ? ` (${log.scored_by_player_name})` : ''}
                     </span>
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <span className="scorer-text-heading" style={{ fontWeight: 800 }}>
-                    {log.team_a_score} - {log.team_b_score}
-                  </span>
+                  <div className="scorer-text-heading" style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem' }}>
+                    <span style={{ color: '#10b981' }}>{teamA.name} <strong>{log.team_a_score}</strong></span>
+                    <span style={{ color: 'var(--text-muted)' }}>:</span>
+                    <span style={{ color: '#3b82f6' }}><strong>{log.team_b_score}</strong> {teamB.name}</span>
+                  </div>
                   <span className="scorer-text-muted" style={{ fontSize: '0.78rem' }} suppressHydrationWarning>
                     {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </span>
@@ -2083,42 +2096,107 @@ export default function PickleballScorerPage({ matchId: propsMatchId } = {}) {
       {/* Score Correction Modal */}
       {showCorrectionModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}>
-          <div className="scorer-panel" style={{ borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '440px' }}>
-            <h3 className="scorer-text-heading" style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 1rem 0' }}>
+          <div className="scorer-panel" style={{ borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '460px' }}>
+            <h3 className="scorer-text-heading" style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 0.5rem 0' }}>
               Authorized Score Correction
             </h3>
             <p className="scorer-text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              Adjust current score. Standings and match status will be automatically recalculated.
+              Adjust match score. Official points table and match status will be recalculated immediately.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: '#10b981' }}>
-                  {teamA.name} Score
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={correctionScoreA}
-                  onChange={(e) => setCorrectionScoreA(parseInt(e.target.value, 10) || 0)}
-                  className="scorer-subcard"
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '1.2rem', fontWeight: 800, textAlign: 'center' }}
-                />
+            {sidesSwapped ? (
+              /* When sides are swapped on court, show Left Court Side on Left and Right Court Side on Right */
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 800, color: '#3b82f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={teamB.name}>
+                      {teamB.name}
+                    </label>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#3b82f6', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
+                      Left Court
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={correctionScoreB}
+                    onChange={(e) => setCorrectionScoreB(parseInt(e.target.value, 10) || 0)}
+                    className="scorer-subcard"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '1.35rem', fontWeight: 800, textAlign: 'center', border: '1.5px solid rgba(59,130,246,0.5)' }}
+                  />
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.25rem' }}>
+                    Current: {scores.teamB}
+                  </span>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 800, color: '#10b981', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={teamA.name}>
+                      {teamA.name}
+                    </label>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
+                      Right Court
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={correctionScoreA}
+                    onChange={(e) => setCorrectionScoreA(parseInt(e.target.value, 10) || 0)}
+                    className="scorer-subcard"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '1.35rem', fontWeight: 800, textAlign: 'center', border: '1.5px solid rgba(16,185,129,0.5)' }}
+                  />
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.25rem' }}>
+                    Current: {scores.teamA}
+                  </span>
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: '#3b82f6' }}>
-                  {teamB.name} Score
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={correctionScoreB}
-                  onChange={(e) => setCorrectionScoreB(parseInt(e.target.value, 10) || 0)}
-                  className="scorer-subcard"
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '1.2rem', fontWeight: 800, textAlign: 'center' }}
-                />
+            ) : (
+              /* Standard Left-to-Right orientation */
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 800, color: '#10b981', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={teamA.name}>
+                      {teamA.name}
+                    </label>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
+                      Left Court
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={correctionScoreA}
+                    onChange={(e) => setCorrectionScoreA(parseInt(e.target.value, 10) || 0)}
+                    className="scorer-subcard"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '1.35rem', fontWeight: 800, textAlign: 'center', border: '1.5px solid rgba(16,185,129,0.5)' }}
+                  />
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.25rem' }}>
+                    Current: {scores.teamA}
+                  </span>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 800, color: '#3b82f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={teamB.name}>
+                      {teamB.name}
+                    </label>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#3b82f6', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
+                      Right Court
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={correctionScoreB}
+                    onChange={(e) => setCorrectionScoreB(parseInt(e.target.value, 10) || 0)}
+                    className="scorer-subcard"
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', fontSize: '1.35rem', fontWeight: 800, textAlign: 'center', border: '1.5px solid rgba(59,130,246,0.5)' }}
+                  />
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.25rem' }}>
+                    Current: {scores.teamB}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{ marginBottom: '1.5rem' }}>
               <label className="scorer-text-muted" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>

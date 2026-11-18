@@ -1821,9 +1821,9 @@ const MatchCardHero = ({ match }) => {
           }}>
             <Sparkles size={13} color="#fef08a" />
             <span>
-              GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • 2 in a row wins
-              {match.goldenPoint?.streakCount > 0 && match.goldenPoint?.streakTeam && (
-                ` • ${match.goldenPoint.streakTeam === 'teamA' ? match.teamA?.name : match.teamB?.name} streak ${match.goldenPoint.streakCount}/2`
+              GOLDEN POINT • First to {(match.goldenPoint?.target || match.sport_state?.goldenPoint?.target || 21)} • Win by 2
+              {((match.goldenPoint?.leadCount || match.goldenPoint?.streakCount) > 0) && (match.goldenPoint?.leadTeam || match.goldenPoint?.streakTeam) && (
+                ` • ${(match.goldenPoint.leadTeam || match.goldenPoint.streakTeam) === 'teamA' ? match.teamA?.name : match.teamB?.name} lead ${match.goldenPoint.leadCount || match.goldenPoint.streakCount}/2`
               )}
             </span>
           </div>

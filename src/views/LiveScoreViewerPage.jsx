@@ -793,11 +793,11 @@ export default function LiveScoreViewerPage({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Sparkles size={16} color="#fef08a" />
                 <span>
-                  GOLDEN POINT • First to {currentMatch.goldenPoint.target || '...'} • 2 in a row wins
+                  GOLDEN POINT • First to {currentMatch.goldenPoint.target || '...'} • Win by 2
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {currentMatch.goldenPoint.streakCount > 0 && currentMatch.goldenPoint.streakTeam && (
+                {(currentMatch.goldenPoint.leadCount > 0 || currentMatch.goldenPoint.streakCount > 0) && (currentMatch.goldenPoint.leadTeam || currentMatch.goldenPoint.streakTeam) && (
                   <span style={{
                     background: 'rgba(0,0,0,0.3)',
                     padding: '2px 8px',
@@ -806,7 +806,7 @@ export default function LiveScoreViewerPage({
                     fontWeight: 800,
                     color: '#fef08a'
                   }}>
-                    🔥 {currentMatch.goldenPoint.streakTeam === 'teamA' ? teamAName : teamBName} streak {currentMatch.goldenPoint.streakCount}/2
+                    🔥 {(currentMatch.goldenPoint.leadTeam || currentMatch.goldenPoint.streakTeam) === 'teamA' ? teamAName : teamBName} lead {currentMatch.goldenPoint.leadCount || currentMatch.goldenPoint.streakCount}/2
                   </span>
                 )}
                 {currentMatch.goldenPoint.isGamePoint && (
