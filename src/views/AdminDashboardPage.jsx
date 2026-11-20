@@ -77,14 +77,29 @@ const AdminDashboardPage = () => {
   const fetchAdminData = async () => {
     try {
       setLoading(true);
-      const [dashRes, usersRes, venuesRes] = await Promise.all([
+      const [dashRes, usersRes, venuesRes] = await Promise.allSettled([
         getAdminDashboardApi(),
         getUsersApi(),
         getVenuesAdminApi()
       ]);
-      if (dashRes.success) setStats(dashRes.data);
-      if (usersRes.success) setUsers(usersRes.data);
-      if (venuesRes.success) setVenues(venuesRes.data);
+
+      if (dashRes.status === 'fulfilled' && dashRes.value?.success) {
+        setStats(dashRes.value.data);
+      } else if (dashRes.status === 'rejected') {
+        console.error('Failed to load dashboard stats:', dashRes.reason);
+      }
+
+      if (usersRes.status === 'fulfilled' && usersRes.value?.success) {
+        setUsers(usersRes.value.data);
+      } else if (usersRes.status === 'rejected') {
+        console.error('Failed to load users list:', usersRes.reason);
+      }
+
+      if (venuesRes.status === 'fulfilled' && venuesRes.value?.success) {
+        setVenues(venuesRes.value.data);
+      } else if (venuesRes.status === 'rejected') {
+        console.error('Failed to load venues list:', venuesRes.reason);
+      }
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
