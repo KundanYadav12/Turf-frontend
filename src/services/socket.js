@@ -52,9 +52,18 @@ const createSocket = () => {
 
 export const getSocket = () => createSocket();
 
-// Export proxy object that forwards to active socket instance
-export const socket = new Proxy({}, {
+// Target function allows proxy to be both invoked as getSocket() and accessed as socket.on(...)
+const socketTarget = function(...args) {
+  return createSocket(...args);
+};
+
+// Export proxy that forwards property access and invocations to active socket instance
+export const socket = new Proxy(socketTarget, {
+  apply(target, thisArg, argumentsList) {
+    return createSocket(...argumentsList);
+  },
   get(target, prop) {
+    if (prop === 'getSocket') return getSocket;
     const active = createSocket();
     const val = active[prop];
     if (typeof val === 'function') {
