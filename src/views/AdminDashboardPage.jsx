@@ -7,7 +7,7 @@ import {
   getVenuesAdminApi,
   updateVenueStatusApi
 } from '../services/adminService';
-import getSocket from '../services/socket';
+import { getSocket } from '../services/socket';
 import { Shield, Users, Building2, DollarSign, Tv, Radio, Phone, Clock, Sparkles } from 'lucide-react';
 import AdManagementPanel from '../components/admin/AdManagementPanel';
 import PrivacyPolicyManagementPanel from '../components/admin/PrivacyPolicyManagementPanel';
@@ -18,9 +18,9 @@ import AppUpdateManagementPanel from '../components/admin/AppUpdateManagementPan
 import BrandingSettingsPanel from '../components/admin/BrandingSettingsPanel';
 import FeatureTogglesPanel from '../components/admin/FeatureTogglesPanel';
 
-const tdStyle     = { padding: '0.85rem 0.75rem', color: 'var(--text-main)' };
+const tdStyle = { padding: '0.85rem 0.75rem', color: 'var(--text-main)' };
 const tdBoldStyle = { ...tdStyle, fontWeight: 700, color: 'var(--text-heading)' };
-const trStyle     = { borderBottom: '1px solid var(--border-color)' };
+const trStyle = { borderBottom: '1px solid var(--border-color)' };
 
 const AdminDashboardPage = () => {
   const [stats, setStats] = useState(null);
@@ -82,7 +82,7 @@ const AdminDashboardPage = () => {
         getUsersApi(),
         getVenuesAdminApi()
       ]);
-      if (dashRes.success)  setStats(dashRes.data);
+      if (dashRes.success) setStats(dashRes.data);
       if (usersRes.success) setUsers(usersRes.data);
       if (venuesRes.success) setVenues(venuesRes.data);
     } catch (err) {
